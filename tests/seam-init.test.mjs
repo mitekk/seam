@@ -430,6 +430,27 @@ test("A8's plan glob comes from the layer-5 row, not a hardcoded path", () => {
   rm(dir);
 });
 
+test("A14 reads the plans A8 reads: on iff a layer-5 doc exists, with the same glob", () => {
+  const ans = answers();
+  ans.docs = ans.docs.map((d) =>
+    d.layer === 5 ? { ...d, path: "docs/superpowers/specs/*.md", create: false } : d);
+  const { dir, r } = init(ans);
+  assert.equal(r.status, 0, r.stderr);
+  const cfg = JSON.parse(read(dir, ".seam/config.json"));
+  assert.equal(cfg.assertions.A14.enabled, true);
+  assert.equal(cfg.assertions.A14.plan_glob, cfg.assertions.A8.plan_glob);
+  assert.equal(cfg.assertions.A14.plan_glob, "docs/superpowers/specs/*.md");
+  rm(dir);
+
+  // No layer-5 doc, nothing for it to read: off, which is not the same as passing.
+  const bare = answers();
+  bare.docs = bare.docs.filter((d) => d.layer !== 5);
+  const second = init(bare);
+  assert.equal(second.r.status, 0, second.r.stderr);
+  assert.equal(JSON.parse(read(second.dir, ".seam/config.json")).assertions.A14.enabled, false);
+  rm(second.dir);
+});
+
 test("several layer-5 rows give A8 every one of them", () => {
   const ans = answers();
   ans.docs.push({ path: "docs/plans/*.md", layer: 5, owns: "Nothing — the plans",

@@ -114,7 +114,7 @@ rather than asking open questions about them.
 | `assertions.A3` | **off** | It compares two sides. With no workflow, or an unconfirmed one, the comparison is vacuous — and off is distinct from passing. |
 | `assertions.A4` | on iff `artifacts` is non-empty | Nothing to resolve against otherwise. |
 | `assertions.A5/A6/A7/A9` | off | Each needs a repo-specific list. An empty list that passes is worse than a switch that is off. |
-| `assertions.A8` | on iff a layer-5 doc exists | |
+| `assertions.A8/A14` | on iff a layer-5 doc exists | |
 | `assertions.A12/A13` | on iff a layer-3 or layer-4 doc exists | |
 | `low_review_paths` | `[]` | `low` is hunk-local and cannot verify a claim a document makes about the tree. Absent means empty. |
 | `load_bearing` | `[]` | Absent means empty, which is the honest answer for a repo where nothing enforces anything yet. |

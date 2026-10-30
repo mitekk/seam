@@ -59,7 +59,8 @@
     "A10": { "enabled": true },
     "A11": { "enabled": true },
     "A12": { "enabled": true, "default_branch": "main" },
-    "A13": { "enabled": true }
+    "A13": { "enabled": true },
+    "A14": { "enabled": true, "plan_glob": "docs/plans/*.md" }
   },
   "baseline": { "path": ".seam/baseline.json" }
 }

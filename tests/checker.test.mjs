@@ -95,7 +95,7 @@ test("a clean tree exits 0 with no findings, in both languages", () => {
   assert.equal(r.status, 0, r.py.stderr + r.py.stdout);
   assert.deepEqual(r.findings, []);
   // Something is printed, because a check that says nothing cannot be told from one that did not run.
-  assert.match(r.py.stdout, /13 assertions/);
+  assert.match(r.py.stdout, /14 assertions/);
   rm(dir);
 });
 
@@ -264,7 +264,7 @@ test("an assertion switched off in the config does not run", () => {
   });
   const r = both(dir);
   assert.equal(r.status, 0, r.py.stderr);
-  assert.match(r.py.stdout, /12 assertions/, "the count must say how many actually ran");
+  assert.match(r.py.stdout, /13 assertions/, "the count must say how many actually ran");
   rm(dir);
 });
 
@@ -529,6 +529,105 @@ test("an enabled assertion whose glob matches nothing says the comparison was no
   assert.equal(r.status, 1, r.py.stdout);
   assert.deepEqual(ids(r.findings), ["A8"]);
   assert.ok(r.findings.some((l) => /not made|matches no/i.test(l)), r.findings.join("\n"));
+  rm(dir);
+});
+
+// ── A14: the units table has the shape it claims ─────────────────────────────
+
+test("A14 flags a unit row with no test path", () => {
+  const { dir } = fixture({
+    mutate: ({ edit }) => edit("docs/plans/first.md", "`spec/hives.check.mjs`", "to be decided"),
+  });
+  const r = both(dir);
+  assert.equal(r.status, 1, r.py.stdout + r.py.stderr);
+  assert.deepEqual(ids(r.findings), ["A14"], r.findings.join("\n"));
+  assert.equal(r.findings.length, 1, r.findings.join("\n"));
+  // The finding points at the row itself, not at the top of the table or the file.
+  const row = readFileSync(join(dir, "docs/plans/first.md"), "utf8").split("\n")
+    .findIndex((l) => l.includes("to be decided")) + 1;
+  assert.match(r.findings[0], new RegExp(`^docs/plans/first\\.md:${row}: A14 `), r.findings[0]);
+  rm(dir);
+});
+
+test("A14 flags a unit whose test file does not exist", () => {
+  const { dir } = fixture({
+    mutate: ({ edit }) => edit("docs/plans/first.md", "`spec/hives.check.mjs`", "`spec/gone.check.mjs`"),
+  });
+  const r = both(dir);
+  assert.equal(r.status, 1, r.py.stdout + r.py.stderr);
+  assert.deepEqual(ids(r.findings), ["A14"], r.findings.join("\n"));
+  assert.match(r.findings[0], /spec\/gone\.check\.mjs/, r.findings[0]);
+  rm(dir);
+});
+
+test("A14 flags a unit whose test file asserts nothing", () => {
+  // The word "assertion" in a comment is not an assertion. A substring test would pass this file,
+  // and a check that passes on the name of the thing is one that has stopped checking.
+  const { dir } = fixture({
+    mutate: ({ write }) => write("spec/hives.check.mjs",
+      "// an assertion about the seed rows goes here, once somebody writes it\nexport {};\n"),
+  });
+  const r = both(dir);
+  assert.equal(r.status, 1, r.py.stdout + r.py.stderr);
+  assert.deepEqual(ids(r.findings), ["A14"], r.findings.join("\n"));
+  assert.match(r.findings[0], /spec\/hives\.check\.mjs/, r.findings[0]);
+  rm(dir);
+});
+
+test("A14 says the comparison was not made when a plan has no § The units", () => {
+  // A plan with a § The issues and no § The units compared nothing. Silence there would read as
+  // "every unit has a test", which is the sentence nothing checked.
+  const { dir } = fixture({
+    mutate: ({ edit }) => edit("docs/plans/first.md", "## The units", "## The pieces"),
+  });
+  const r = both(dir);
+  assert.equal(r.status, 1, r.py.stdout + r.py.stderr);
+  assert.deepEqual(ids(r.findings), ["A14"], r.findings.join("\n"));
+  assert.match(r.findings[0], /^docs\/plans\/first\.md:\d+: A14 /, r.findings[0]);
+  assert.match(r.findings[0], /not made/i, r.findings[0]);
+  rm(dir);
+});
+
+test("A14 skips a struck-through unit, which is no longer one", () => {
+  const { dir } = fixture({
+    mutate: ({ edit }) => edit("docs/plans/first.md",
+      "| 1 | seed the hive table |",
+      "| ~~2~~ | ~~dropped~~ | `spec/gone.check.mjs` | never |\n| 1 | seed the hive table |"),
+  });
+  const r = both(dir);
+  assert.equal(r.status, 0, r.py.stdout + r.py.stderr);
+  assert.deepEqual(r.findings, []);
+  rm(dir);
+});
+
+test("A14 holds an absolute or .. path to be no test path, the same in both checkers", () => {
+  // `/etc/hosts` exists on most machines, and Python's `ROOT / "/etc/hosts"` is `/etc/hosts`
+  // where Node's join(ROOT, "/etc/hosts") is not. Neither is a path in the repo.
+  const { dir } = fixture({
+    mutate: ({ edit }) => edit("docs/plans/first.md",
+      "| 1 | seed the hive table |",
+      "| 2 | outside | `/etc/hosts` | never |\n| 3 | above | `../hives.check.mjs` | never |\n"
+      + "| 1 | seed the hive table |"),
+  });
+  const r = both(dir);
+  assert.equal(r.status, 1, r.py.stdout + r.py.stderr);
+  assert.deepEqual(ids(r.findings), ["A14"], r.findings.join("\n"));
+  assert.equal(r.findings.length, 2, r.findings.join("\n"));
+  rm(dir);
+});
+
+test("A14 with a glob that matches nothing says the comparison was not made", () => {
+  const { dir } = fixture({
+    mutate: ({ dir: d }) => {
+      const cfg = JSON.parse(readFileSync(join(d, ".seam/config.json"), "utf8"));
+      cfg.assertions.A14.plan_glob = "docs/nowhere/*.md";
+      writeFileSync(join(d, ".seam/config.json"), JSON.stringify(cfg, null, 2));
+    },
+  });
+  const r = both(dir);
+  assert.equal(r.status, 1, r.py.stdout + r.py.stderr);
+  assert.deepEqual(ids(r.findings), ["A14"], r.findings.join("\n"));
+  assert.match(r.findings[0], /not made/i, r.findings[0]);
   rm(dir);
 });
 

@@ -4,6 +4,12 @@
 
 There are **two** plan files, and this is the second.
 
+## The units
+
+| # | Unit | Proves it | Done when |
+|---|---|---|---|
+| 1 | list every inspection in the week | `spec/week.check.mjs` | the week view names each inspection once |
+
 ## The issues, in the order they can be built
 
 | # | Issue | Depends on | Why this order |

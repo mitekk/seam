@@ -19,6 +19,15 @@ A seam is what one unit of work hands the next. Name the handoff, not the task.
 |---|---|---|---|
 | 1 | <what is handed over> | <unit> | <unit> |
 
+## The units
+
+A unit is the smallest piece of work that carries its own test. It is **not** an issue — planning
+something is not filing it — so a unit needs no issue number.
+
+| # | Unit | Proves it | Done when |
+|---|---|---|---|
+| 1 | <what this unit makes true> | `<path to the test that proves it>` | <what makes it done> |
+
 ## The issues, in the order they can be built
 
 | # | Issue | Depends on | Why this order |

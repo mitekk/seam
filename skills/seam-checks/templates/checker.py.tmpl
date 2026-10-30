@@ -936,6 +936,67 @@ def main() -> int:
             findings.append(finding("A13", index, 1, "",
                 f"`{prd_dir}/` has versions and no `README.md` index"))
 
+    # ── A14. The units table has the shape it claims. ──────────────────────
+    if on("A14"):
+        ran += 1
+        globs = opt("A14", "plan_glob", "docs/plans/*.md")
+        globs = [globs] if isinstance(globs, str) else list(globs)
+        res = [glob_re(g) for g in globs]
+        # Enabled and matching nothing is not a pass: the same rule A8 follows.
+        plans = [d for d in docs if any(rx.match(d) for rx in res)]
+        if not plans:
+            findings.append(finding("A14", CONFIG_PATH, 1, ", ".join(globs),
+                f"assertions.A14 is enabled and `{', '.join(globs)}` matches no doc — the units "
+                f"comparison was not made. Point it at the layer-5 rows, or switch A14 off; off "
+                f"is distinct from passing"))
+        for d in plans:
+            text = text_of[d]
+            body = section_body(text, "The units")
+            if body is None:
+                # Only a plan that sequences issues is a plan that owes its units. A layer-5 doc
+                # with neither section is another kind of file under the same glob, and says
+                # nothing here.
+                if section_body(text, "The issues") is not None:
+                    findings.append(finding("A14", d, 1, "The units",
+                        "has a `§ The issues` and no `§ The units` — the units comparison was "
+                        "not made. A plan names its units, each with the test that proves it, "
+                        "or nothing says what \"done\" is"))
+                continue
+            # The body is a slice of the text, so where it is found is where its first line is.
+            # Looking that line up by its content instead would send a blank first line to the
+            # first blank line in the file.
+            base = line_of(text, text.find(body))
+            for i, line in enumerate(body.split("\n")):
+                if not line.strip().startswith("|"):
+                    continue
+                cells = [c.strip() for c in line.strip().strip("|").split("|")]
+                # A bare numeral only: the header, the rule under it, and a struck-through unit
+                # are not units, so none of them is held to the shape.
+                if not re.fullmatch(r"\d+", cells[0], re.A):
+                    continue
+                proves = cells[2] if len(cells) > 2 else ""
+                m = re.fullmatch(r"`([\w./-]+)`", proves, re.A)
+                # An absolute or `..` path is not a path in this repo, and the two checkers
+                # would resolve it differently.
+                if not m or m.group(1).startswith("/") or ".." in m.group(1).split("/"):
+                    findings.append(finding("A14", d, base + i, proves,
+                        f"unit {cells[0]} has no test path in its \"Proves it\" cell — a unit is "
+                        f"the smallest piece of work that carries its own test, so name the test "
+                        f"as a backticked path"))
+                    continue
+                tp = ROOT / m.group(1)
+                if not tp.is_file():
+                    findings.append(finding("A14", d, base + i, m.group(1),
+                        f"unit {cells[0]} names `{m.group(1)}` as its test, and there is no such "
+                        f"file"))
+                    continue
+                # Whole words: "assertion" in a comment is not an assertion.
+                if not re.search(r"\bassert\b|\bexpect\b",
+                                 tp.read_text(encoding="utf-8", errors="replace"), re.A):
+                    findings.append(finding("A14", d, base + i, m.group(1),
+                        f"unit {cells[0]} names `{m.group(1)}` as its test, and the file asserts "
+                        f"nothing — neither `assert` nor `expect` appears in it"))
+
     # ── Repo-invented assertions. Discovered, never overwritten. ───────────
     adir = ROOT / ".seam" / "assertions"
     if adir.is_dir():

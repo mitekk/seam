@@ -1,6 +1,6 @@
 # The assertions
 
-Thirteen built in, plus whatever the repo invents. Each one says what it reads, what it needs from
+Fourteen built in, plus whatever the repo invents. Each one says what it reads, what it needs from
 `.seam/config.json`, and — the part that matters most — **what it deliberately does not reach**. A
 reader who thinks a check reaches further will trust a green run further than they should.
 
@@ -23,6 +23,7 @@ mean the same thing on a plane as in CI.
 | A11 | Config `load_bearing` matches the table's `Enforces` column | — | on |
 | A12 | Append-only layers are byte-frozen on the default branch | 3, 4 | on iff layer 3 or 4 exists |
 | A13 | ADRs carry a date and a status; PRD versions are indexed | 3, 4 | on iff layer 3 or 4 exists |
+| A14 | Every unit in a plan's `§ The units` names a test that exists and asserts | 5 | on iff a layer-5 doc exists |
 
 **Off is not passing.** An assertion that needs a repo-specific list is off until the list exists,
 because an empty list that passes reads as evidence the thing is fine. Where an assertion is on
@@ -277,6 +278,25 @@ Needs: `adr.format` and `adr.dir` or `adr.file`; `prd.dir`.
 
 Does not reach: whether the record is *true*, or whether the decision was a good one. It checks the
 shape the layer promises.
+
+## A14 — the units table has the shape it claims
+
+Reads: the `§ The units` table of each file matching the plan glob. For each row whose first cell
+is a bare numeral, the `Proves it` cell must be one backticked path, that path must be a file in
+the repo, and the file must contain `assert` or `expect` as a whole word — the word "assertion" in
+a comment is not one. A struck-through row (`~~2~~`) is not a unit and is skipped, as are the
+header and the rule under it. A plan with a `§ The issues` and no `§ The units` gets one finding
+saying the comparison was not made, and an enabled glob that matches no doc says so too; a plan
+with neither section is another kind of file and is left alone.
+
+Needs: `plan_glob`, which the wizard fills from the layer-5 rows exactly as it does for A8.
+
+Does not reach: **which files the work touches.** It asserts the *shape* of the table, not file
+coverage, and that is deliberate. A unit does not declare its paths, because an explicit path
+list per unit drifts within a day and is the ceremony that makes people stop filling the table
+in. Whether every changed file is covered by a unit is a procedural check made while building,
+not a mechanical one made here. It also does not reach whether the test is any good, or whether it
+passes — only that it exists and that it asserts something.
 
 ## Two refusals before anything is checked
 

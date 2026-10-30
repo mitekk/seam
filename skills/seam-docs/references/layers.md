@@ -65,6 +65,7 @@ enforcement. That is the gap this plugin exists to close.
 | A11 | Config `load_bearing` matches the table's `Enforces` column | — |
 | A12 | Append-only layers are byte-frozen on the default branch | 3, 4 |
 | A13 | ADRs carry a date and a status; PRD versions are indexed | 3, 4 |
+| A14 | Every unit in a plan's `§ The units` names a test that exists and asserts | 5 |
 
 `skills/seam-checks/references/assertions.md` is what each one actually reads, and what it
 deliberately does not reach.

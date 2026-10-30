@@ -936,6 +936,72 @@ async function main() {
     }
   }
 
+  // ── A14. The units table has the shape it claims. ──────────────────────
+  if (on("A14")) {
+    ran += 1;
+    const rawGlobs = opt("A14", "plan_glob", "docs/plans/*.md");
+    const globList = typeof rawGlobs === "string" ? [rawGlobs] : [...rawGlobs];
+    const res = globList.map(globRe);
+    // Enabled and matching nothing is not a pass: the same rule A8 follows.
+    const plans = docs.filter((d) => res.some((rx) => rx.test(d)));
+    if (!plans.length) {
+      findings.push(finding("A14", CONFIG_PATH, 1, globList.join(", "),
+        `assertions.A14 is enabled and \`${globList.join(", ")}\` matches no doc — the units `
+        + `comparison was not made. Point it at the layer-5 rows, or switch A14 off; off is `
+        + `distinct from passing`));
+    }
+    for (const d of plans) {
+      const text = textOf[d];
+      const body = sectionBody(text, "The units");
+      if (body === null) {
+        // Only a plan that sequences issues is a plan that owes its units. A layer-5 doc with
+        // neither section is another kind of file under the same glob, and says nothing here.
+        if (sectionBody(text, "The issues") !== null) {
+          findings.push(finding("A14", d, 1, "The units",
+            "has a `§ The issues` and no `§ The units` — the units comparison was not made. A "
+            + "plan names its units, each with the test that proves it, or nothing says what "
+            + "\"done\" is"));
+        }
+        continue;
+      }
+      // The body is a slice of the text, so where it is found is where its first line is. Looking
+      // that line up by its content instead would send a blank first line to the first blank
+      // line in the file.
+      const base = lineOf(text, text.indexOf(body));
+      const lines = body.split("\n");
+      for (let i = 0; i < lines.length; i++) {
+        if (!lines[i].trim().startsWith("|")) continue;
+        const cells = lines[i].trim().replace(/^\|/, "").replace(/\|$/, "").split("|")
+          .map((c) => c.trim());
+        // A bare numeral only: the header, the rule under it, and a struck-through unit are not
+        // units, so none of them is held to the shape.
+        if (!/^\d+$/.test(cells[0])) continue;
+        const proves = cells[2] ?? "";
+        const m = proves.match(/^`([\w./-]+)`$/);
+        // An absolute or `..` path is not a path in this repo, and the two checkers would
+        // resolve it differently.
+        if (!m || m[1].startsWith("/") || m[1].split("/").includes("..")) {
+          findings.push(finding("A14", d, base + i, proves,
+            `unit ${cells[0]} has no test path in its "Proves it" cell — a unit is the smallest `
+            + `piece of work that carries its own test, so name the test as a backticked path`));
+          continue;
+        }
+        const tp = join(ROOT, m[1]);
+        if (!existsSync(tp) || !statSync(tp).isFile()) {
+          findings.push(finding("A14", d, base + i, m[1],
+            `unit ${cells[0]} names \`${m[1]}\` as its test, and there is no such file`));
+          continue;
+        }
+        // Whole words: "assertion" in a comment is not an assertion.
+        if (!/\bassert\b|\bexpect\b/.test(readFileSync(tp, "utf8"))) {
+          findings.push(finding("A14", d, base + i, m[1],
+            `unit ${cells[0]} names \`${m[1]}\` as its test, and the file asserts nothing — `
+            + `neither \`assert\` nor \`expect\` appears in it`));
+        }
+      }
+    }
+  }
+
   // ── Repo-invented assertions. Discovered, never overwritten. ───────────
   const adir = join(ROOT, ".seam", "assertions");
   if (existsSync(adir) && statSync(adir).isDirectory()) {

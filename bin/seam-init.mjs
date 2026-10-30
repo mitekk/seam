@@ -227,6 +227,8 @@ function defaultAssertions(a) {
     A11: { enabled: true },
     A12: { enabled: has(3) || has(4), default_branch: a.repo?.default_branch ?? "main" },
     A13: { enabled: has(3) || has(4) },
+    // A14 reads the same plans A8 does, so it takes the same glob for the same reason.
+    A14: { enabled: has(5), plan_glob: layer5Globs(a) },
   };
 }
 
