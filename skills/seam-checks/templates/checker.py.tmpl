@@ -966,6 +966,7 @@ def main() -> int:
             # Looking that line up by its content instead would send a blank first line to the
             # first blank line in the file.
             base = line_of(text, text.find(body))
+            units = 0
             for i, line in enumerate(body.split("\n")):
                 if not line.strip().startswith("|"):
                     continue
@@ -974,6 +975,7 @@ def main() -> int:
                 # are not units, so none of them is held to the shape.
                 if not re.fullmatch(r"\d+", cells[0], re.A):
                     continue
+                units += 1
                 proves = cells[2] if len(cells) > 2 else ""
                 m = re.fullmatch(r"`([\w./-]+)`", proves, re.A)
                 # An absolute or `..` path is not a path in this repo, and the two checkers
@@ -996,6 +998,12 @@ def main() -> int:
                     findings.append(finding("A14", d, base + i, m.group(1),
                         f"unit {cells[0]} names `{m.group(1)}` as its test, and the file asserts "
                         f"nothing — neither `assert` nor `expect` appears in it"))
+            # A heading with nothing under it compared nothing, which is the missing section again.
+            if units == 0:
+                findings.append(finding("A14", d, 1, "The units",
+                    "has a `§ The units` with no unit in it — the units comparison was not made. "
+                    "A unit is a numbered row naming the test that proves it; a struck-through "
+                    "row is not one"))
 
     # ── Repo-invented assertions. Discovered, never overwritten. ───────────
     adir = ROOT / ".seam" / "assertions"

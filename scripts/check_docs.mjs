@@ -969,6 +969,7 @@ async function main() {
       // line in the file.
       const base = lineOf(text, text.indexOf(body));
       const lines = body.split("\n");
+      let units = 0;
       for (let i = 0; i < lines.length; i++) {
         if (!lines[i].trim().startsWith("|")) continue;
         const cells = lines[i].trim().replace(/^\|/, "").replace(/\|$/, "").split("|")
@@ -976,6 +977,7 @@ async function main() {
         // A bare numeral only: the header, the rule under it, and a struck-through unit are not
         // units, so none of them is held to the shape.
         if (!/^\d+$/.test(cells[0])) continue;
+        units += 1;
         const proves = cells[2] ?? "";
         const m = proves.match(/^`([\w./-]+)`$/);
         // An absolute or `..` path is not a path in this repo, and the two checkers would
@@ -998,6 +1000,12 @@ async function main() {
             `unit ${cells[0]} names \`${m[1]}\` as its test, and the file asserts nothing — `
             + `neither \`assert\` nor \`expect\` appears in it`));
         }
+      }
+      // A heading with nothing under it compared nothing, which is the missing section again.
+      if (units === 0) {
+        findings.push(finding("A14", d, 1, "The units",
+          "has a `§ The units` with no unit in it — the units comparison was not made. A unit is "
+          + "a numbered row naming the test that proves it; a struck-through row is not one"));
       }
     }
   }

@@ -534,6 +534,23 @@ test("an enabled assertion whose glob matches nothing says the comparison was no
 
 // ── A14: the units table has the shape it claims ─────────────────────────────
 
+test("A14 says the comparison was not made when § The units has no unit in it", () => {
+  // The heading is there and the table is there, and nothing is in it. Passing that would read as
+  // "every unit has a test" about a plan that names no unit — the same case as a missing section.
+  const { dir } = fixture({
+    mutate: ({ edit }) => edit("docs/plans/first.md",
+      "| 1 | seed the hive table | `spec/hives.check.mjs` | the seed rows load and the count is stated |\n",
+      ""),
+  });
+  const r = both(dir);
+  assert.equal(r.status, 1, r.py.stdout + r.py.stderr);
+  assert.deepEqual(ids(r.findings), ["A14"], r.findings.join("\n"));
+  assert.equal(r.findings.length, 1, r.findings.join("\n"));
+  assert.match(r.findings[0], /^docs\/plans\/first\.md:\d+: A14 /, r.findings[0]);
+  assert.match(r.findings[0], /not made/i, r.findings[0]);
+  rm(dir);
+});
+
 test("A14 flags a unit row with no test path", () => {
   const { dir } = fixture({
     mutate: ({ edit }) => edit("docs/plans/first.md", "`spec/hives.check.mjs`", "to be decided"),

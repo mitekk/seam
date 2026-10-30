@@ -286,8 +286,10 @@ is a bare numeral, the `Proves it` cell must be one backticked path, that path m
 the repo, and the file must contain `assert` or `expect` as a whole word — the word "assertion" in
 a comment is not one. A struck-through row (`~~2~~`) is not a unit and is skipped, as are the
 header and the rule under it. A plan with a `§ The issues` and no `§ The units` gets one finding
-saying the comparison was not made, and an enabled glob that matches no doc says so too; a plan
-with neither section is another kind of file and is left alone.
+saying the comparison was not made; so does a `§ The units` with no numbered row in it, because a
+heading with nothing under it compared nothing (a table whose rows are all struck through is the
+same case). An enabled glob that matches no doc says so too; a plan with neither section is
+another kind of file and is left alone.
 
 Needs: `plan_glob`, which the wizard fills from the layer-5 rows exactly as it does for A8.
 
