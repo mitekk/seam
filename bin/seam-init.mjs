@@ -237,6 +237,13 @@ function templateVars(a, cfg) {
       "_None recorded._",
     ),
     first_domain: (a.domains ?? [])[0]?.name ?? "docs",
+    domains_table: (a.domains ?? []).length
+      ? (a.domains ?? []).map((d) => `| \`${d.name}\` | ${d.covers ?? "_not recorded_"} |`).join("\n")
+      : "| _none recorded_ | `/seam:init` asks for these; they are never inferred |",
+    milestones_table: (a.milestones ?? []).length
+      ? (a.milestones ?? []).map((m) =>
+          `| ${m.n} | ${m.title} | ${m.green ?? "_not recorded_"} |`).join("\n")
+      : "| — | _none recorded_ | _the build order is asked for, not inferred_ |",
   };
 }
 
@@ -377,15 +384,25 @@ function tmpl(rel) {
   return readFileSync(join(TEMPLATES, rel), "utf8");
 }
 
+function existsTemplate(rel) {
+  return existsSync(join(TEMPLATES, rel));
+}
+
 function writeDoc(w, a, vars, d) {
   const v = { ...vars, doc: { path: d.path, owns: d.owns, title: titleFor(d.path) } };
   switch (d.layer) {
     case 1:
       // Layer 1 is the code. Writing it would be writing the thing the docs are about.
       return;
-    case 2:
-      w.create(d.path, render(tmpl("current/doc.md"), v));
+    case 2: {
+      // A layer-2 doc whose name says what it owns gets the template for that, rather than the
+      // generic one: a repo's taxonomy and its review policy have a shape, and a blank layer-2
+      // doc asking the user to invent one is the wizard not doing its job.
+      const named = { "taxonomy.md": "current/taxonomy.md", "reviewing.md": "current/reviewing.md" };
+      const special = named[basename(d.path)];
+      w.create(d.path, render(tmpl(special && existsTemplate(special) ? special : "current/doc.md"), v));
       return;
+    }
     case 3:
       if (a.adr.format === "madr") {
         w.create(join(a.adr.dir, "README.md"), render(tmpl("adr-madr/README.md"), v));

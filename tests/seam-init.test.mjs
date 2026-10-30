@@ -269,3 +269,35 @@ test("names a layer-2 doc the answers do not create as an open gap, not as a fac
   assert.match(r.stdout, /missing\s+docs\/checks\.md/, "the gap was not reported");
   rm(dir);
 });
+
+test("a layer-2 row named taxonomy.md gets the taxonomy template, not the generic one", () => {
+  const ans = answers();
+  ans.docs.push({
+    path: "docs/taxonomy.md",
+    layer: 2,
+    owns: "The domain labels, the three priorities, and the milestones",
+    enforces: "",
+    create: true,
+  });
+  ans.domains = [
+    { name: "hives", covers: "Hive state and inspection scheduling" },
+    { name: "web", covers: "The pages a beekeeper opens" },
+  ];
+  ans.milestones = [{ n: 1, title: "Queenless list", green: "the list renders from the database" }];
+  const { dir, r } = init(ans);
+  assert.equal(r.status, 0, r.stderr);
+  const t = read(dir, "docs/taxonomy.md");
+  assert.match(t, /Layer 2/);
+  assert.match(t, /amend in place/i);
+  // The repo's own domains and milestones, in the user's words.
+  assert.ok(t.includes("hives"), "a domain is missing");
+  assert.ok(t.includes("Hive state and inspection scheduling"), "a domain's words are missing");
+  assert.ok(t.includes("web"), "the second domain is missing");
+  assert.ok(t.includes("Queenless list"), "the milestone is missing");
+  assert.ok(t.includes("the list renders from the database"), "the milestone's green is missing");
+  // The three priorities, by consequence.
+  for (const p of ["p0", "p1", "p2"]) assert.ok(t.includes(p), `priority ${p} is missing`);
+  assert.match(t, /outside (?:this|the) repo sees|outside the repo/i,
+    "p0 is not defined by consequence");
+  rm(dir);
+});
