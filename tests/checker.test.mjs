@@ -340,3 +340,54 @@ for (const [rel, from, to, frozen] of [
     rm(dir);
   });
 }
+
+// ── Three defects found by running the emitted checker against a 45-doc repo ─────────────────
+
+test("a heading's comma-separated first clause is citable", () => {
+  // `docs/engineering.md` § API, cited of a heading "API, and what it refuses". Splitting clauses
+  // on an em dash alone missed it, and that one shape accounted for several of the misses on a
+  // 45-doc repo. The citing file's own H1 must not be what rescues it, so the section is cited
+  // from another file and named nothing like that file's title.
+  const { dir } = fixture({
+    mutate: ({ edit }) => {
+      edit("docs/engineering.md", "## Data access\n",
+        "## Data access, and what it does not reach\n");
+      edit("docs/checks.md", "Whether a doc is *true*.",
+        "`docs/engineering.md` § Data access is where the columns are. Whether a doc is *true*.");
+    },
+  });
+  const r = both(dir);
+  assert.ok(!r.findings.some((l) => l.includes(" A2 ")), r.findings.join("\n"));
+  rm(dir);
+});
+
+test("a § citation's name stops at a table cell boundary", () => {
+  // A `|` is never part of a heading, and leaving it in put a stray cell separator into the
+  // message — `§ The harvester runtime |` — which reads as though the heading were named that.
+  const { dir } = fixture({
+    mutate: ({ edit }) => edit("docs/engineering.md", "## Queue\n",
+      "## Queue\n\n| Doc | Owns |\n|---|---|\n| `docs/checks.md` § Nowhere | why each check exists |\n"),
+  });
+  const r = both(dir);
+  assert.equal(r.status, 1, r.py.stdout);
+  assert.deepEqual(ids(r.findings), ["A2"]);
+  assert.ok(r.findings.some((l) => /\u00a7 Nowhere,? which names no heading/.test(l)),
+    `the name must stop at the cell boundary:\n${r.findings.join("\n")}`);
+  rm(dir);
+});
+
+test("A4 does not read a file extension or a TLD as a field, with nothing configured", () => {
+  const { dir } = fixture({
+    mutate: ({ dir: d, edit }) => {
+      edit("docs/engineering.md", "An apiary's name is\n`apiaries.name`.",
+        "An apiary's name is `apiaries.name`, the parser lives in `hives.py`, and the roster is at"
+        + " `apiaries.io` — none of which is a column.");
+      const cfg = JSON.parse(readFileSync(join(d, ".seam/config.json"), "utf8"));
+      delete cfg.assertions.A4.not_fields;      // nothing configured at all
+      writeFileSync(join(d, ".seam/config.json"), JSON.stringify(cfg, null, 2));
+    },
+  });
+  const r = both(dir);
+  assert.equal(r.status, 0, `${r.py.stderr}${r.py.stdout}`);
+  rm(dir);
+});

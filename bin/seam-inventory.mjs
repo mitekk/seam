@@ -101,7 +101,7 @@ function anchors(text) {
     if (core) out.add(core.toLowerCase());
     // Every dash-separated clause, not only the first: "D-012 — Geometry and spacing" is cited
     // as § Geometry as often as it is cited as § D-012.
-    for (const clause of h.split(" — ")) {
+    for (const clause of h.split(/ — |, /)) {
       const c = clause.trim();
       if (!c) continue;
       out.add(c.toLowerCase());
@@ -126,8 +126,8 @@ function citesSection(set, cited) {
 
 const MD_CITE = /`([\w./-]+\.md)`/g;
 // `path.md` § Name, where the name runs straight on into the sentence around it.
-const PATH_SECTION = /`([\w./-]+\.md)`[\s,*]{0,4}§[ \t\n]*([A-Za-z][^.;:—(*`§\n]*)/g;
-const BARE_SECTION = /§[ \t]*([A-Za-z][^.;:—(*`§\n]*)/g;
+const PATH_SECTION = /`([\w./-]+\.md)`[\s,*]{0,4}§[ \t\n]*([A-Za-z][^.;:—(*`§|\n]*)/g;
+const BARE_SECTION = /§[ \t]*([A-Za-z][^.;:—(*`§|\n]*)/g;
 // `campaign-github` § The one gate names a skill, not a markdown file. Nothing in the tree can
 // resolve that, so it is reported as unresolvable rather than as a defect: a check that reds on
 // a citation it cannot evaluate is a check that gets switched off.
@@ -217,7 +217,7 @@ function sectionCitations(repo, from, text, anchorsOf) {
   const CONNECTOR = /^[\s,]*(?:and|or)?[\s,]*$/;
 
   // Backticked tokens, bare `*.md` paths, and `§ Name` runs, in source order, per paragraph.
-  const TOKEN = /`([^`\n]+)`|(?<![`\w./-])([\w./-]+\.md)(?![\w.-])|§[ \t\n]*([A-Za-z][^.;:—(*`§\n]*)/g;
+  const TOKEN = /`([^`\n]+)`|(?<![`\w./-])([\w./-]+\.md)(?![\w.-])|§[ \t\n]*([A-Za-z][^.;:—(*`§|\n]*)/g;
   for (const para of text.split(/\n[ \t]*\n/)) {
     let target = null;          // null = the file this paragraph is written in
     let targetEnd = -1;         // where the target's reach starts being measured from

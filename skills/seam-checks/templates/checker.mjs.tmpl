@@ -114,7 +114,9 @@ function anchors(text) {
   const out = new Set();
   for (const h of headings(text)) {
     out.add(h.toLowerCase());
-    for (const clause of h.split(" — ")) {
+    // Split on a comma as well as an em dash: "API, and what it refuses" is cited as
+    // § API, and an em-dash-only split missed that shape repeatedly on a real repo.
+    for (const clause of h.split(/ — |, /)) {
       const c = clause.trim();
       if (!c) continue;
       out.add(c.toLowerCase());
@@ -164,7 +166,8 @@ function sectionBody(text, name) {
 }
 
 const MD_CITE_RE = /`([\w./@-]+\.md)`/g;
-const TOKEN_RE = /`([^`\n]+)`|(?<![`\w./-])([\w./-]+\.md)(?![\w.-])|§[ \t\n]*([A-Za-z][^.;:—(*`§\n]*)/g;
+// A `|` ends a section name: it is a table cell boundary and never part of a heading.
+const TOKEN_RE = /`([^`\n]+)`|(?<![`\w./-])([\w./-]+\.md)(?![\w.-])|§[ \t\n]*([A-Za-z][^.;:—(*`§|\n]*)/g;
 const ADJACENT_RE = /^[\s,*]{0,4}$/;
 const CONNECTOR_RE = /^[\s,]*(?:and|or)?[\s,]*$/;
 
@@ -264,6 +267,17 @@ function tsUnions(text) {
 }
 
 // ── A3: the documented check list against CI ─────────────────────────────────
+
+// Right-hand sides that are not fields: file extensions and hostname endings. A dotted name
+// whose right half is one of these is a path or a host, not a reference.
+const DEFAULT_NOT_FIELDS = new Set([
+  "md", "sql", "yml", "yaml", "json", "toml", "ini", "cfg", "txt", "csv", "xml", "html", "css",
+  "py", "pyi", "mjs", "cjs", "js", "jsx", "ts", "tsx", "sh", "bash", "zsh", "rb", "go", "rs",
+  "java", "kt", "swift", "php", "lock", "log", "env", "example", "tmpl", "png", "jpg", "svg",
+  "webp", "ico", "pdf", "zip", "gz", "prisma", "proto", "graphql", "d",
+  "com", "org", "net", "io", "dev", "sh2", "co", "me", "ai", "app", "so", "gov", "edu", "il",
+  "uk", "de", "online",
+]);
 
 const DEFAULT_TOKEN_RES = [
   "scripts/[\\w.\\-/]+\\.(?:py|sql|mjs|js|ts|sh)",
@@ -527,7 +541,10 @@ async function main() {
   // ── A4. Every `<identifier>.<field>` in prose resolves. ──────────────────
   if (on("A4")) {
     ran += 1;
-    const notFields = new Set(opt("A4", "not_fields", []));
+    // A built-in default, because an empty list is not a sensible one: on a real repo it read
+    // `jobs.py` and `apiaries.io` as table columns. The config ADDS to this rather than replacing
+    // it, so a repo cannot lose the defaults by naming one exemption of its own.
+    const notFields = new Set([...DEFAULT_NOT_FIELDS, ...opt("A4", "not_fields", [])]);
     const notRefs = new Set(opt("A4", "not_references", []));
     const tables = {};
     for (const art of opt("A4", "artifacts", [])) {

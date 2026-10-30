@@ -73,6 +73,15 @@ Does not reach:
 - **A document's title.** Only levels 2 to 6 are sections. Without that bound, `§ Checks` in a file
   called `# Checks` matched the title, whose body is the whole file — so a renamed section still
   compared something and passed.
+- **A run whose first citation swallowed the prose after it.** The section name is captured up to
+  the next sentence boundary, so in "`docs/checks.md` § Checks plus this file's § The harvester
+  runtime" the first name eats "plus this file's " and the second `§` then looks adjacent to the
+  first — so it is attributed to `docs/checks.md` rather than to the file "this file" means.
+  **This one is a known miss, not a bound that holds.** Measured on a 45-doc repo: 19 targeted
+  misses inside the scope that repo's own checker uses, and a handful of them this shape. The
+  baseline is the mechanism — these go in on day one with a number on them, and a *new* one still
+  reds. Bounding the capture tighter was tried and costs more than it buys: a heading's name has
+  no reliable right edge in prose.
 
 ## A3 — the documented check list against CI
 
@@ -108,10 +117,15 @@ Does not reach:
 Reads: `` `word.word` `` in every doc, against the artifact. `sql` parses `create table`; `ts`
 parses a union or enum.
 
-Needs: `artifacts` (`[{path, parser}]`), `not_fields` (right-hand sides that are not fields — file
-extensions and TLDs, so `docs/x.md` and `wa.me` are not read as references), and
-`not_references` (whole dotted names that are a convention rather than a reference, like a job
-kind `resolve.name`).
+Needs: `artifacts` (`[{path, parser}]`) and, optionally, `not_references` — whole dotted names
+that are a convention rather than a reference, like a job kind `resolve.name` or a Python module
+`signals.SITEMAP_PATTERNS`.
+
+**`not_fields` has a built-in default and the config adds to it**: file extensions and hostname
+endings, so `jobs.py`, `docs/x.md` and `apiaries.io` are read as a path or a host rather than as a
+column. An empty default was not a sensible one — on a 45-doc repo it produced eleven findings,
+every one of them an extension or a TLD. Adding one exemption of your own cannot lose the
+defaults, because the config's list is unioned with them rather than replacing them.
 
 Does not reach: anything the parser does not parse. **Start with SQL `create table` and TypeScript
 unions; everything else is off by default**, because a parser that half-reads an artifact produces

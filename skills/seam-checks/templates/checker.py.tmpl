@@ -140,7 +140,9 @@ def anchors(text: str) -> set[str]:
     out: set[str] = set()
     for h in headings(text):
         out.add(h.lower())
-        for clause in h.split(" — "):
+        # Split on a comma as well as an em dash: "API, and what it refuses" is cited as
+        # § API, and an em-dash-only split missed that shape repeatedly on a real repo.
+        for clause in re.split(r" — |, ", h):
             c = clause.strip()
             if not c:
                 continue
@@ -191,8 +193,9 @@ def section_body(text: str, name: str) -> str | None:
 
 
 MD_CITE_RE = re.compile(r"`([\w./@-]+\.md)`")
+# A `|` ends a section name: it is a table cell boundary and never part of a heading.
 TOKEN_RE = re.compile(r"`([^`\n]+)`|(?<![`\w./-])([\w./-]+\.md)(?![\w.-])"
-                      r"|§[ \t\n]*([A-Za-z][^.;:—(*`§\n]*)")
+                      r"|§[ \t\n]*([A-Za-z][^.;:—(*`§|\n]*)")
 ADJACENT_RE = re.compile(r"^[\s,*]{0,4}$")
 CONNECTOR_RE = re.compile(r"^[\s,]*(?:and|or)?[\s,]*$")
 
@@ -296,6 +299,17 @@ def ts_unions(text: str) -> dict[str, set[str]]:
 
 
 # ── A3: the documented check list against CI ─────────────────────────────────
+
+# Right-hand sides that are not fields: file extensions and hostname endings. A dotted name
+# whose right half is one of these is a path or a host, not a reference.
+DEFAULT_NOT_FIELDS = {
+    "md", "sql", "yml", "yaml", "json", "toml", "ini", "cfg", "txt", "csv", "xml", "html", "css",
+    "py", "pyi", "mjs", "cjs", "js", "jsx", "ts", "tsx", "sh", "bash", "zsh", "rb", "go", "rs",
+    "java", "kt", "swift", "php", "lock", "log", "env", "example", "tmpl", "png", "jpg", "svg",
+    "webp", "ico", "pdf", "zip", "gz", "prisma", "proto", "graphql", "d",
+    "com", "org", "net", "io", "dev", "sh2", "co", "me", "ai", "app", "so", "gov", "edu", "il",
+    "uk", "de", "online",
+}
 
 DEFAULT_TOKEN_RES = [
     r"scripts/[\w.\-/]+\.(?:py|sql|mjs|js|ts|sh)",
@@ -562,7 +576,10 @@ def main() -> int:
     # ── A4. Every `<identifier>.<field>` in prose resolves. ──────────────────
     if on("A4"):
         ran += 1
-        not_fields = set(opt("A4", "not_fields", []))
+        # A built-in default, because an empty list is not a sensible one: on a real repo it
+        # read `jobs.py` and `apiaries.io` as table columns. The config ADDS to this rather than
+        # replacing it, so a repo cannot lose the defaults by naming one exemption of its own.
+        not_fields = DEFAULT_NOT_FIELDS | set(opt("A4", "not_fields", []))
         not_refs = set(opt("A4", "not_references", []))
         tables: dict[str, set[str]] = {}
         for art in opt("A4", "artifacts", []):
