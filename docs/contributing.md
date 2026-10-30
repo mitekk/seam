@@ -40,9 +40,14 @@ Authority, by question asked:
 ## Checks
 
 ```bash
-node --test tests/                             # the generator and both emitted checkers
+node --test                                    # the generator and both emitted checkers
 claude plugin validate --strict .              # manifests, skills, commands
 ```
+
+`node --test` takes **no positional argument**. `node --test tests/` fails on Node 24 with
+`Cannot find module .../tests` — a bare directory positional is resolved as a module rather than
+scanned — so discovery is left to node, which finds `tests/**/*.test.mjs` and skips
+`tests/helpers.mjs` because it is not named as a test.
 
 `claude plugin validate --strict --profile directory .` additionally fails on a missing listing
 icon. That is a submission asset and not a correctness check, so it is not in the list above.

@@ -106,7 +106,7 @@ files for exactly that reason.
 the checks. In short:
 
 ```bash
-node --test tests/                            # the generator and the emitted checkers
+node --test                                   # the generator and the emitted checkers
 claude plugin validate --strict .             # manifests and components
 claude plugin eval . --allow-tools Write Edit Bash --scaffold   # the skills
 ```
