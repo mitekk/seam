@@ -2,7 +2,7 @@
   "seam_version": "0.1.0",
   "repo": {
     "name": "seam",
-    "default_branch": "main"
+    "default_branch": "master"
   },
   "table": {
     "file": "docs/contributing.md"

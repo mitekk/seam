@@ -128,7 +128,7 @@ const MD_CITE = /`([\w./-]+\.md)`/g;
 // `path.md` § Name, where the name runs straight on into the sentence around it.
 const PATH_SECTION = /`([\w./-]+\.md)`[\s,*]{0,4}§[ \t\n]*([A-Za-z][^.;:—(*`§|\n]*)/g;
 const BARE_SECTION = /§[ \t]*([A-Za-z][^.;:—(*`§|\n]*)/g;
-// `campaign-github` § The one gate names a skill, not a markdown file. Nothing in the tree can
+// `some-skill` § The one gate names a skill, not a markdown file. Nothing in the tree can
 // resolve that, so it is reported as unresolvable rather than as a defect: a check that reds on
 // a citation it cannot evaluate is a check that gets switched off.
 const OTHER_SECTION = /`([\w./@-]+)`[\s,*]{0,4}§[ \t\n]*([A-Za-z][^.;:—(*`§\n]*)/g;
@@ -187,7 +187,7 @@ function artifactParser(path) {
  *  at 128 of one real file's 128 reported misses. A paragraph is the bound because citations wrap
  *  across lines but never across a blank one.
  *
- *  A target that is not a markdown file — `` `campaign-github` § The one gate `` — is
+ *  A target that is not a markdown file — `` `some-skill` § The one gate `` — is
  *  unresolvable rather than dangling. A check that reds on a citation it cannot evaluate is a
  *  check that gets switched off. */
 function sectionCitations(repo, from, text, anchorsOf) {
@@ -233,7 +233,7 @@ function sectionCitations(repo, from, text, anchorsOf) {
           targetEnd = m.index + m[0].length;
           shadow = null;
         } else if (backticked !== undefined && /^[\w./@-]+$/.test(tok)) {
-          // `campaign-github` § The one gate names a skill, and binds only a § that is ADJACENT
+          // `some-skill` § The one gate names a skill, and binds only a § that is ADJACENT
           // to it. Binding every later § in the paragraph took one real repo from 266
           // unresolvable citations to 651, because an incidental `medium` or `low` three words
           // earlier shadowed a citation that resolved perfectly well.
@@ -491,7 +491,7 @@ function main() {
   // directory is reported separately — it is a candidate for folding into layer 2, which is a
   // decision for the user rather than an inventory entry.
   // Everything under docs/, plus every markdown file at the repo root — which is where a
-  // product brief and a README live, and campaign's table lists PRODUCT.md as a layer-4 row.
+  // product brief and a README live, and one real repo's table lists PRODUCT.md as a layer-4 row.
   const docPaths = files.filter((f) =>
     f.endsWith(".md") && (f.startsWith("docs/") || !f.includes("/") || f === host));
 

@@ -264,12 +264,12 @@ test("a § citation that names no heading at all is still reported", () => {
 test("a § preceded by a backticked non-markdown token is unresolvable, not dangling", () => {
   const { dir } = adoptRepo();
   write(dir, "docs/engineering.md",
-    "# Engineering\n\nThe `campaign-github` § The one gate owns the refusal.\n");
+    "# Engineering\n\nThe `some-skill` § The one gate owns the refusal.\n");
   const { inv } = inventory(dir);
   const d = byPath(inv, "docs/engineering.md");
   assert.deepEqual(d.dangling.sections, [],
     "a § naming something that is not a markdown file cannot be resolved, so it is not a defect");
-  assert.ok(d.cites.unresolvable_sections.some((s) => s.includes("campaign-github")),
+  assert.ok(d.cites.unresolvable_sections.some((s) => s.includes("some-skill")),
     JSON.stringify(d.cites.unresolvable_sections));
   rm(dir);
 });
