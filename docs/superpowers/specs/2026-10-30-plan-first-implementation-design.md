@@ -251,21 +251,65 @@ Consequences, which the builder was right to call out:
   actually routes work.
 - **The finish-line measurement**: how a session reports whether what it wrote was consulted.
 
-## Open — the owner's to settle
+## Settled by the owner, 2026-10-31
 
-Three questions turned out to be one: **does seam get a layer-3 decision track, and if so what
-lands in it?** It decides all of:
+Three answers, given after the builder check.
 
-- where the **dated record of the disposition reversal** goes (the design says a reversal is a new
-  record; seam's `adr.file` points at a `docs/decisions.md` that does not exist, and A12/A13 are
-  off);
-- whether the **ruling ledger** is built, or whether rulings stay in the PR body or the transcript
-  — with the author's own doubt attached: 28 entries, consulted once;
-- whether a **direction correction** gets recorded durably, which is the last place the owner's
-  live correction still dies in a transcript, and goal 1's stated reason for existing.
+### A work unit is a step inside a plan
 
-Creating the track also settles a README open question and flips byte-freeze on for everything
-written there afterwards.
+The derivation is confirmed. Layer 5's plan template gains a **second table** beside the existing
+`§ The issues`:
 
-And separately: **what, if anything, existing adopters get.** A regenerated plugin would silently
-change their fold-in rule.
+```markdown
+## The units
+
+| # | Unit | Proves it | Done when |
+|---|---|---|---|
+| 1 | Reject an allow entry with no reason | planted-drift fixture: an entry without `reason` → exit 2, both languages | fixture passes, message names the path |
+
+## The issues, in the order they can be built
+
+| # | Issue | Depends on | Why this order |
+|---|---|---|---|
+| 1 | #4 seed the database | — | nothing reads before something writes |
+```
+
+`§ The issues` is unchanged and A8 still reads it. The **inverted** backstop reads `§ The units`.
+`Closes #N` / `Part of #N` still cite issues; a unit with no issue is cited by its row.
+
+That makes the start contract performable without filing anything, which is the whole point of the
+new disposition row.
+
+### seam gets a layer-3 track, and it holds rulings and direction corrections
+
+`docs/decisions.md` — the single-dated-file format, which is what seam's own config already points
+`adr.file` at. It holds three kinds of entry:
+
+1. **Decisions**, including this design's reversal of the size-based fold-in order.
+2. **Rulings** taken in flight, with what each costs if wrong. This is the ruling ledger, and the
+   answer is that it is built — the owner's doubt about 28-entries-read-once is noted and
+   overruled, because the alternative leaves the DoD's third clause with no home.
+3. **Direction corrections** — when the owner says "not that way", that is a decision and it lands
+   here. This closes the one remaining gap where a live correction died in a transcript, which is
+   goal 1's stated reason for existing.
+
+Consequences, all of which the implementation has to carry:
+
+- it **settles a README open question** ("whether seam needs its own layer-3 decision track"), so
+  the README's two-opens paragraph changes to one;
+- **A12 and A13 switch on** for seam, so everything written in `docs/decisions.md` is byte-frozen
+  once it reaches `master` — a reversal is a new dated entry, never an edit;
+- the `assertions.A1.allow` entry for `docs/decisions.md` — added because its *absence* was the
+  subject of the sentence citing it — **gets deleted**, because the absence stops being true. An
+  allow entry that is no longer true is removed, not carried; that is the difference from a
+  baseline entry.
+
+### Existing adopters get nothing
+
+The only adopter is `agent_starter`, on an unmerged branch. The reorder is pre-1.0 and the version
+says so. No migration machinery for a population of one.
+
+## Still open
+
+Nothing the owner has to settle. § Left to the builder is the remaining list, and it is
+deliberately the builder's.
