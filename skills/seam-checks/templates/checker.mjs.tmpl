@@ -188,6 +188,119 @@ function tableCells(line) {
   return t.slice(1).replace(/\|$/, "").split("|").map((c) => c.replace(ASCII_WS, ""));
 }
 
+// ── The assertion pattern ────────────────────────────────────────────────────
+
+const DEFAULT_ASSERTION_PATTERN =
+  String.raw`\bassert(?:[_A-Z]\w*)?\b|\bexpect(?:[_A-Z]\w*)?\b|\b(?:ASSERT|EXPECT)_\w+\b`;
+
+// What a backslash may be followed by: a class or a control escape, or a character that would
+// otherwise mean something. `\b` is an anchor and is handled where it can appear; `\B` is left
+// out because Python's matches nowhere in an empty string and Node's matches there.
+const ESCAPABLE = "wWdDsSnrt" + ".^$|?*+()[]{}\\/-&~";
+
+/**
+ * Why `p` is not a pattern both emitted checkers read the same way, or null when it is.
+ *
+ * `assertions.A14.assertion_pattern` is run by a Node engine here and a Python one in the other
+ * checker, and they disagree about plenty: inline flags, named groups, a range out of a class
+ * escape, possessive quantifiers, `{,n}`. A checker that ran whatever its own engine accepted
+ * would pass a repo in one language and fail it in the other, so a pattern is held to a subset
+ * both read identically — literals, `.`, `^` `$` `|`, `(…)` and `(?:…)`, simple `[…]` classes,
+ * the escapes above, `\b`, and `* + ? {n} {n,} {n,m}` with an optional lazy `?`. Printable
+ * ASCII only. It is a scanner and not a regex because a regex cannot count brackets.
+ */
+function portableRegex(p) {
+  if (p === "") return "it is empty";
+  const bad = (k) => `character ${k + 1} is outside the subset both checkers read the same way`;
+  const odd = p.search(/[^\x20-\x7e]/);
+  if (odd !== -1) return bad(odd);
+  const n = p.length;
+  let i = 0;
+  let depth = 0;
+  let prev = null;                  // what a quantifier may follow: "atom", or nothing
+  while (i < n) {
+    const c = p[i];
+    if (c === "\\") {
+      const d = p.charAt(i + 1);
+      if (d === "b") prev = "anchor";
+      else if (d !== "" && ESCAPABLE.includes(d)) prev = "atom";
+      else return bad(i);
+      i += 2;
+    } else if (c === "[") {
+      let j = i + 1;
+      if (p.charAt(j) === "^") j += 1;
+      let items = 0;
+      for (;;) {
+        const k = p.charAt(j);
+        if (k === "") return bad(i);                          // never closed
+        if (k === "]") {
+          if (items === 0) return bad(j);                     // empty: engines disagree
+          j += 1;
+          break;
+        }
+        if (k === "\\") {
+          const d = p.charAt(j + 1);
+          if (d === "" || !ESCAPABLE.includes(d)) return bad(j);
+          j += 2;
+        } else if (k === "[" || k === "&" || k === "~" || k === "|") {
+          return bad(j);                                      // Python warns these may change
+        } else if (k === "-") {
+          // A hyphen is a literal only at either end of the class; anywhere else it is a range
+          // operator, and what a range from a class escape means differs by engine.
+          if (items !== 0 && p.charAt(j + 1) !== "]") return bad(j);
+          j += 1;
+        } else if (p.charAt(j + 1) === "-" && p.charAt(j + 2) !== "]" && p.charAt(j + 2) !== "") {
+          const hi = p.charAt(j + 2);
+          if ("\\[]-&~|".includes(hi) || hi < k) return bad(j);
+          j += 3;
+        } else {
+          j += 1;
+        }
+        items += 1;
+      }
+      prev = "atom";
+      i = j;
+    } else if (c === "(") {
+      if (p.charAt(i + 1) === "?") {
+        if (p.charAt(i + 2) !== ":") return bad(i);           // lookaround, flags, names
+        i += 3;
+      } else {
+        i += 1;
+      }
+      depth += 1;
+      prev = null;
+    } else if (c === ")") {
+      if (depth === 0) return bad(i);
+      depth -= 1;
+      prev = "atom";
+      i += 1;
+    } else if (c === "|") {
+      prev = null;
+      i += 1;
+    } else if (c === "^" || c === "$") {
+      prev = "anchor";
+      i += 1;
+    } else if (c === "*" || c === "+" || c === "?") {
+      if (prev !== "atom") return bad(i);
+      i += 1;
+      if (p.charAt(i) === "?") i += 1;                        // lazy; a second quantifier is refused
+      prev = "quantified";
+    } else if (c === "{") {
+      const m = prev === "atom" ? p.slice(i).match(/^\{(\d{1,3})(?:,(\d{0,3}))?\}/) : null;
+      if (!m || (m[2] && Number(m[2]) < Number(m[1]))) return bad(i);
+      i += m[0].length;
+      if (p.charAt(i) === "?") i += 1;
+      prev = "quantified";
+    } else if (c === "}" || c === "]") {
+      return bad(i);
+    } else {
+      prev = "atom";                                          // `.` and every plain literal
+      i += 1;
+    }
+  }
+  return depth === 0 ? null : "a group is never closed";
+}
+
 const MD_CITE_RE = /`([\w./@-]+\.md)`/g;
 // A `|` ends a section name: it is a table cell boundary and never part of a heading.
 const TOKEN_RE = /`([^`\n]+)`|(?<![`\w./-])([\w./-]+\.md)(?![\w.-])|§[ \t\n]*([A-Za-z][^.;:—(*`§|\n]*)/g;
@@ -965,6 +1078,23 @@ async function main() {
         + `comparison was not made. Point it at the layer-5 rows, or switch A14 off; off is `
         + `distinct from passing`));
     }
+    // What counts as an assertion is the repo's to say: a Go table test fails through `t.Fatalf`
+    // and contains no assertion word at all, so no default can be right for every repo. A pattern
+    // that cannot be read the same way by both checkers is reported, and only the comparison
+    // that needed it is skipped.
+    const pat = opt("A14", "assertion_pattern", DEFAULT_ASSERTION_PATTERN);
+    let assertRe = null;
+    let why = typeof pat === "string" ? portableRegex(pat) : "it is not a string";
+    if (why === null) {
+      try { assertRe = new RegExp(pat, "m"); } catch { why = "it did not compile"; }
+    }
+    if (why !== null) {
+      findings.push(finding("A14", CONFIG_PATH, 1, typeof pat === "string" ? pat : "",
+        `assertions.A14.assertion_pattern${typeof pat === "string" ? ` \`${pat}\`` : ""} could not `
+        + `be compiled — ${why}. Whether a test file asserts anything was not compared; the rest `
+        + `of A14 ran. Write the pattern in the subset \`references/assertions.md\` § A14 `
+        + `describes, or remove the key for the default`));
+    }
     for (const d of plans) {
       const text = textOf[d];
       const body = sectionBody(text, "The units");
@@ -1028,13 +1158,15 @@ async function main() {
           findings.push(finding("A14", d, base + i, m[1],
             `unit ${cells[0]} names \`${m[1]}\` as its test, and the file could not be read — `
             + `whether it asserts anything was not compared`));
-        } else if (!/\bassert(?:[_A-Z]\w*)?\b|\bexpect(?:[_A-Z]\w*)?\b|\b(?:ASSERT|EXPECT)_\w+\b/
-            .test(content)) {
-          // Whole words, case-sensitive: `assert`, `assertEqual`, `assert_eq!`, `expect(x)`,
-          // `ASSERT_EQ`. The word "assertion" or "expectation" in a comment is not a call.
-          findings.push(finding("A14", d, base + i, m[1],
-            `unit ${cells[0]} names \`${m[1]}\` as its test, and the file asserts nothing — no `
-            + `\`assert\`, \`expect\`, \`ASSERT_\` or \`EXPECT_\` call appears in it`));
+        } else if (assertRe !== null) {
+          // The pattern sees the file with line endings made `\n` and each run of non-ASCII
+          // characters made one `~`, so `.`, `\s` and `$` mean the same to both engines.
+          const flat = content.replace(/\r\n?/g, "\n").replace(/[^\x00-\x7f]+/g, "~");
+          if (!assertRe.test(flat)) {
+            findings.push(finding("A14", d, base + i, m[1],
+              `unit ${cells[0]} names \`${m[1]}\` as its test, and the file asserts nothing — `
+              + `nothing in it matches \`assertions.A14.assertion_pattern\``));
+          }
         }
       }
       // A heading with nothing under it compared nothing, which is the missing section again.

@@ -691,6 +691,129 @@ test("A14 says a test file it cannot read could not be read, and the checker kee
   }
 });
 
+/** Rewrite one key of assertions.A14 in a fixture's config. The checker reads it at run time. */
+function setA14(dir, key, value) {
+  const p = join(dir, ".seam/config.json");
+  const cfg = JSON.parse(readFileSync(p, "utf8"));
+  if (value === undefined) delete cfg.assertions.A14[key];
+  else cfg.assertions.A14[key] = value;
+  writeFileSync(p, JSON.stringify(cfg, null, 2));
+}
+
+test("A14's assertion_pattern lets a Go table test, which has no assertion word, pass", () => {
+  // `t.Fatalf` is how a Go test fails, and a table test contains nothing else. No default pattern
+  // can know that, so the vocabulary is the repo's to set — and the repo keeps the rest of A14.
+  const go = "func TestHives(t *testing.T) {\n\tif got != want {\n"
+    + "\t\tt.Fatalf(\"got %v want %v\", got, want)\n\t}\n}\n";
+  const { dir } = fixture({
+    mutate: ({ dir: d, edit, write }) => {
+      edit("docs/plans/first.md", "`spec/hives.check.mjs`", "`spec/hives_test.go`");
+      write("spec/hives_test.go", go);
+      // One pattern is the repo's whole vocabulary, so it still has to admit the other plan's
+      // `assert` file.
+      setA14(d, "assertion_pattern", String.raw`t\.Fatal|t\.Error|\bassert\b`);
+    },
+  });
+  const set = both(dir);
+  assert.equal(set.status, 0, set.py.stdout + set.py.stderr);
+  assert.deepEqual(set.findings, []);
+
+  // The same file under the default pattern asserts nothing, which is the point of the key.
+  setA14(dir, "assertion_pattern", undefined);
+  const unset = both(dir);
+  assert.equal(unset.status, 1, unset.py.stdout + unset.py.stderr);
+  assert.deepEqual(ids(unset.findings), ["A14"], unset.findings.join("\n"));
+  assert.match(unset.findings[0], /spec\/hives_test\.go.*asserts nothing/, unset.findings[0]);
+  rm(dir);
+});
+
+test("A14 with a pattern it cannot compile says so, and the rest of A14 still runs", () => {
+  const { dir } = fixture({
+    mutate: ({ dir: d, edit }) => {
+      // A second unit pointing at a file that is not there: it must still be found.
+      edit("docs/plans/first.md", "| 1 | seed the hive table |",
+        "| 2 | gone | `spec/gone.check.mjs` | never |\n| 1 | seed the hive table |");
+      setA14(d, "assertion_pattern", "(unclosed");
+    },
+  });
+  const r = both(dir);
+  assert.equal(r.status, 1, r.py.stdout + r.py.stderr);
+  assert.deepEqual(ids(r.findings), ["A14"], r.findings.join("\n"));
+  assert.equal(r.findings.length, 2, r.findings.join("\n"));
+  assert.ok(r.findings.some((l) => /^\.seam\/config\.json:1: A14 .*could not be compiled/.test(l)),
+    r.findings.join("\n"));
+  assert.ok(r.findings.some((l) => /spec\/gone\.check\.mjs.*no such file/.test(l)),
+    r.findings.join("\n"));
+  assert.doesNotMatch(r.py.stderr + r.js.stderr, /Traceback|SyntaxError|re\.error/);
+  rm(dir);
+});
+
+test("A14 holds a pattern to the subset both languages read the same way", () => {
+  // Each of these compiles in one language and not the other, or compiles in both and means
+  // something different. A checker that ran whichever its own engine accepted would pass a repo
+  // in Python and fail it in Node, so the pattern is held to a subset and these are refused
+  // alike by both.
+  const refused = [
+    ["(?i)assert", "an inline flag: Python accepts it, Node does not"],
+    ["(?<n>assert)", "a named group: Node's syntax, not Python's"],
+    ["(?P<n>assert)", "a named group: Python's syntax, not Node's"],
+    ["assert(?=\\()", "a lookahead"],
+    ["[\\w-.]", "a range from a class escape: Node accepts it, Python refuses"],
+    ["assert*+", "a possessive quantifier: Python 3.11 accepts it, nothing before does"],
+    ["x{,3}", "an open lower bound: Python reads a quantifier, Node a literal"],
+    ["\\p{L}", "a Unicode property: Node needs a flag, Python has none"],
+    ["assert\\1", "a back-reference"],
+    ["caf\u00e9", "a non-ASCII literal"],
+    ["", "an empty pattern, which matches every file"],
+    ["a]", "a bare closing bracket"],
+    ["[]a]", "an empty class: Node reads it as matching nothing"],
+  ];
+  const { dir } = fixture();
+  for (const [pattern, why] of refused) {
+    setA14(dir, "assertion_pattern", pattern);
+    const r = both(dir);
+    assert.equal(r.status, 1, `${JSON.stringify(pattern)} (${why}) was accepted\n${r.py.stdout}`);
+    assert.equal(r.findings.length, 1, `${JSON.stringify(pattern)}\n${r.findings.join("\n")}`);
+    assert.match(r.findings[0], /could not be compiled/, `${JSON.stringify(pattern)} (${why})`);
+  }
+  for (const notAString of [5, ["assert"], { pattern: "assert" }]) {
+    setA14(dir, "assertion_pattern", notAString);
+    const r = both(dir);
+    assert.equal(r.status, 1, JSON.stringify(notAString));
+    assert.match(r.findings[0], /could not be compiled — it is not a string/, r.findings[0]);
+  }
+  rm(dir);
+});
+
+test("A14 matches a pattern against the same text in both languages", () => {
+  // CRLF files, a U+2028 in a comment, a U+FEFF where Node's \s matches and Python's does not:
+  // the file is read with line endings normalised and each run of non-ASCII characters made one
+  // "~", so a pattern cannot tell the two engines apart. [pattern, file, passes]
+  const cases = [
+    [String.raw`^\s*check`, "\tcheck(x)\r\n", true],
+    [String.raw`^check`, "\tcheck(x)\n", false],
+    [String.raw`done$`, "run done\r\nnext\r\n", true],
+    [String.raw`a.c`, "a\u2028c\n", true],
+    [String.raw`a\sb`, "a\ufeffb\n", false],
+    [String.raw`a\sb`, "a\u0085b\n", false],
+    [String.raw`\w+`, "\u00e9\n", false],
+    [String.raw`a.{2}b`, "a\u{1F41D}\u{1F41D}b\n", false],
+    [String.raw`a.b`, "a\u{1F41D}b\n", true],
+  ];
+  const { dir } = fixture({
+    // The second plan names the same file, so the pattern under test is the only judge of both.
+    mutate: ({ edit }) => edit("docs/plans/second.md", "`spec/week.check.mjs`", "`spec/hives.check.mjs`"),
+  });
+  for (const [pattern, file, passes] of cases) {
+    writeFileSync(join(dir, "spec/hives.check.mjs"), file);
+    setA14(dir, "assertion_pattern", pattern);
+    const r = both(dir);
+    assert.equal(r.status, passes ? 0 : 1,
+      `${pattern} against ${JSON.stringify(file)} should ${passes ? "pass" : "find nothing"}\n${r.findings.join("\n")}`);
+  }
+  rm(dir);
+});
+
 test("A14 accepts the assertion idioms of the common test frameworks", () => {
   // Rust, unittest, JUnit, minitest, googletest, a bare Python assert and jest. Each is one file,
   // so a rejected idiom names itself.

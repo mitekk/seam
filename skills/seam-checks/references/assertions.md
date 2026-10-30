@@ -289,17 +289,41 @@ dropping at most one pipe at each end and trimming ASCII whitespace only, so a r
 pipe, or a numeral padded with a non-ASCII space, is not a unit — and is read the same way by
 both emitted checkers.
 
-**What counts as an assertion**, so a repo whose test is rejected can see why: any of these as a
-whole word, case-sensitive —
+**What counts as an assertion** is set by `assertions.A14.assertion_pattern`, a regular expression
+searched for in the test file. It is configurable because no default can be right for every repo,
+and that is a measurement and not a worry: a Go table test fails through `t.Fatalf` and contains
+no assertion vocabulary at all, so it matches nothing. `Assert.AreEqual` (NUnit) and
+`XCTAssertEqual` (Swift) match nothing either, and no widening of one pattern fixes that — the
+vocabulary is repo-specific, so it lives in the config and not in the script. A repo whose tests
+say `t.Fatalf` sets `"assertion_pattern": "t\\.Fatal|t\\.Error"` (JSON doubles the backslash) and
+keeps the rest of A14; without the key, its only option would be to switch A14 off and lose the
+shape check too. The pattern is the repo's whole vocabulary, applied to every unit's test file.
+
+The default, used when the key is absent, accepts any of these as a whole word, case-sensitive:
 
 - `assert`, or `assert` followed by `_` or a capital: `assert x == 1`, `assert_eq!(a, b)`,
   `assert_equal a, b`, `self.assertEqual(a, b)`, `assertEquals(a, b)`
 - `expect`, likewise: `expect(x).toBe(1)`
 - `ASSERT_…` and `EXPECT_…`, the googletest family: `ASSERT_EQ(a, b)`, `EXPECT_TRUE(x)`
 
-The word "assertion" or "expectation" in a comment is not one, and neither is a capitalised
-`Assert.` or `Expect.` from a framework that spells it that way — if a repo's test really is that,
-the answer is a line in the test that matches, not a looser rule here.
+The word "assertion" or "expectation" in a comment is not one.
+
+**A pattern is held to a subset both emitted checkers read identically.** The Python checker and
+the Node one run the pattern in different engines, and those disagree about inline flags, named
+groups, a range out of a class escape, possessive quantifiers, `{,n}` and `\B` on an empty string.
+A checker that ran whatever its own engine accepted would pass a repo in one language and fail it in
+the other, which is the one thing the two are promised not to do. So the pattern is printable ASCII
+built from: literals; `.`; `^` and `$` (per line); `|`; groups `(…)` and `(?:…)` — no lookaround,
+flags or names; simple classes `[…]` and `[^…]` of literals, `a-z` ranges between literals, and the
+escapes below, with a `-` only at either end; the escapes `\w \W \d \D \s \S \b \n \r \t` and a backslash
+before any of `` . ^ $ | ? * + ( ) [ ] { } \ / - & ~ ``; and the quantifiers `* + ? {n} {n,} {n,m}`,
+each with an optional lazy `?`. There is no case-insensitive flag; write `[Aa]ssert`. The file is
+matched with line endings made `\n` and each run of non-ASCII characters made one `~`, so `.`, `\s`
+and `$` cannot tell the engines apart either.
+
+A pattern outside that subset, empty, or not a string is reported as one finding at
+`.seam/config.json:1` saying it could not be compiled and why, and only the asserts-something
+comparison is skipped; everything else in A14 still runs.
 
 Fails loudly, with the comparison named as not made, in four cases: a plan with a `§ The issues`
 and no `§ The units`; a `§ The units` with no numbered row in it (a table whose rows are all struck
@@ -308,7 +332,9 @@ cannot be read — that one is reported rather than crashing the checker, becaus
 after A14 would then silently stop running. A plan with neither section is another kind of file
 and is left alone.
 
-Needs: `plan_glob`, which the wizard fills from the layer-5 rows exactly as it does for A8.
+Needs: `plan_glob`, which the wizard fills from the layer-5 rows exactly as it does for A8; and,
+optionally, `assertion_pattern`, which the wizard does not write — the default is right for most
+repos, and a repo that needs its own meets the finding above and comes here.
 
 Does not reach: **which files the work touches.** It asserts the *shape* of the table, not file
 coverage, and that is deliberate. A unit does not declare its paths, because an explicit path
