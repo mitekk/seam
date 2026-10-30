@@ -84,6 +84,13 @@ an exemption; only "non-deterministic" is.
   regeneration is always safe.
 - **No dependencies** in the generator or in either emitted checker. Node for the generator
   because Claude Code already runs on it; Python 3 stdlib only on the other side.
+- **The two emitted checkers are one implementation written twice**, and the test suite runs both
+  on every fixture and compares their findings. A change to one is a change to both, in the same
+  commit, or the claim that a repo can switch languages without changing what is enforced stops
+  being true.
+- **The emitted checker reads `.seam/config.json` at run time**, rather than having the config
+  baked in by the generator. That is what makes "every knob lives in the config, never edited into
+  the script" true, and therefore what makes regeneration safe.
 - **The wizard never rewrites an existing doc's body**, and touches `CLAUDE.md` only between its
   two markers.
 

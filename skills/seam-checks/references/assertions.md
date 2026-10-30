@@ -1,0 +1,269 @@
+# The assertions
+
+Thirteen built in, plus whatever the repo invents. Each one says what it reads, what it needs from
+`.seam/config.json`, and — the part that matters most — **what it deliberately does not reach**. A
+reader who thinks a check reaches further will trust a green run further than they should.
+
+Every assertion is a **local, offline, deterministic read**. None of them makes a network call,
+none of them needs a database, and none of them reads the board. That is what makes a green run
+mean the same thing on a plane as in CI.
+
+| # | Assertion | Layers | Default |
+|---|---|---|---|
+| A1 | Every `*.md` path cited in backticks resolves | all | on |
+| A2 | Every `§ Section` citation names a heading that exists | all | on (targeted form only) |
+| A3 | The documented check list and CI's run steps name the same commands | 2 | **off** |
+| A4 | Every `<identifier>.<field>` in prose resolves against the artifact | 2 | on iff an artifact is configured |
+| A5 | Vocabulary blocks name exactly the members the artifact defines | 2 | off |
+| A6 | Retired names never reappear | 2, 3 | off |
+| A7 | A reversed decision is not prescribed again | 2, 3 | off |
+| A8 | One issue, one owning plan | 5 | on iff a layer-5 doc exists |
+| A9 | A stated count matches a computed one | 2, 5 | off |
+| A10 | Every doc under `docs/` is in the table, with a layer | all | on |
+| A11 | Config `load_bearing` matches the table's `Enforces` column | — | on |
+| A12 | Append-only layers are byte-frozen on the default branch | 3, 4 | on iff layer 3 or 4 exists |
+| A13 | ADRs carry a date and a status; PRD versions are indexed | 3, 4 | on iff layer 3 or 4 exists |
+
+**Off is not passing.** An assertion that needs a repo-specific list is off until the list exists,
+because an empty list that passes reads as evidence the thing is fine. Where an assertion is on
+and *cannot make its comparison*, it **fails** and says so — see A3 and A12.
+
+## A1 — a cited markdown path resolves
+
+Reads: every `` `path.md` `` in backticks, in every doc. Resolves against the repo root, then
+beside the citing file.
+
+Needs: `assertions.A1.allow`, a list of `{path, reason}`. A reason is required: an entry means
+"this file is absent on purpose and the sentence is about its absence".
+
+Does not reach:
+
+- **Any path that is not markdown.** Widening it to every backticked path turns every shell
+  fragment and every column name into a claim about the filesystem. Campaign's equivalent is
+  markdown-only too, and still needs an allow-list.
+- **A glob.** `` `docs/adr/*.md` `` names a *form*, not a file, and is skipped. That is why the
+  table's track rows and the PRD templates' forward references are written as globs.
+- **A markdown link.** `[v1](PRD-v1.md)` is not a backticked citation. Links are the browser's
+  problem; this is about prose that claims a file exists.
+
+## A2 — a `§` citation names a heading that exists
+
+Reads: `` `x.md` § Name ``, and a following run of `§`s separated by nothing but a connector —
+`` `docs/x.md` § A, § B and § C ``, which is how these are actually written. A heading is citable
+by its full text, by each of its dash-separated clauses, and by any leading word-sequence of
+those, so `§ Contact` names "Contact and identification" and `§ Geometry` names
+"D-012 — Geometry and spacing".
+
+Needs: nothing, unless you want the bare form (`assertions.A2.bare_sections: true`).
+
+Does not reach:
+
+- **A `§` whose subject is not a markdown file.** `` `some-skill` § The one gate `` cannot be
+  resolved against anything in the tree. It is skipped, not reported. A check that reds on a
+  citation it cannot evaluate is a check that gets switched off.
+- **A bare `§` whose subject was named in an earlier sentence, unless you switch it on.** Past the
+  adjacency-and-connector rule the binding lapses and the `§` would be read as naming a section of
+  the file it is written in — which is a guess. **Measured on a 45-doc repo: 19 misses from the
+  targeted form against 205 from the fallback**, nearly all of the latter a `§` whose real subject
+  was a skill or another file. A baseline of 19 is a ratchet; 205 is a wall.
+- **A document's title.** Only levels 2 to 6 are sections. Without that bound, `§ Checks` in a file
+  called `# Checks` matched the title, whose body is the whole file — so a renamed section still
+  compared something and passed.
+
+## A3 — the documented check list against CI
+
+Reads: the ```bash blocks inside each configured doc section, reduced to **check tokens** — the
+part of a command that says *which* check it is rather than how it was invoked, so
+`psql -f scripts/check_schema.sql` and `psql -d "$URL" -f scripts/check_schema.sql` are the same
+token. Against the `run:` payloads of each matching workflow, reduced the same way.
+
+Needs: `doc_sections` (`[{file, section}]`), `workflow_glob`, and `local_only` / `ci_only` for the
+commands that legitimately live on one side — each of those is a claim, so keep the lists short and
+give each entry a reason in the doc.
+
+**Both sides are section-scoped, and a configured section that is missing FAILS with exit 1,
+saying the comparison was not made.** That is distinct from a missing check and is never a silent
+skip: without the scoping, an illustrative fenced block in prose becomes a command CI is held to;
+without the loud failure, a renamed heading takes half the list quietly out of scope.
+
+Does not reach:
+
+- **Whether a check is any good.** It compares two lists of names.
+- **A quoted `#`.** Comments are stripped, because a path named in a trailing comment used to
+  satisfy its own token and mask the removal of the command that actually invokes it. A `#` inside
+  quotes stays content — `echo "closes #12" && pytest` kept only `echo "closes ` under a plain
+  regex, and the check then reported pytest as documented-but-not-in-CI, which is a red naming a
+  real check for a cause that is not real.
+- **A quote opened in one line of a block scalar and closed in the next.** Quote state resets at
+  each newline. Accepted knowingly: carrying it across newlines would let one apostrophe in a
+  prose comment poison every line after it, and `ci.yml` files are full of prose comments.
+- **A `uses:` step.** Setup is not a check.
+
+## A4 — a `<identifier>.<field>` in prose resolves
+
+Reads: `` `word.word` `` in every doc, against the artifact. `sql` parses `create table`; `ts`
+parses a union or enum.
+
+Needs: `artifacts` (`[{path, parser}]`), `not_fields` (right-hand sides that are not fields — file
+extensions and TLDs, so `docs/x.md` and `wa.me` are not read as references), and
+`not_references` (whole dotted names that are a convention rather than a reference, like a job
+kind `resolve.name`).
+
+Does not reach: anything the parser does not parse. **Start with SQL `create table` and TypeScript
+unions; everything else is off by default**, because a parser that half-reads an artifact produces
+findings nobody can act on.
+
+A note on `not_references`: exempt the **whole** dotted name, not its right-hand side. Suppressing
+a bare `snapshot` would also excuse a future `harvests.snapshot`, which is exactly the drift the
+assertion exists for.
+
+## A5 — a vocabulary block matches the artifact
+
+Reads: the fenced block inside a configured section, as a set of words, against an enum or union
+the artifact defines. Both directions: a member the doc lists and the artifact does not define, and
+one the artifact defines and the doc does not list.
+
+Needs: `vocabularies` (`[{file, section, enum}]`).
+
+Does not reach: the *meaning* of a member. It compares two sets of names.
+
+## A6 — a retired name never reappears
+
+Reads: each retired name as a word-boundary search across every doc, with `~~struck~~` spans
+blanked first.
+
+Needs: `retired` (`[{name, became, reason}]`). All three fields: the message names what the thing
+became, which is the only way the finding is actionable.
+
+Does not reach: a name retired in the code but not listed here. This is a deny list, not an
+inference.
+
+## A7 — a reversed decision is not prescribed again
+
+Reads: each configured pattern across every doc, with struck spans blanked.
+
+Needs: `reversed` (`[{pattern, reason, adr}]`).
+
+**Write the pattern to match the prescription, not the discussion.** A doc may *mention* a reversed
+decision — a revision note has to be able to say what was reversed — so match the imperative form
+(`**Use a queue library**`) rather than the bare name. This assertion works at all only because
+layer 3 is dated and never edited: if a record could be rewritten, "what was reversed" would have
+no record to point at.
+
+## A8 — one issue, one owning plan
+
+Reads: the `§ The issues` table of each file matching the plan glob, taking `#N` from the **issue
+column only** — a dependency named in another column is not a claim of ownership.
+
+Needs: `plan_glob`.
+
+Does not reach: **whether the issue is still open.** That needs a network call, and every
+assertion here is offline. A plan claiming a closed issue is a procedural matter, not a
+mechanical one.
+
+## A9 — a stated count matches a computed one
+
+Reads: each configured pattern's capture — a numeral or a spelled-out number up to twelve — against
+the number of files a glob matches.
+
+Needs: `count_sites` (`[{pattern, count_of, file?}]`). Off by default: a generic "stated number"
+detector reports every number in the repo.
+
+Does not reach: a count of anything that is not files matching a glob. Numerals are accepted
+alongside words, because "all 3 sibling plans" is the same defect as "all three" and skipping it
+silently is worse than not looking — a check that passes on the wrong shape of a sentence it claims
+to check reads as evidence the sentence is right.
+
+## A10 — every doc is in the table, with a layer
+
+Reads: every markdown file under `docs/`, against the table's rows. A row's Doc cell may be a
+concrete path or a glob, which is how the ADR and PRD tracks cover the several files each writes.
+
+Needs: `table.file`. The table is read from inside its markers when they are present, so a table
+elsewhere in that file is not mistaken for this one.
+
+Does not reach:
+
+- **The table's own host file**, which is normally not under `docs/`. Campaign's `CLAUDE.md` is not
+  a row in its own table; seam's `docs/contributing.md` is, because it lives under `docs/`. Both
+  are fine.
+- **Markdown outside `docs/`.** A `README.md` beside some code is that code's business.
+
+There is no third state. A doc is in the table with a layer, or it is drift.
+
+## A11 — the two copies of what carries weight agree
+
+Reads: every non-empty `Enforces` cell, against `load_bearing` in the config. A `load_bearing`
+entry may be a glob.
+
+Needs: nothing beyond the two it compares. This is the assertion that keeps the human copy and the
+machine projection from drifting apart, which is the whole reason there are exactly two artifacts
+per repo and not three.
+
+## A12 — the append-only layers are byte-frozen
+
+Reads: `git show <branch>:<path>` for every layer-3 and layer-4 file, against the bytes on disk.
+
+Needs: `default_branch`.
+
+**Layers 3 and 4 only**, and only because their edit rule says a file already on the branch is
+final: a record is never wrong, and an intent version is superseded rather than corrected. A
+layer-2 doc is byte-frozen by nothing, which is correct — wrong there is a bug, and a bug gets
+fixed in place.
+
+- A file **not yet on the branch** is skipped. That is a new record, which is the point.
+- **No such branch fails**, saying the comparison was not made. Off is distinct from passing.
+
+This is a migration freeze generalised: the thing that stops a migration already applied from being
+edited is exactly what layers 3 and 4 need, and it is what turns "never overwrite a PRD version"
+from a rule nobody can enforce into one CI catches.
+
+## A13 — the append-only layers keep their shape
+
+Reads, for **MADR**: every record in the ADR directory except `README.md` and `template.md` — a
+`**Date:**`, a `**Status:**`, and for a superseded one a successor number that exists. For a
+**single dated file**: a date within 400 characters of each `##` entry. For **PRD**: every
+`PRD-vN.md` appears in the index.
+
+Needs: `adr.format` and `adr.dir` or `adr.file`; `prd.dir`.
+
+Does not reach: whether the record is *true*, or whether the decision was a good one. It checks the
+shape the layer promises.
+
+## Repo-invented assertions
+
+`.seam/assertions/*.py` or `*.mjs`, discovered by the emitted checker and **never overwritten by a
+regeneration**. Each exposes one function:
+
+```python
+def run(ctx):                      # Python
+    return [{"id": "X1", "file": "docs/x.md", "line": 12, "text": "...",
+             "message": "what is wrong, and what to do about it"}]
+```
+
+```javascript
+export function run(ctx) { /* the same shape */ }                    // Node
+```
+
+`ctx` carries `root`, `config`, `docs` (the paths), `text_of` (path → contents), `table` (the
+parsed rows) and `host`. Give each one an id outside the `A<n>` range so a finding's origin is
+obvious, and keep them local, offline and deterministic like the rest.
+
+This extension point exists because a repo always has an assertion nobody else needs. Campaign
+runs twelve checks and two of them are its own; the alternative — editing them into the emitted
+script — is a change the next regeneration silently drops.
+
+## The baseline, and why it is not the allow-list
+
+The first run with `--write-baseline` records every current violation as `{id, file, line, text}`
+and the checker then fails only on violations outside it.
+
+Matching is **exact on all four fields**, so a violation whose line no longer matches drops out of
+the baseline rather than being carried forever. That is deliberate and it has a cost: inserting a
+line near the top of a doc un-baselines that doc's entries, and they come back as findings. Fix
+them or re-run `--write-baseline`; the point is that the number is visible and moves.
+
+**A baseline entry is a debt with a number on it. An allow-list entry is a decision.** The
+allow-list needs a written reason and means "this will never be fixed"; the baseline means "not
+yet". They are separate files so that the difference cannot be blurred, and `/seam:audit` prints
+the baseline count on every run so it stays in view.

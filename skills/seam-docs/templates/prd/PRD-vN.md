@@ -1,8 +1,8 @@
 # PRD v{{prd.version}} — {{repo.name}}
 
 **Layer 4 — Intent.** What we are trying to build. Being wrong here is **expected**, because
-intent moves — so this file is **immutable once written**. Requirements change by writing
-`PRD-v{{prd.next_version}}.md`, **never by editing this file**. A superseded version stays
+intent moves — so this file is **immutable once written**. Requirements change by writing the next
+version, **PRD-v{{prd.next_version}}.md**, and **never by editing this file**. A superseded version stays
 exactly as it was, so that a later reader can see what was intended when a decision was taken.
 
 *Version {{prd.version}} · {{date}} · active*
