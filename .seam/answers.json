@@ -1,0 +1,154 @@
+{
+  "seam_version": "0.1.0",
+  "purpose": "A Claude Code plugin that installs a layered, mechanically-enforced documentation method into a repo. README.md is the one-page method; docs/contributing.md is seam's own instance of it.",
+  "users": "Anyone adopting the method into a repo, and anyone working on seam itself.",
+  "in_scope": [
+    "The method, the templates, the generator and the two emitted checkers",
+    "Issue, commit and PR conventions, and the review policy"
+  ],
+  "out_of_scope": [
+    "Any repo's content \u2014 legal doctrines, schemas, pipelines, design systems",
+    "Domain agents: the plugin ships the agent shape and the wizard writes the repo's agents from it"
+  ],
+  "repo": {
+    "name": "seam",
+    "default_branch": "main"
+  },
+  "table": {
+    "file": "docs/contributing.md"
+  },
+  "checker": {
+    "language": "node",
+    "path": "scripts/check_docs.mjs"
+  },
+  "adr": {
+    "format": "single",
+    "file": "docs/decisions.md"
+  },
+  "prd": {
+    "dir": "docs/prd",
+    "version": 1
+  },
+  "artifacts": [],
+  "docs": [
+    {
+      "path": "docs/contributing.md",
+      "layer": 2,
+      "owns": "How work on seam is done, and this table's host file",
+      "enforces": "claude plugin validate --strict .",
+      "create": false
+    },
+    {
+      "path": "docs/taxonomy.md",
+      "layer": 2,
+      "owns": "The domain labels, the three priorities, and the milestones",
+      "enforces": "scripts/bootstrap-tracker.sh",
+      "create": false
+    },
+    {
+      "path": "docs/superpowers/specs/*.md",
+      "layer": 5,
+      "owns": "Nothing \u2014 dated design documents. Superseded wholesale; a design that changes is rewritten or replaced, never amended into agreement with what shipped",
+      "enforces": "",
+      "create": false
+    }
+  ],
+  "load_bearing": [
+    "bin/**",
+    "skills/seam-checks/templates/**",
+    ".claude-plugin/**",
+    "scripts/bootstrap-tracker.sh"
+  ],
+  "low_review_paths": [],
+  "domains": [
+    {
+      "name": "wizard",
+      "covers": "skills/seam-docs/ \u2014 the interview, the layer classification, the templates"
+    },
+    {
+      "name": "checker",
+      "covers": "bin/generate-checker.mjs, skills/seam-checks/, the emitted checker templates"
+    },
+    {
+      "name": "github",
+      "covers": "skills/seam-github/ \u2014 issues, branches, commits, PRs, the gate"
+    },
+    {
+      "name": "review",
+      "covers": "skills/seam-review/ \u2014 the level table, the rounds, the triggers"
+    },
+    {
+      "name": "plugin",
+      "covers": ".claude-plugin/, commands/, README.md"
+    },
+    {
+      "name": "tests",
+      "covers": "tests/, evals/ \u2014 the probe rule's half and the skills' half"
+    },
+    {
+      "name": "docs",
+      "covers": "docs/ \u2014 seam's own doc layer, eating its own dog food"
+    }
+  ],
+  "milestones": [],
+  "agents": [],
+  "assertions": {
+    "A1": {
+      "enabled": true,
+      "allow": [
+        {
+          "path": "CLAUDE.md",
+          "reason": "the DEFAULT NAME of the table's host file in an adopting repo, not a file here \u2014 seam's own host is docs/contributing.md, and that file's \u00a7 Sources of truth explains why"
+        },
+        {
+          "path": "SKILL.md",
+          "reason": "a filename form: skills/<name>/SKILL.md. Every real one is cited with its directory and resolves"
+        },
+        {
+          "path": "docs/building.md",
+          "reason": "a doc an ADOPTING repo has, named in prose about what the templates produce \u2014 not a file in this repo. Same class as CLAUDE.md above"
+        },
+        {
+          "path": "docs/routing.md",
+          "reason": "a doc an ADOPTING repo has, named in prose about what the templates produce \u2014 not a file in this repo. Same class as CLAUDE.md above"
+        },
+        {
+          "path": "prompt.md",
+          "reason": "the filename inside an eval case directory, cited as a form. Every real one is at evals/<case>/prompt.md and resolves"
+        }
+      ]
+    },
+    "A2": {
+      "enabled": true,
+      "bare_sections": false
+    },
+    "A3": {
+      "enabled": true,
+      "doc_sections": [
+        {
+          "file": "docs/contributing.md",
+          "section": "Checks"
+        }
+      ],
+      "workflow_glob": ".github/workflows/*.yml",
+      "local_only": [],
+      "ci_only": []
+    },
+    "A11": {
+      "enabled": true
+    },
+    "A12": {
+      "enabled": false
+    },
+    "A13": {
+      "enabled": false
+    }
+  },
+  "baseline": {
+    "path": ".seam/baseline.json"
+  },
+  "open_questions": [
+    "Does seam need its own layer-3 track, or do its commit messages plus docs/findings-ledger.md carry the decisions? No docs/decisions.md row is proposed yet.",
+    "Does seam need a layer-4 PRD, given that README.md is the intent and it is public? No docs/prd row is proposed yet."
+  ]
+}

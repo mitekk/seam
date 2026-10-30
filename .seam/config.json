@@ -2,7 +2,7 @@
   "seam_version": "0.1.0",
   "repo": {
     "name": "seam",
-    "default_branch": "master"
+    "default_branch": "main"
   },
   "table": {
     "file": "docs/contributing.md"
@@ -31,6 +31,12 @@
       "path": "docs/taxonomy.md",
       "layer": 2,
       "enforces": "scripts/bootstrap-tracker.sh",
+      "create": false
+    },
+    {
+      "path": "docs/superpowers/specs/*.md",
+      "layer": 5,
+      "enforces": "",
       "create": false
     }
   ],
@@ -72,11 +78,19 @@
       "allow": [
         {
           "path": "CLAUDE.md",
-          "reason": "the DEFAULT NAME of the table's host file in an adopting repo, not a file here \u2014 seam's own host is docs/contributing.md, and that file's \u00a7 Sources of truth explains why"
+          "reason": "the DEFAULT NAME of the table's host file in an adopting repo, not a file here — seam's own host is docs/contributing.md, and that file's § Sources of truth explains why"
         },
         {
           "path": "SKILL.md",
           "reason": "a filename form: skills/<name>/SKILL.md. Every real one is cited with its directory and resolves"
+        },
+        {
+          "path": "docs/building.md",
+          "reason": "a doc an ADOPTING repo has, named in prose about what the templates produce — not a file in this repo. Same class as CLAUDE.md above"
+        },
+        {
+          "path": "docs/routing.md",
+          "reason": "a doc an ADOPTING repo has, named in prose about what the templates produce — not a file in this repo. Same class as CLAUDE.md above"
         },
         {
           "path": "prompt.md",
@@ -117,7 +131,7 @@
       "reversed": []
     },
     "A8": {
-      "enabled": false,
+      "enabled": true,
       "plan_glob": "docs/plans/*.md"
     },
     "A9": {

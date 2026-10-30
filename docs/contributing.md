@@ -26,6 +26,7 @@ layer **cites** a higher one and never restates it.
 |---|---|---|---|
 | `docs/contributing.md` | 2 Current | How work on seam is done, and this table's host file | `claude plugin validate --strict .` |
 | `docs/taxonomy.md` | 2 Current | The domain labels, the three priorities, and the milestones | `scripts/bootstrap-tracker.sh` |
+| `docs/superpowers/specs/*.md` | 5 Seam | Nothing — dated design documents. Superseded wholesale; a design that changes is rewritten or replaced, never amended into agreement with what shipped |  |
 
 **Layer** fixes the edit rule, because the question behind it is *what happens when this file
 turns out to be wrong*:
@@ -50,7 +51,7 @@ Authority is not one chain, because the layers answer different questions:
   the record rather than restating it.
 - **On what we intend:** Intent beats Seam.
 - **Seam and Ledger own nothing** and lose to everything by construction. They are in this table
-  so they are *findable*, not because they answer anything — here that is layers 5 and 6.
+  so they are *findable*, not because they answer anything — here that is 5 Seam.
 
 <!-- seam:sources-of-truth end -->
 
