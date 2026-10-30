@@ -2,10 +2,10 @@
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "seam",
   "owner": {
-    "name": "Mitya"
+    "name": "Mitya Kurs"
   },
   "metadata": {
-    "description": "Local marketplace carrying one plugin: seam."
+    "description": "Carries one plugin: seam \u2014 a layered, mechanically-enforced documentation method for any repo."
   },
   "plugins": [
     {
