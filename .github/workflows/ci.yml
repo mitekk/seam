@@ -1,0 +1,17 @@
+# seam's own CI. The list here and the one in docs/contributing.md § Checks are compared by
+# assertion A3 of seam's own checker — which is the point: the plugin's claim is that a documented
+# check list and CI cannot drift apart, so seam's own two copies are held to it.
+name: ci
+on:
+  push:
+  pull_request:
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node --test
+      - run: node scripts/check_docs.mjs

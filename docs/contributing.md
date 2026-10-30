@@ -27,13 +27,30 @@ layer **cites** a higher one and never restates it.
 | `docs/contributing.md` | 2 Current | How work on seam is done, and this table's host file | `claude plugin validate --strict .` |
 | `docs/taxonomy.md` | 2 Current | The domain labels, the three priorities, and the milestones | `scripts/bootstrap-tracker.sh` |
 
-Authority, by question asked:
+**Layer** fixes the edit rule, because the question behind it is *what happens when this file
+turns out to be wrong*:
 
-- **What is true now:** Artifact (layer 1) beats Current (layer 2), and nothing else may answer.
-- **Why it is this way:** Decisions (layer 3) beat Current. A Current doc that gives a rationale
-  cites the ADR rather than restating it.
-- **What we intend:** Intent (layer 4) beats Seam (layer 5).
-- **Seam and Ledger own nothing** and lose to everything, by construction.
+| # | Layer | When it's wrong | Edit rule |
+|---|---|---|---|
+| 1 | Artifact | cannot be — it *is* the code | changes with the code |
+| 2 | Current | a bug | amend in place |
+| 3 | Decisions | never — the record stands | append-only, dated; a reversal is a new entry |
+| 4 | Intent | expected | immutable versions; supersede with vN+1 |
+| 5 | Seam | expected | superseded wholesale |
+| 6 | Ledger | n/a | append-only rows |
+
+**Enforces** names the artifact that holds a row to its word — a constraint, an index, a CI
+assertion. An empty cell means the row owns documentation and nothing more. `.seam/config.json`
+carries the same set as `load_bearing`, and assertion A11 compares the two.
+
+Authority is not one chain, because the layers answer different questions:
+
+- **On what is true now:** Artifact beats Current, and nothing else may answer at all.
+- **On why it is this way:** Decisions beat Current. A Current doc that gives a rationale cites
+  the record rather than restating it.
+- **On what we intend:** Intent beats Seam.
+- **Seam and Ledger own nothing** and lose to everything by construction. They are in this table
+  so they are *findable*, not because they answer anything — here that is layers 5 and 6.
 
 <!-- seam:sources-of-truth end -->
 
@@ -41,8 +58,13 @@ Authority, by question asked:
 
 ```bash
 node --test                                    # the generator and both emitted checkers
+node scripts/check_docs.mjs                    # seam's own docs agree with each other
 claude plugin validate --strict .              # manifests, skills, commands
 ```
+
+**seam runs its own checker on itself**, and `.github/workflows/ci.yml` runs it too — assertion A3
+compares this list against that workflow, so the two cannot drift apart. It caught its own author
+within a minute of being wired: the CI step existed and this list did not name it.
 
 `node --test` takes **no positional argument**. `node --test tests/` fails on Node 24 with
 `Cannot find module .../tests` — a bare directory positional is resolved as a module rather than
@@ -55,8 +77,14 @@ icon. That is a submission asset and not a correctness check, so it is not in th
 The eval suite is a separate gate because it costs a model run per case:
 
 ```bash
-claude plugin eval . --allow-tools Write Edit Bash --scaffold
+claude plugin eval . --allow-tools Write Edit Bash --trust-plugin
 ```
+
+`--allow-tools` is not optional: `Write`, `Edit` and `Bash` are gated by default, and a wizard that
+cannot write anything scores zero for the wrong reason. There is deliberately no `--scaffold`:
+**measured, no scaffold hook works on this build** — `scaffold_script` is rejected in `prompt.md`
+frontmatter and silently does nothing in `case.yaml` — so each case carries its fixture inline in
+the prompt instead. `evals/README.md` has the rest of the grader schema as it actually behaves.
 
 ## Test-first
 

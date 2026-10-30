@@ -1,0 +1,145 @@
+{
+  "seam_version": "0.1.0",
+  "repo": {
+    "name": "seam",
+    "default_branch": "main"
+  },
+  "table": {
+    "file": "docs/contributing.md"
+  },
+  "checker": {
+    "language": "node",
+    "path": "scripts/check_docs.mjs"
+  },
+  "adr": {
+    "format": "single",
+    "file": "docs/decisions.md"
+  },
+  "prd": {
+    "dir": "docs/prd",
+    "version": 1
+  },
+  "artifacts": [],
+  "docs": [
+    {
+      "path": "docs/contributing.md",
+      "layer": 2,
+      "enforces": "claude plugin validate --strict .",
+      "create": false
+    },
+    {
+      "path": "docs/taxonomy.md",
+      "layer": 2,
+      "enforces": "scripts/bootstrap-tracker.sh",
+      "create": false
+    }
+  ],
+  "load_bearing": [
+    "bin/**",
+    "skills/seam-checks/templates/**",
+    ".claude-plugin/**",
+    "claude plugin validate --strict .",
+    "scripts/bootstrap-tracker.sh"
+  ],
+  "low_review_paths": [],
+  "domains": [
+    {
+      "name": "wizard"
+    },
+    {
+      "name": "checker"
+    },
+    {
+      "name": "github"
+    },
+    {
+      "name": "review"
+    },
+    {
+      "name": "plugin"
+    },
+    {
+      "name": "tests"
+    },
+    {
+      "name": "docs"
+    }
+  ],
+  "milestones": [],
+  "agents": [],
+  "assertions": {
+    "A1": {
+      "enabled": true,
+      "allow": [
+        {
+          "path": "CLAUDE.md",
+          "reason": "the DEFAULT NAME of the table's host file in an adopting repo, not a file here \u2014 seam's own host is docs/contributing.md, and that file's \u00a7 Sources of truth explains why"
+        },
+        {
+          "path": "SKILL.md",
+          "reason": "a filename form: skills/<name>/SKILL.md. Every real one is cited with its directory and resolves"
+        },
+        {
+          "path": "prompt.md",
+          "reason": "the filename inside an eval case directory, cited as a form. Every real one is at evals/<case>/prompt.md and resolves"
+        }
+      ]
+    },
+    "A2": {
+      "enabled": true,
+      "bare_sections": false
+    },
+    "A3": {
+      "enabled": true,
+      "doc_sections": [
+        {
+          "file": "docs/contributing.md",
+          "section": "Checks"
+        }
+      ],
+      "workflow_glob": ".github/workflows/*.yml",
+      "local_only": [],
+      "ci_only": []
+    },
+    "A4": {
+      "enabled": false,
+      "artifacts": []
+    },
+    "A5": {
+      "enabled": false,
+      "vocabularies": []
+    },
+    "A6": {
+      "enabled": false,
+      "retired": []
+    },
+    "A7": {
+      "enabled": false,
+      "reversed": []
+    },
+    "A8": {
+      "enabled": false,
+      "plan_glob": "docs/plans/*.md"
+    },
+    "A9": {
+      "enabled": false,
+      "count_sites": []
+    },
+    "A10": {
+      "enabled": true
+    },
+    "A11": {
+      "enabled": true
+    },
+    "A12": {
+      "enabled": false,
+      "default_branch": "main"
+    },
+    "A13": {
+      "enabled": false
+    }
+  },
+  "baseline": {
+    "path": ".seam/baseline.json"
+  }
+}
