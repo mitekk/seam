@@ -14,8 +14,8 @@ Owns: the rationale for every significant choice in this repo. A layer-2 doc tha
 
 ## Format
 
-[MADR](https://adr.github.io/madr/), one file per decision, at `{{adr.dir}}/NNNN-kebab-title.md`.
-Copy `{{adr.dir}}/template.md` and take the next number. Every record carries a Date and a
+[MADR](https://adr.github.io/madr/), one file per decision, in `{{adr.dir}}/`, named
+**NNNN-kebab-title.md**. Copy `{{adr.dir}}/template.md` and take the next number. Every record carries a Date and a
 Status; a superseded one names its successor.
 
 ## Index

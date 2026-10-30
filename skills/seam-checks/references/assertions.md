@@ -43,8 +43,12 @@ Does not reach:
   markdown-only too, and still needs an allow-list.
 - **A glob.** `` `docs/adr/*.md` `` names a *form*, not a file, and is skipped. That is why the
   table's track rows and the PRD templates' forward references are written as globs.
-- **A markdown link.** `[v1](PRD-v1.md)` is not a backticked citation. Links are the browser's
-  problem; this is about prose that claims a file exists.
+- **A backticked label inside a markdown link.** In ``[`api.md`](.claude/rules/api.md)`` the link
+  **target** is the claim and the label is how it reads, so the target is what gets resolved and
+  the label is dropped. Measured on a repo nothing was tuned against: a README listing eight
+  rules that way reported eight dangling citations, every one of them wrong, while all eight
+  targets resolved. A link whose target is a markdown path **is** checked; one pointing anywhere
+  else is the browser's problem.
 
 ## A2 — a `§` citation names a heading that exists
 
@@ -213,6 +217,10 @@ fixed in place.
 
 - A file **not yet on the branch** is skipped. That is a new record, which is the point.
 - **No such branch fails**, saying the comparison was not made. Off is distinct from passing.
+- **An index is not a record.** `README.md`, `index.md`, `template.md` and `PRD-current.md` inside
+  a frozen track are exempt: an index grows by design — adding a version means appending a row —
+  and a "current" file is replaced wholesale when a new version lands. Freezing either makes the
+  layer unusable, which is the opposite of enforcing its edit rule.
 
 This is a migration freeze generalised: the thing that stops a migration already applied from being
 edited is exactly what layers 3 and 4 need, and it is what turns "never overwrite a PRD version"
@@ -223,7 +231,10 @@ from a rule nobody can enforce into one CI catches.
 Reads, for **MADR**: every record in the ADR directory except `README.md` and `template.md` — a
 `**Date:**`, a `**Status:**`, and for a superseded one a successor number that exists. For a
 **single dated file**: a date within 400 characters of each `##` entry. For **PRD**: every
-`PRD-vN.md` appears in the index.
+`PRD-vN.md` is named in the index, **either by filename or by its version label** — an index row
+reading `| v0 | 2026-03-10 | … |` makes the version perfectly findable, and this assertion exists
+so an unindexed version cannot hide, not so that the index has to spell a filename. Measured on an
+unseen repo whose index is written exactly that way.
 
 Needs: `adr.format` and `adr.dir` or `adr.file`; `prd.dir`.
 

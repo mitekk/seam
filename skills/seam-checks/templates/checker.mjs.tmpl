@@ -175,6 +175,38 @@ function resolveMd(root, frm, cited) {
   return existsSync(beside) ? rel : null;
 }
 
+// What A12 freezes: a RECORD, not the file that indexes it. An index grows by design — adding a
+// version means appending a row — and a "current" file is replaced wholesale when a new version
+// lands. Freezing either makes the layer unusable, which is the opposite of enforcing its edit
+// rule. A template is a form, not a record, so it is not frozen either.
+const NOT_A_RECORD = new Set(["README.md", "template.md", "PRD-current.md", "index.md"]);
+
+const frozenRecord = (path) => !NOT_A_RECORD.has(basename(path));
+
+/** Every `*.md` path this file claims exists, with its offset.
+ *
+ *  A backticked path that is the TEXT of a markdown link is a label, not a citation: in
+ *  ``[`api.md`](.claude/rules/api.md)`` the link target is the claim and the label is how it
+ *  reads. Measured on a repo nothing was tuned against — a README listing eight rules that way
+ *  reported eight dangling citations, every one of them wrong, while the targets all resolved. */
+function mdCitations(root, frm, text) {
+  const out = [];
+  const linkedSpans = [];
+  for (const m of text.matchAll(/\[([^\]\n]*)\]\(([^)\s]+)\)/g)) {
+    const labelStart = m.index + 1;
+    linkedSpans.push([labelStart, labelStart + m[1].length]);
+    const target = m[2].split("#")[0];
+    if (target.endsWith(".md")) out.push([target, m.index]);
+  }
+  for (const m of text.matchAll(MD_CITE_RE)) {
+    const s = m.index + 1;
+    const e = s + m[1].length;
+    if (linkedSpans.some(([a, b]) => a <= s && e <= b)) continue;
+    out.push([m[1], m.index]);
+  }
+  return out;
+}
+
 // ── The sources-of-truth table ───────────────────────────────────────────────
 
 function readTable(text) {
@@ -343,11 +375,10 @@ async function main() {
     ran += 1;
     const allowed = new Set((opt("A1", "allow", [])).map((e) => e.path));
     for (const d of docs) {
-      for (const m of textOf[d].matchAll(MD_CITE_RE)) {
-        const cited = m[1];
+      for (const [cited, at] of mdCitations(ROOT, d, textOf[d])) {
         if (cited.includes("*") || allowed.has(cited)) continue;
         if (resolveMd(ROOT, d, cited) === null) {
-          findings.push(finding("A1", d, lineOf(textOf[d], m.index), cited,
+          findings.push(finding("A1", d, lineOf(textOf[d], at), cited,
             `cites \`${cited}\`, which is not in the repo — fix or drop the citation, or add it `
             + `to assertions.A1.allow with a reason`));
         }
@@ -727,7 +758,7 @@ async function main() {
         + `assertions.A12.default_branch, or switch A12 off; off is distinct from passing`));
     } else {
       for (const d of docs) {
-        if (!frozen.some((rx) => rx.test(d))) continue;
+        if (!frozen.some((rx) => rx.test(d)) || !frozenRecord(d)) continue;
         let was;
         try {
           was = execFileSync("git", ["show", `${branch}:${d}`],
@@ -793,10 +824,16 @@ async function main() {
       for (const d of docs) {
         const base = basename(d);
         if (!d.startsWith(prdDir + "/") || !/^PRD-v\d+\.md$/.test(base)) continue;
-        if (!textOf[index].includes(base)) {
+        // Findable by filename or by version label: an index row reading `| v0 | … |` makes the
+        // version perfectly findable, and A13 exists so an unindexed version cannot hide, not so
+        // the index has to spell a filename.
+        const label = base.slice(4, -3);                 // PRD-v0.md -> v0
+        const byLabel = new RegExp("(?<![\\w-])" + label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+          + "(?![\\w.-])");
+        if (!textOf[index].includes(base) && !byLabel.test(textOf[index])) {
           findings.push(finding("A13", index, 1, base,
-            `\`${base}\` is a PRD version and is not in the index — an unindexed version is one `
-            + `nobody can find`));
+            `\`${base}\` is a PRD version and is named nowhere in the index — neither as the `
+            + `filename nor as \`${label}\`. An unindexed version is one nobody can find`));
         }
       }
     } else if (docs.some((d) => d.startsWith(prdDir + "/"))) {

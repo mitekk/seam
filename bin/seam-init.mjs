@@ -16,8 +16,8 @@
 //
 // No dependencies, by the rule in docs/contributing.md § Hard conventions.
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
-import { join, dirname, basename } from "node:path";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from "node:fs";
+import { join, dirname, basename, sep, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -93,6 +93,15 @@ function validate(a) {
       `layer must be 1..6, not ${JSON.stringify(d.layer)} — the interview question is "what`
       + ` happens when this file turns out to be wrong?"`);
     need(typeof d.owns === "string", `docs[${i}].owns`, "a doc row needs what it owns, in words");
+    // A glob row names a FORM — the several files a track or a directory holds — so the wizard
+    // cannot write one: the file would be called `*.md`. Layers 3 and 4 are exempt because their
+    // row path is a label and the track's own directory drives the writes.
+    if (d.create !== false && typeof d.path === "string" && d.path.includes("*")
+        && d.layer !== 3 && d.layer !== 4) {
+      bad.push(`docs[${i}].path: ${d.path} is a glob, and a glob cannot be created — it names a`
+        + ` form, not a file. Name the file, or set "create": false and let the row cover what`
+        + ` is already there`);
+    }
   });
 
   const lb = Array.isArray(a.load_bearing) ? a.load_bearing : [];
@@ -119,6 +128,44 @@ function validate(a) {
 // config = answers minus the prose keys, plus defaults for the machine keys the answers leave
 // unset. One key namespace, no translation step — which is what lets the interview's record and
 // the script's input be the same document.
+
+/** A path glob as a regex. `**\/` crosses directories, `*` and `?` do not. */
+function globRe(pattern) {
+  let out = "";
+  let i = 0;
+  while (i < pattern.length) {
+    if (pattern.startsWith("**/", i)) { out += "(?:.*/)?"; i += 3; }
+    else if (pattern[i] === "*") { out += "[^/]*"; i += 1; }
+    else if (pattern[i] === "?") { out += "[^/]"; i += 1; }
+    else { out += pattern[i].replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); i += 1; }
+  }
+  return new RegExp("^" + out + "$");
+}
+
+/** Does anything in the repo satisfy this row? A glob row is satisfied by a match, not by a file
+ *  literally named `docs/rules/*.md` — which is what `existsSync` on the pattern asked. */
+function rowHasFiles(repo, rowPath) {
+  if (!rowPath.includes("*")) return existsSync(join(repo, rowPath));
+  const rx = globRe(rowPath);
+  const skip = new Set([".git", "node_modules", "dist", "build", ".next", "vendor", ".venv"]);
+  const walk = (dir) => {
+    let entries;
+    try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return false; }
+    if (dir !== repo && entries.some((e) => e.name === ".git")) return false;
+    for (const e of entries) {
+      if (e.isSymbolicLink()) continue;
+      const abs = join(dir, e.name);
+      if (e.isDirectory()) {
+        if (skip.has(e.name)) continue;
+        if (walk(abs)) return true;
+      } else if (rx.test(relative(repo, abs).split(sep).join("/"))) {
+        return true;
+      }
+    }
+    return false;
+  };
+  return walk(repo);
+}
 
 function stripProse(value, subkeys) {
   if (Array.isArray(value)) return value.map((v) => stripProse(v, subkeys));
@@ -459,7 +506,7 @@ function main() {
     if (d.create === false) {
       // The wizard was told this file is the user's. It still gets a table row — the table is
       // about ownership of a question, not about who typed the file.
-      if (!existsSync(join(args.repo, d.path))) w.gap(d.path);
+      if (!rowHasFiles(args.repo, d.path)) w.gap(d.path);
       continue;
     }
     writeDoc(w, answers, vars, d);

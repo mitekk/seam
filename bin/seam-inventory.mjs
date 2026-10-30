@@ -133,6 +133,30 @@ const BARE_SECTION = /§[ \t]*([A-Za-z][^.;:—(*`§\n]*)/g;
 // a citation it cannot evaluate is a check that gets switched off.
 const OTHER_SECTION = /`([\w./@-]+)`[\s,*]{0,4}§[ \t\n]*([A-Za-z][^.;:—(*`§\n]*)/g;
 
+/** Every `*.md` path a file claims exists, with its offset.
+ *
+ *  A backticked path that is the TEXT of a markdown link is a label, not a citation: in
+ *  ``[`api.md`](.claude/rules/api.md)`` the link target is the claim and the label is how it
+ *  reads. Measured on a repo nothing was tuned against — a README listing eight rules that way
+ *  reported eight dangling citations, every one of them wrong, while the targets all resolved. */
+function mdCitations(text) {
+  const out = [];
+  const linkedSpans = [];
+  for (const m of text.matchAll(/\[([^\]\n]*)\]\(([^)\s]+)\)/g)) {
+    const labelStart = m.index + 1;
+    linkedSpans.push([labelStart, labelStart + m[1].length]);
+    const target = m[2].split("#")[0];
+    if (target.endsWith(".md")) out.push([target, m.index]);
+  }
+  for (const m of text.matchAll(MD_CITE)) {
+    const s = m.index + 1;
+    const e = s + m[1].length;
+    if (linkedSpans.some(([a, b]) => a <= s && e <= b)) continue;
+    out.push([m[1], m.index]);
+  }
+  return out;
+}
+
 /** Resolve a cited `*.md` path: against the repo root, or beside the citing file. */
 function resolveMd(repo, from, cited) {
   const asRoot = cited;
@@ -481,7 +505,7 @@ function main() {
     const text = textOf.get(p);
     const git = gitEvidence(repo, p);
 
-    const citedMd = [...new Set([...text.matchAll(MD_CITE)].map((m) => m[1]))];
+    const citedMd = [...new Set(mdCitations(text).map((c) => c[0]))];
     const danglingMd = [];
     const resolvedMd = [];
     for (const c of citedMd) {

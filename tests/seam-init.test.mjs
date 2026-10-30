@@ -349,3 +349,35 @@ test("a layer-2 row named routing.md gets the routing template", () => {
   assert.match(t, /review depth, not model effort/i);
   rm(dir);
 });
+
+test("a glob row with matching files is not reported missing; one with none is", () => {
+  const ans = answers();
+  ans.docs.push({ path: "docs/rules/*.md", layer: 2, owns: "The per-topic defaults",
+    enforces: "", create: false });
+  ans.docs.push({ path: "docs/guides/*.md", layer: 2, owns: "Guides nobody has written",
+    enforces: "", create: false });
+  const { dir, r } = init(ans, [], (d) => {
+    write(d, "docs/rules/api.md", "# API Rules\n");
+    write(d, "docs/rules/ci.md", "# CI Rules\n");
+  });
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(!/missing\s+docs\/rules/.test(r.stdout),
+    `a glob row with files behind it is not missing:\n${r.stdout}`);
+  assert.match(r.stdout, /missing\s+docs\/guides\/\*\.md/);
+  // Both are still rows: the table is about ownership of a question.
+  const table = read(dir, "CLAUDE.md");
+  assert.match(table, /`docs\/rules\/\*\.md`/);
+  assert.match(table, /`docs\/guides\/\*\.md`/);
+  rm(dir);
+});
+
+test("rejects a glob row the wizard would be asked to create", () => {
+  const ans = answers();
+  ans.docs.push({ path: "docs/rules/*.md", layer: 2, owns: "The per-topic defaults",
+    enforces: "", create: true });
+  const { dir, r } = init(ans);
+  assert.equal(r.status, 2, r.stdout);
+  assert.match(r.stderr, /docs\[5\]\.path/);
+  assert.match(r.stderr, /glob/i);
+  rm(dir);
+});

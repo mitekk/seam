@@ -441,3 +441,17 @@ test("a § far from any citation is this file's own, not the paragraph's last ta
     "§ Stack resolves against this file; attributing it to infra.md would make it dangling");
   rm(dir);
 });
+
+test("a backticked label inside a markdown link is not a citation", () => {
+  const { dir } = adoptRepo();
+  write(dir, "docs/engineering.md",
+    "# Engineering\n\n| Rule | Covers |\n|---|---|\n"
+    + "| [`infra.md`](docs/infra.md) | the box |\n"
+    + "| [`gone.md`](docs/gone.md) | nothing |\n");
+  const { inv } = inventory(dir);
+  const d = byPath(inv, "docs/engineering.md");
+  assert.deepEqual(d.dangling.md, ["docs/gone.md"],
+    "the label is not the citation; the link target is");
+  assert.ok(d.cites.md.includes("docs/infra.md"));
+  rm(dir);
+});

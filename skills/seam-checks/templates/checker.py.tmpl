@@ -204,6 +204,40 @@ def resolve_md(root: Path, frm: str, cited: str) -> str | None:
     return beside if (root / beside).exists() else None
 
 
+# What A12 freezes: a RECORD, not the file that indexes it. An index grows by design — adding a
+# version means appending a row — and a "current" file is replaced wholesale when a new version
+# lands. Freezing either makes the layer unusable, which is the opposite of enforcing its edit
+# rule. A template is a form, not a record, so it is not frozen either.
+NOT_A_RECORD = {"README.md", "template.md", "PRD-current.md", "index.md"}
+
+
+def frozen_record(path: str) -> bool:
+    return os.path.basename(path) not in NOT_A_RECORD
+
+
+def md_citations(root: Path, frm: str, text: str) -> list[tuple[str, int]]:
+    """Every `*.md` path this file claims exists, with its offset.
+
+    A backticked path that is the TEXT of a markdown link is a label, not a citation: in
+    ``[`api.md`](.claude/rules/api.md)`` the link target is the claim and the label is how it
+    reads. Measured on a repo nothing was tuned against — a README listing eight rules that way
+    reported eight dangling citations, every one of them wrong, while the targets all resolved.
+    So a label whose link target is a markdown path yields the TARGET, and the label is dropped.
+    """
+    out: list[tuple[str, int]] = []
+    linked_spans: list[tuple[int, int]] = []
+    for m in re.finditer(r"\[([^\]\n]*)\]\(([^)\s]+)\)", text):
+        linked_spans.append((m.start(1), m.end(1)))
+        target = m.group(2).split("#")[0]
+        if target.endswith(".md"):
+            out.append((target, m.start()))
+    for m in MD_CITE_RE.finditer(text):
+        if any(s <= m.start(1) and m.end(1) <= e for s, e in linked_spans):
+            continue
+        out.append((m.group(1), m.start()))
+    return out
+
+
 # ── The sources-of-truth table ───────────────────────────────────────────────
 
 def read_table(text: str) -> list[dict]:
@@ -390,13 +424,12 @@ def main() -> int:
         ran += 1
         allowed = {e["path"] for e in opt("A1", "allow", [])}
         for d in docs:
-            for m in MD_CITE_RE.finditer(text_of[d]):
-                cited = m.group(1)
+            for cited, at in md_citations(ROOT, d, text_of[d]):
                 if "*" in cited or cited in allowed:
                     continue
                 if resolve_md(ROOT, d, cited) is None:
                     findings.append(finding(
-                        "A1", d, line_of(text_of[d], m.start()), cited,
+                        "A1", d, line_of(text_of[d], at), cited,
                         f"cites `{cited}`, which is not in the repo — fix or drop the citation, "
                         f"or add it to assertions.A1.allow with a reason"))
 
@@ -740,7 +773,7 @@ def main() -> int:
                 f"assertions.A12.default_branch, or switch A12 off; off is distinct from passing"))
         else:
             for d in docs:
-                if not any(rx.match(d) for rx in frozen):
+                if not any(rx.match(d) for rx in frozen) or not frozen_record(d):
                     continue
                 try:
                     was = subprocess.run(["git", "show", f"{branch}:{d}"], cwd=ROOT, check=True,
@@ -802,10 +835,17 @@ def main() -> int:
                 base = os.path.basename(d)
                 if not d.startswith(prd_dir + "/") or not re.fullmatch(r"PRD-v\d+\.md", base):
                     continue
-                if base not in text_of[index]:
+                # Findable by filename or by version label: an index row reading `| v0 | … |`
+                # makes the version perfectly findable, and A13 exists so an unindexed version
+                # cannot hide, not so the index has to spell a filename.
+                label = base[4:-3]                       # PRD-v0.md -> v0
+                indexed = base in text_of[index] or re.search(
+                    r"(?<![\w-])" + re.escape(label) + r"(?![\w.-])", text_of[index])
+                if not indexed:
                     findings.append(finding("A13", index, 1, base,
-                        f"`{base}` is a PRD version and is not in the index — an unindexed "
-                        f"version is one nobody can find"))
+                        f"`{base}` is a PRD version and is named nowhere in the index — neither "
+                        f"as the filename nor as `{label}`. An unindexed version is one nobody "
+                        f"can find"))
         elif any(d.startswith(prd_dir + "/") for d in docs):
             findings.append(finding("A13", index, 1, "",
                 f"`{prd_dir}/` has versions and no `README.md` index"))

@@ -6,7 +6,8 @@ Owns: stack, data access, and the hive-state vocabulary.
 
 ## Stack
 
-Node, and `node --test`. The checks are in `docs/checks.md` § Checks.
+Node, and `node --test`. The checks are in `docs/checks.md` § Checks, and the index links them
+as [`checks.md`](docs/checks.md) — a label, not a citation, because the link target is the claim.
 
 ## Data access
 

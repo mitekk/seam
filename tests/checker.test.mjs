@@ -275,3 +275,68 @@ test("generate-checker refuses a repo with no config, naming the file", () => {
   assert.match(g.stderr, /\.seam\/config\.json/);
   rmSync(dir, { recursive: true, force: true });
 });
+
+test("a backticked label inside a markdown link is not a citation, but a bad target is", () => {
+  // Found on a repo nothing was tuned against: a README listing its rules as
+  // [`api.md`](.claude/rules/api.md) reported eight dangling citations, because the backticked
+  // label does not resolve beside the README while the link target resolves perfectly well.
+  // The link is the citation; the text is a label.
+  const { dir } = fixture({
+    mutate: ({ edit }) => edit("docs/engineering.md", "[`checks.md`](docs/checks.md)",
+      "[`checks.md`](docs/nope.md)"),
+  });
+  const r = both(dir);
+  assert.equal(r.status, 1, r.py.stdout);
+  assert.deepEqual(ids(r.findings), ["A1"]);
+  assert.ok(r.findings.every((l) => l.includes("docs/nope.md")),
+    `the finding should name the target, not the label: ${r.findings.join("\n")}`);
+  rm(dir);
+});
+
+test("a PRD index that names a version by its label, not its filename, is still an index", () => {
+  // Found on a repo nothing was tuned against: its index reads `| v0 | 2026-03-10 | … |`, which
+  // makes the version perfectly findable. A13 exists so that an unindexed version cannot hide,
+  // not so that the index has to spell a filename.
+  const { dir } = fixture({
+    mutate: ({ edit }) => edit("docs/prd/README.md", "| [v1](PRD-v1.md) | 2026-01-01 |",
+      "| v1 | 2026-01-01 |"),
+  });
+  const r = both(dir);
+  assert.equal(r.status, 0, `${r.py.stderr}${r.py.stdout}`);
+  rm(dir);
+});
+
+test("a PRD version named nowhere in the index still fails", () => {
+  const { dir } = fixture({
+    mutate: ({ edit }) => edit("docs/prd/README.md", "| [v1](PRD-v1.md) | 2026-01-01 |",
+      "| the first one | 2026-01-01 |"),
+  });
+  const r = both(dir);
+  assert.equal(r.status, 1, r.py.stdout);
+  assert.deepEqual(ids(r.findings), ["A13"]);
+  rm(dir);
+});
+
+// A12 freezes RECORDS, not the files that index them. An index grows by design — adding a
+// version means appending a row — and `PRD-current.md` is replaced wholesale when a new version
+// lands. Freezing either makes the layer unusable, which is the opposite of enforcing its edit
+// rule. Found by the two tests above, which could not pass without it.
+for (const [rel, from, to, frozen] of [
+  ["docs/prd/README.md", "| 2026-01-01 | First recorded intent", "| 2026-01-02 | First recorded intent", false],
+  ["docs/prd/PRD-current.md", "one beekeeper can plan", "one beekeeper may plan", false],
+  ["docs/adr/README.md", "| 2026-01-01 | accepted |", "| 2026-01-02 | accepted |", false],
+  ["docs/prd/PRD-v1.md", "one beekeeper can plan", "one beekeeper may plan", true],
+]) {
+  test(`A12 ${frozen ? "freezes" : "does not freeze"} ${rel}`, () => {
+    const { dir } = fixture({ mutate: ({ edit }) => edit(rel, from, to) });
+    const r = both(dir);
+    if (frozen) {
+      assert.equal(r.status, 1, r.py.stdout);
+      assert.ok(r.findings.some((l) => l.startsWith(`${rel}:1: A12 `)), r.findings.join("\n"));
+    } else {
+      assert.ok(!r.findings.some((l) => l.includes(" A12 ")),
+        `${rel} is an index or the active text, not a record:\n${r.findings.join("\n")}`);
+    }
+    rm(dir);
+  });
+}
