@@ -1,0 +1,16 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "seam",
+  "owner": {
+    "name": "Mitya"
+  },
+  "metadata": {
+    "description": "Local marketplace carrying one plugin: seam."
+  },
+  "plugins": [
+    {
+      "name": "seam",
+      "source": "."
+    }
+  ]
+}

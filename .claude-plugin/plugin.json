@@ -1,0 +1,17 @@
+{
+  "name": "seam",
+  "description": "Installs a layered, mechanically-enforced documentation method into a repo: a sources-of-truth table, a generated drift checker, issue/PR conventions, and a review policy that picks its level from what the diff touches.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Mitya"
+  },
+  "license": "MIT",
+  "keywords": [
+    "documentation",
+    "drift",
+    "adr",
+    "prd",
+    "code-review",
+    "conventions"
+  ]
+}
