@@ -177,25 +177,95 @@ Three sections were trimmed out of `campaign-github` during generalisation and w
 - **no owned-row invariant** — how status reporting knows the active milestone, which the
   follow-up qualifier's third clause depends on.
 
+## Settled after the builder check
+
+A fresh reviewer planned from this document on 2026-10-31 and raised eight questions. Five are
+settled here as my call; the rest went back to the owner.
+
+### A work unit is a step inside a plan, not a GitHub issue
+
+**Derived, not stated** — and it is the derivation everything else moves on, so it is flagged as
+one. The owner's rule is *"anything worth the time should be planned … or filed as a separate
+issue due to complexity"*: planning is explicitly **not** filing. A unit therefore has to be
+namable without an issue number, or the new disposition row cannot be performed at all.
+
+Consequences, which the builder was right to call out:
+
+- the layer-5 plan template needs a **second table** — unit, the test that proves it, its DoD —
+  beside the existing `§ The issues` table, which stays as the issue↔plan mapping A8 reads;
+- A8's parse target is unchanged (it still reads `§ The issues`); the **inverted** backstop reads
+  the new table;
+- the commit convention is unchanged: `Closes #N` / `Part of #N` still cite issues. A unit with no
+  issue is cited by its row, not by a number.
+
+### The two mechanical checks
+
+- Findings key on the **test file's path and line 1**, never on a sha, so they baseline and
+  allow-list exactly like every other finding. A commit-keyed finding would be unbaselinable and
+  would break the one mechanism that makes day-one debt a number.
+- The test-precedence check runs over `default_branch..HEAD` and needs `fetch-depth: 0`. On the
+  default branch it reports **"not applicable here"** explicitly rather than passing silently —
+  after a squash merge the test and its implementation are always in one commit, so a silent pass
+  would be a check with no teeth pretending otherwise.
+- The test↔implementation mapping is **repo-specific and therefore a config key** with its own
+  interview question.
+
+### The active milestone, and plan-less work
+
+- `milestones[]` gains an `active` marker, exactly one true. The shipped follow-up qualifier's
+  third clause already depends on an answer and currently has none.
+- Campaign's three carve-outs generalise as one rule: **a change with no owning unit may name the
+  document that owns it instead.** That is what all three of campaign's do. Without it the
+  inverted backstop reds on ops and decision work, which is the named anti-goal.
+
+### Where context-economy artifacts live, and what triggers a level
+
+- **Not under `docs/`.** A10 requires a table row for every markdown file there, and a per-session
+  scratch file cannot earn one. They live in a gitignored `.seam/session/` or the harness's own
+  scratch directory.
+- The threshold table triggers on the harness's **own budget indicator** where one exists — it
+  does in the session this design was written in — and falls back to the heuristic kind (agents
+  dispatched, large reads taken) where it does not. That fallback is why agent_starter's
+  per-agent heuristics existed, and it is the part of them that travels.
+
+### Two more
+
+- **Default-on in the wizard**, with one interview question. Opt-in would make the approach the
+  exception. Note a pre-existing defect to fix alongside: `docs/routing.md` has a template that
+  **no interview question proposes**.
+- **The new procedural rules get eval cases.** seam's four existing ones each have one, and the
+  README says why. The model-run bill belongs in the plan, not here.
+- **A review-mandated fold-in is covered by the unit under review.** A round-one finding is about
+  that unit's output, so the unit owns the fix and the start contract is satisfied. Without this
+  the two shipped mandates collide.
+
 ## Left to the builder
 
-- **The format by which a plan unit names its test.** The plan executed in this build used an
+- **The format by which a plan unit names its test.** The plan executed before this design used an
   `Expected:` line per step; whether that is the shape is open.
-- **Where each rule lives** — which are new skills, which extend `seam-github` and `seam-review`,
-  and which are new repo-doc templates. At least one new layer-2 doc is implied (a `docs/building.md`
-  or equivalent) plus a deepened `docs/routing.md`.
+- **Which rules are new skills** and which extend `seam-github` and `seam-review`.
 - **The threshold table's numbers.** `agent_starter` uses 50 / 60 / 75 %. Reuse or re-derive.
-- **How the start contract is honoured in-flight** without becoming a tax: what counts as "a unit
-  covers this" for a two-line edit, and where the proportionality cut sits.
-- **Whether the three repairs ride along or ship separately.**
-- **Whether the `docs/routing.md` template should name third-party skills per phase**, which is how
-  campaign actually routes work.
+- **The proportionality cut** — what counts as "a unit covers this" for a two-line edit.
+- **Whether the three `campaign-github` repairs ride along or ship separately.**
+- **Whether `docs/routing.md` should name third-party skills per phase**, which is how campaign
+  actually routes work.
 - **The finish-line measurement**: how a session reports whether what it wrote was consulted.
 
-## Open questions
+## Open — the owner's to settle
 
-- Nothing in this design records a *direction correction* durably. When the owner says "not that
-  way", that is a decision; today it lands in a transcript. Whether it should feed layer 3 is
-  unresolved.
-- The ruling ledger's value is unproven at scale: 28 entries in this build, consulted once. That is
-  close to the anti-goal's line.
+Three questions turned out to be one: **does seam get a layer-3 decision track, and if so what
+lands in it?** It decides all of:
+
+- where the **dated record of the disposition reversal** goes (the design says a reversal is a new
+  record; seam's `adr.file` points at a `docs/decisions.md` that does not exist, and A12/A13 are
+  off);
+- whether the **ruling ledger** is built, or whether rulings stay in the PR body or the transcript
+  — with the author's own doubt attached: 28 entries, consulted once;
+- whether a **direction correction** gets recorded durably, which is the last place the owner's
+  live correction still dies in a transcript, and goal 1's stated reason for existing.
+
+Creating the track also settles a README open question and flips byte-freeze on for everything
+written there afterwards.
+
+And separately: **what, if anything, existing adopters get.** A regenerated plugin would silently
+change their fold-in rule.

@@ -412,3 +412,31 @@ test("checker.path defaults from the language, and a mismatch is still refused",
   assert.match(r.stderr, /checker\.path/);
   rm(dir);
 });
+
+test("A8's plan glob comes from the layer-5 row, not a hardcoded path", () => {
+  // Measured on seam itself: adding a layer-5 row at docs/superpowers/specs/*.md switched A8 on
+  // with plan_glob hardcoded to docs/plans/*.md, a directory that does not exist — so A8 was
+  // enabled and compared nothing, which is the shape "off is not passing" objects to.
+  const ans = answers();
+  // A glob row is never created — it names a form. The validator enforces that, so the row
+  // covers what is already there.
+  ans.docs = ans.docs.map((d) =>
+    d.layer === 5 ? { ...d, path: "docs/superpowers/specs/*.md", create: false } : d);
+  const { dir, r } = init(ans);
+  assert.equal(r.status, 0, r.stderr);
+  const cfg = JSON.parse(read(dir, ".seam/config.json"));
+  assert.equal(cfg.assertions.A8.enabled, true);
+  assert.equal(cfg.assertions.A8.plan_glob, "docs/superpowers/specs/*.md");
+  rm(dir);
+});
+
+test("several layer-5 rows give A8 every one of them", () => {
+  const ans = answers();
+  ans.docs.push({ path: "docs/plans/*.md", layer: 5, owns: "Nothing — the plans",
+    enforces: "", create: false });
+  const { dir } = init(ans);
+  const cfg = JSON.parse(read(dir, ".seam/config.json"));
+  assert.deepEqual(cfg.assertions.A8.plan_glob,
+    ["docs/plans/first-subsystem.md", "docs/plans/*.md"]);
+  rm(dir);
+});

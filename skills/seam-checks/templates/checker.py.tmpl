@@ -713,11 +713,19 @@ def main() -> int:
     # ── A8. One issue, one owning plan. ─────────────────────────────────────
     if on("A8"):
         ran += 1
-        rx = glob_re(opt("A8", "plan_glob", "docs/plans/*.md"))
+        globs = opt("A8", "plan_glob", "docs/plans/*.md")
+        globs = [globs] if isinstance(globs, str) else list(globs)
+        res = [glob_re(g) for g in globs]
+        # Enabled and matching nothing is not a pass. Same rule A3 and A12 follow: an assertion
+        # that cannot make its comparison says so, because silence reads as evidence.
+        plans = [d for d in docs if any(rx.match(d) for rx in res)]
+        if not plans:
+            findings.append(finding("A8", CONFIG_PATH, 1, ", ".join(globs),
+                f"assertions.A8 is enabled and `{', '.join(globs)}` matches no doc — the "
+                f"one-issue-one-plan comparison was not made. Point it at the layer-5 rows, or "
+                f"switch A8 off; off is distinct from passing"))
         owners: dict[str, list[tuple[str, int]]] = {}
-        for d in docs:
-            if not rx.match(d):
-                continue
+        for d in plans:
             body = section_body(text_of[d], "The issues")
             if body is None:
                 continue

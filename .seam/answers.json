@@ -12,7 +12,7 @@
   ],
   "repo": {
     "name": "seam",
-    "default_branch": "main"
+    "default_branch": "master"
   },
   "table": {
     "file": "docs/contributing.md"
@@ -107,6 +107,10 @@
         {
           "path": "docs/building.md",
           "reason": "a doc an ADOPTING repo has, named in prose about what the templates produce \u2014 not a file in this repo. Same class as CLAUDE.md above"
+        },
+        {
+          "path": "docs/decisions.md",
+          "reason": "its ABSENCE is the subject of the sentence citing it \u2014 whether seam gets a layer-3 decision track is an open question, and docs/superpowers/specs/2026-10-30-plan-first-implementation-design.md is where it is posed"
         },
         {
           "path": "docs/routing.md",

@@ -698,10 +698,20 @@ async function main() {
   // ── A8. One issue, one owning plan. ─────────────────────────────────────
   if (on("A8")) {
     ran += 1;
-    const rx = globRe(opt("A8", "plan_glob", "docs/plans/*.md"));
+    const rawGlobs = opt("A8", "plan_glob", "docs/plans/*.md");
+    const globList = typeof rawGlobs === "string" ? [rawGlobs] : [...rawGlobs];
+    const res = globList.map(globRe);
+    // Enabled and matching nothing is not a pass. Same rule A3 and A12 follow: an assertion that
+    // cannot make its comparison says so, because silence reads as evidence.
+    const plans = docs.filter((d) => res.some((rx) => rx.test(d)));
+    if (!plans.length) {
+      findings.push(finding("A8", CONFIG_PATH, 1, globList.join(", "),
+        `assertions.A8 is enabled and \`${globList.join(", ")}\` matches no doc — the `
+        + `one-issue-one-plan comparison was not made. Point it at the layer-5 rows, or switch `
+        + `A8 off; off is distinct from passing`));
+    }
     const owners = new Map();
-    for (const d of docs) {
-      if (!rx.test(d)) continue;
+    for (const d of plans) {
       const body = sectionBody(textOf[d], "The issues");
       if (body === null) continue;
       const first = body.split("\n")[0];

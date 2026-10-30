@@ -513,3 +513,21 @@ test("an explicit not_fields_override replaces the built-in default", () => {
     `an override must let a repo check a column called html:\n${r.findings.join("\n")}`);
   rm(dir);
 });
+
+test("an enabled assertion whose glob matches nothing says the comparison was not made", () => {
+  // The same rule A3 and A12 already follow: off is distinct from passing, and an assertion that
+  // is ON but cannot make its comparison fails loudly rather than going quiet. Measured on seam
+  // itself, where A8 was enabled against a directory that did not exist.
+  const { dir } = fixture({
+    mutate: ({ dir: d }) => {
+      const cfg = JSON.parse(readFileSync(join(d, ".seam/config.json"), "utf8"));
+      cfg.assertions.A8.plan_glob = "docs/nowhere/*.md";
+      writeFileSync(join(d, ".seam/config.json"), JSON.stringify(cfg, null, 2));
+    },
+  });
+  const r = both(dir);
+  assert.equal(r.status, 1, r.py.stdout);
+  assert.deepEqual(ids(r.findings), ["A8"]);
+  assert.ok(r.findings.some((l) => /not made|matches no/i.test(l)), r.findings.join("\n"));
+  rm(dir);
+});

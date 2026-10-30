@@ -192,6 +192,13 @@ function stripProse(value, subkeys) {
   return value;
 }
 
+/** The layer-5 row paths: one string when there is one, the list when there are several. */
+function layer5Globs(a) {
+  const paths = (a.docs ?? []).filter((d) => d.layer === 5).map((d) => d.path);
+  if (!paths.length) return "docs/plans/*.md";
+  return paths.length === 1 ? paths[0] : paths;
+}
+
 function defaultAssertions(a) {
   const layers = new Set((a.docs ?? []).map((d) => d.layer));
   const has = (n) => layers.has(n);
@@ -208,7 +215,10 @@ function defaultAssertions(a) {
     A5: { enabled: false, vocabularies: [] },
     A6: { enabled: false, retired: [] },
     A7: { enabled: false, reversed: [] },
-    A8: { enabled: has(5), plan_glob: "docs/plans/*.md" },
+    // The glob comes from the layer-5 rows themselves. Hardcoding `docs/plans/*.md` switched A8
+    // on against a directory that did not exist the moment a repo put its plans anywhere else —
+    // enabled, and comparing nothing, which is the shape "off is not passing" objects to.
+    A8: { enabled: has(5), plan_glob: layer5Globs(a) },
     A9: { enabled: false, count_sites: [] },
     A10: { enabled: true },
     A11: { enabled: true },

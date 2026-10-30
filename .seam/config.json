@@ -2,7 +2,7 @@
   "seam_version": "0.1.0",
   "repo": {
     "name": "seam",
-    "default_branch": "main"
+    "default_branch": "master"
   },
   "table": {
     "file": "docs/contributing.md"
@@ -89,6 +89,10 @@
           "reason": "a doc an ADOPTING repo has, named in prose about what the templates produce — not a file in this repo. Same class as CLAUDE.md above"
         },
         {
+          "path": "docs/decisions.md",
+          "reason": "its ABSENCE is the subject of the sentence citing it — whether seam gets a layer-3 decision track is an open question, and docs/superpowers/specs/2026-10-30-plan-first-implementation-design.md is where it is posed"
+        },
+        {
           "path": "docs/routing.md",
           "reason": "a doc an ADOPTING repo has, named in prose about what the templates produce — not a file in this repo. Same class as CLAUDE.md above"
         },
@@ -132,7 +136,7 @@
     },
     "A8": {
       "enabled": true,
-      "plan_glob": "docs/plans/*.md"
+      "plan_glob": "docs/superpowers/specs/*.md"
     },
     "A9": {
       "enabled": false,
@@ -146,7 +150,7 @@
     },
     "A12": {
       "enabled": false,
-      "default_branch": "main"
+      "default_branch": "master"
     },
     "A13": {
       "enabled": false
