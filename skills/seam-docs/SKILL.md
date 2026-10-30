@@ -70,11 +70,26 @@ Never:
 ### A tree that already has docs
 
 The riskier path, because the repo already has an answer to most of these questions and it is
-written down somewhere. Read `references/adopt.md`.
+written down somewhere — usually in two places that disagree. **Read `references/adopt.md` before
+starting**; it owns this procedure and what the evidence does and does not reach.
 
-In short: inventory first, propose what each existing file **currently owns** and which layer it
-is, flag overlaps and layer violations, and write only the table, the config, the baseline, and
-files the user adds.
+1. **Inventory with the program, not by reading forty files:**
+
+   ```bash
+   node "$CLAUDE_PLUGIN_ROOT/bin/seam-inventory.mjs" --repo . > /tmp/seam-inventory.json
+   ```
+
+   Read-only, no dependencies, JSON out. Reading the files yourself is how a proposal acquires
+   invented confidence; every claim the inventory makes is traceable to the tree.
+2. **Propose** what each file currently owns and which layer it is — showing `layer_guess` *with
+   its `why`*, as a proposal. The guess is a path-and-history heuristic; it cannot see semantics,
+   and it will be wrong about a file whose directory name misleads.
+3. **Flag** overlaps and layer violations, with the evidence lines rather than the verdict. An
+   overlap whose `layers` are all one layer is usually a shared format, not a competing claim.
+4. **Tell the user how big the baseline will be**, from the inventory's `summary`, *before* it is
+   written. A number they agreed to is a ratchet; a number they discover later is a wall.
+5. **Write** only the table, `.seam/config.json`, the baseline, and files the user adds. A row
+   for a file that already exists takes `"create": false`.
 
 ## Why the program, and not you
 
