@@ -398,7 +398,11 @@ function writeDoc(w, a, vars, d) {
       // A layer-2 doc whose name says what it owns gets the template for that, rather than the
       // generic one: a repo's taxonomy and its review policy have a shape, and a blank layer-2
       // doc asking the user to invent one is the wizard not doing its job.
-      const named = { "taxonomy.md": "current/taxonomy.md", "reviewing.md": "current/reviewing.md" };
+      const named = {
+        "taxonomy.md": "current/taxonomy.md",
+        "reviewing.md": "current/reviewing.md",
+        "routing.md": "current/routing.md",
+      };
       const special = named[basename(d.path)];
       w.create(d.path, render(tmpl(special && existsTemplate(special) ? special : "current/doc.md"), v));
       return;

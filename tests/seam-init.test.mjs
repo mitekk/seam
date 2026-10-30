@@ -301,3 +301,51 @@ test("a layer-2 row named taxonomy.md gets the taxonomy template, not the generi
     "p0 is not defined by consequence");
   rm(dir);
 });
+
+test("a layer-2 row named reviewing.md gets the review-policy template", () => {
+  const ans = answers();
+  ans.docs.push({
+    path: "docs/reviewing.md",
+    layer: 2,
+    owns: "The level policy, the rounds, and what a review leaves outstanding",
+    enforces: "",
+    create: true,
+  });
+  const { dir, r } = init(ans);
+  assert.equal(r.status, 0, r.stderr);
+  const t = read(dir, "docs/reviewing.md");
+  assert.match(t, /Layer 2/);
+  assert.match(t, /amend in place/i);
+  // The condition table, including the row that follows from the append-only edit rule.
+  assert.match(t, /load_bearing/);
+  assert.match(t, /Layer 3 or 4/);
+  assert.match(t, /low_review_paths/);
+  // The bound, the three triggers, and the ratchet.
+  assert.match(t, /Two rounds is the bound/);
+  assert.match(t, /recommended, never automatic/i);
+  assert.match(t, /ratchet/i);
+  // The measurement, because a bound without one gets argued away.
+  assert.match(t, /21 rounds/);
+  assert.match(t, /6, 5, 5, 4, 6, 9, 5, 7, 4 and 4/);
+  // The checker's path reached it from the config rather than being hardcoded.
+  assert.ok(t.includes("scripts/check_docs.py"), "the checker path did not substitute");
+  rm(dir);
+});
+
+test("a layer-2 row named routing.md gets the routing template", () => {
+  const ans = answers();
+  ans.docs.push({
+    path: "docs/routing.md",
+    layer: 2,
+    owns: "Model and effort pinned per artifact, and this repo's agent shape",
+    enforces: "",
+    create: true,
+  });
+  const { dir, r } = init(ans);
+  assert.equal(r.status, 0, r.stderr);
+  const t = read(dir, "docs/routing.md");
+  assert.match(t, /Layer 2/);
+  assert.match(t, /This table is the only copy/);
+  assert.match(t, /review depth, not model effort/i);
+  rm(dir);
+});
