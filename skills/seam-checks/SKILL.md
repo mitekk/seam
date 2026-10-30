@@ -56,7 +56,7 @@ The order matters, because getting it wrong is how enforcement gets switched off
 1. **Read the finding.** It names the file, the line, and what it expected.
 2. **Decide which side is wrong.** The artifact is authoritative: where a doc and the code
    disagree, the code wins and the doc is the drift. Where two docs disagree, the higher layer
-   wins — `seam-docs/references/layers.md` § Authority.
+   wins — `$CLAUDE_PLUGIN_ROOT/skills/seam-docs/references/layers.md` § Authority.
 3. **Fix the doc, in the same change** that caused the drift. A doc your change makes wrong is
    part of your change.
 4. **If the check is wrong**, scope it in the config — a `not_fields` entry, an allow-list entry

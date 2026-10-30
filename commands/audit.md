@@ -22,7 +22,7 @@ Arguments: `$ARGUMENTS`
 4. For each finding, say which side is wrong — the artifact is authoritative, and where two docs
    disagree the higher layer wins. Offer the fix; do not apply it unasked.
 5. **If the checker's version stamp is older than the installed plugin's**
-   (`.claude-plugin/plugin.json` `version`), say so and offer to regenerate:
+   (`$CLAUDE_PLUGIN_ROOT/.claude-plugin/plugin.json` `version`), say so and offer to regenerate:
 
    ```bash
    node "$CLAUDE_PLUGIN_ROOT/bin/generate-checker.mjs" --repo .
@@ -36,5 +36,5 @@ With `--write-baseline`, re-record today's violations as the baseline instead of
 Say how many entries that adds or removes, and say plainly that a baseline entry is a debt and not
 an approval — an allow-list entry is the other thing, and it needs a written reason.
 
-`skills/seam-checks/references/assertions.md` is what each assertion reads, and what each one
+`$CLAUDE_PLUGIN_ROOT/skills/seam-checks/references/assertions.md` is what each assertion reads, and what each one
 deliberately does not reach. Read it before explaining a finding.

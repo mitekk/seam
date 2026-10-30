@@ -95,15 +95,17 @@ A repo that has had docs for a while has day-one drift, and it is not hypothetic
 repo's `CLAUDE.md` cites six paths that do not exist, so A1 would go red on the first run, on the
 very file the wizard just wrote the table into.
 
-So the first checker run writes every current violation to `.seam/baseline.json` — assertion id,
-file, line, and the matched text — and the checker then **fails only on violations not in the
-baseline**. `/seam:audit` prints the count on every run, so it stays visible and is expected to
+So run the checker once with **`--write-baseline`** and it records every current violation to
+`.seam/baseline.json` — assertion id, file, line, and the matched text — after which it **fails
+only on violations not in the baseline**. An ordinary run never writes it, so a repo with no
+baseline file is a repo that reds on its day-one drift. `/seam:audit` prints the count on every run, so it stays visible and is expected to
 shrink. A violation whose line no longer matches drops out of the baseline automatically rather
 than being carried forever.
 
-**A baseline entry is a debt with a number on it, not an approval.** That is the distinction the
-allow-list keeps: an allow-list entry requires a written reason and means "this will never be
-fixed". They are separate files for exactly that reason.
+**A baseline entry is a debt with a number on it, not an approval.** An allow-list entry is the
+other thing: it requires a **written reason** — the checker refuses one without it — and it means
+"this will never be fixed". The baseline is its own file; an allow-list lives under the assertion
+it exempts, in `.seam/config.json`. Two places, two rules, and the difference is the point.
 
 Tell the user the size of the baseline **before** writing it, from the inventory's `summary`. A
 number they agreed to is a ratchet; a number they discover afterwards is a wall.

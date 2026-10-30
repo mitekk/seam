@@ -15,11 +15,11 @@ Arguments: `$ARGUMENTS`
 
 Use the `seam-docs` skill, which owns this procedure. Before anything else:
 
-1. Read `skills/seam-docs/references/layers.md` — the layer is the answer to *what happens when
+1. Read `$CLAUDE_PLUGIN_ROOT/skills/seam-docs/references/layers.md` — the layer is the answer to *what happens when
    this document turns out to be wrong*, and it selects the edit rule and the assertions.
-2. Read `skills/seam-docs/references/interview.md` — the question set, the answers-file schema,
+2. Read `$CLAUDE_PLUGIN_ROOT/skills/seam-docs/references/interview.md` — the question set, the answers-file schema,
    and which questions may be answered from the tree rather than asked.
-3. If this repo already has docs, read `skills/seam-docs/references/adopt.md` first. The adopt
+3. If this repo already has docs, read `$CLAUDE_PLUGIN_ROOT/skills/seam-docs/references/adopt.md` first. The adopt
    path never rewrites an existing doc's body.
 
 Then, once the answers file exists:

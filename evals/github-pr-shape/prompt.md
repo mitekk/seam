@@ -26,3 +26,9 @@ Along the way I noticed four things:
    scope at all.
 
 `docs/taxonomy.md` has the domains and priorities. `db/schema.sql` is the only load-bearing path.
+`docs/plans/inspections.md` § The issues is where #12 is sequenced, and it says #12 comes first
+because every later screen reads the filtered list. `docs/engineering.md` § Hive states is the doc
+that cites the schema's vocabulary.
+
+Write the body only — do not run anything, and do not ask me to fill anything in. Where you would
+need an issue number you do not have, say so in the line itself.

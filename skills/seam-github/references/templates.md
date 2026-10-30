@@ -94,7 +94,8 @@ a second copy in the query — `docs/engineering.md` § Hive states is the doc t
 Closes #12.
 
 ## Follow-ups
-- <S · `web` — folded in> the page heading was two sizes too large at 360px; one file, no new test
+- <S · `web` — folded in, OK given> the page heading was two sizes too large at 360px; one file,
+  no new test. Cross-domain, so it took an OK
 - <L · `hives` — issue #18> the inspection form accepts a date in the future, which a beekeeper
   would hit and which reaches `db/schema.sql` — passes qualifier clauses 1 and 2. Crosses the
   schema and both the form and the API, so it is not folded in
@@ -106,9 +107,11 @@ Closes #12.
 
 **Read the four dispositions against the rule:**
 
-- The heading is **Small**, so it folds in. Same branch, noted here, no ledger row — a fold-in is
-  the repo doing the thing, and a row would be a standing record of a defect that no longer
-  exists.
+- The heading is **Small**, so it folds in. No ledger row — a fold-in is the repo doing the thing,
+  and a row would be a standing record of a defect that no longer exists. It is `web` inside a
+  `hives` branch, so it is **cross-domain and took an OK**; a same-domain S/M fix would not have.
+  The line says so, because the squash subject will file it under `hives` and the PR body is then
+  the only place it is written down in the domain it belongs to.
 - The future-dated inspection **passes the qualifier** (clauses 1 and 2), so it is an issue, and
   the line **says which clauses**. It is also **Large**, which is why it is not folded in — but
   Large is not why it became an issue. Size decides fold-in; the qualifier decides issue.

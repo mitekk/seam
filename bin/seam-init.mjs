@@ -76,8 +76,16 @@ function validate(a) {
     "name the file that hosts the sources-of-truth table (usually CLAUDE.md)");
   need(["python", "node"].includes(a.checker?.language), "checker.language",
     `must be "python" or "node", not ${JSON.stringify(a.checker?.language)}`);
-  need(typeof a.checker?.path === "string" && a.checker.path, "checker.path",
-    "name the path the emitted checker is written to");
+  // `checker.path` is optional and defaults from the language — the interview asks which
+  // language, not which filename, and an answers file built from the documented question set
+  // exited 2 on this key before. When it IS given, the extension has to match the language, or
+  // the one that runs is whichever CI invokes.
+  if (a.checker?.path !== undefined) {
+    const ext = a.checker.language === "python" ? ".py" : ".mjs";
+    need(typeof a.checker.path === "string" && a.checker.path.endsWith(ext), "checker.path",
+      `${JSON.stringify(a.checker.path)} does not end in ${ext}, so the language and the`
+      + ` filename disagree — and the one that runs is whichever CI invokes`);
+  }
   need(["madr", "single"].includes(a.adr?.format), "adr.format",
     `must be "madr" or "single", not ${JSON.stringify(a.adr?.format)}`);
   if (a.adr?.format === "madr") {
@@ -104,10 +112,14 @@ function validate(a) {
     }
   });
 
-  const lb = Array.isArray(a.load_bearing) ? a.load_bearing : [];
-  need(Array.isArray(a.load_bearing), "load_bearing", "must be a list of globs (may be empty)");
-  need(Array.isArray(a.low_review_paths), "low_review_paths",
-    "must be a list of paths (empty is the default, and is the right answer for most repos)");
+  // Both default to empty when absent. `low_review_paths` is documented as defaulting to `[]`,
+  // and `load_bearing` is the question most repos answer with "nothing, yet".
+  const lb = a.load_bearing ?? [];
+  need(a.load_bearing === undefined || Array.isArray(a.load_bearing), "load_bearing",
+    "must be a list of globs, or absent, which means empty");
+  need(a.low_review_paths === undefined || Array.isArray(a.low_review_paths), "low_review_paths",
+    "must be a list of paths, or absent, which means empty — and empty is the right answer for"
+    + " most repos");
 
   (a.artifacts ?? []).forEach((art, i) => {
     need(typeof art.path === "string" && art.path, `artifacts[${i}].path`, "an artifact needs a path");
@@ -215,13 +227,17 @@ function project(a) {
     seam_version: a.seam_version ?? "0.1.0",
     repo: a.repo ?? { name: basename(process.cwd()), default_branch: "main" },
     table: a.table,
-    checker: a.checker,
+    checker: {
+      language: a.checker.language,
+      path: a.checker.path
+        ?? (a.checker.language === "python" ? "scripts/check_docs.py" : "scripts/check_docs.mjs"),
+    },
     adr: a.adr,
     prd: a.prd ?? { dir: "docs/prd", version: 1 },
     artifacts: a.artifacts ?? [],
     docs: stripProse(a.docs, PROSE_SUBKEYS.docs),
-    load_bearing: a.load_bearing,
-    low_review_paths: a.low_review_paths,
+    load_bearing: a.load_bearing ?? [],
+    low_review_paths: a.low_review_paths ?? [],
     domains: stripProse(a.domains ?? [], PROSE_SUBKEYS.domains),
     milestones: stripProse(a.milestones ?? [], PROSE_SUBKEYS.milestones),
     agents: stripProse(a.agents ?? [], PROSE_SUBKEYS.agents),

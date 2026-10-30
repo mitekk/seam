@@ -38,7 +38,6 @@
     "bin/**",
     "skills/seam-checks/templates/**",
     ".claude-plugin/**",
-    "claude plugin validate --strict .",
     "scripts/bootstrap-tracker.sh"
   ],
   "low_review_paths": [],

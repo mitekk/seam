@@ -16,7 +16,8 @@ triggers and the ratchet for this repo. This file is how to write that doc and h
 rounds; it never answers a question the doc answers.
 
 If the repo has no `docs/reviewing.md`, say so and offer to write it from
-`seam-docs/templates/current/reviewing.md` rather than improvising a level. A level improvised per
+`$CLAUDE_PLUGIN_ROOT/skills/seam-docs/templates/current/reviewing.md` rather than improvising a
+level. A level improvised per
 session is the thing the doc exists to replace.
 
 ## Pick the level from what the diff touches — first match wins
@@ -36,6 +37,12 @@ then walk the rows in order:
 
 **Say which row decided it.** A level with no stated reason is a level nobody can argue with, and
 the row is the argument.
+
+**Read the order literally: `low` is the sixth row, and that is deliberate.** A path on
+`low_review_paths` that also matches a `high` or `medium` row above takes the higher level — so
+opting a convention file or a source file into `low` does not work, and should not. The list is
+for **prose-only paths**, which match none of rows 1 to 5; that is what makes row 6 reachable at
+all, and it is why the interview asks for prose paths specifically.
 
 Three things to hold on to:
 

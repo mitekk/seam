@@ -42,14 +42,14 @@ rather than asking open questions about them.
 | 3 | What is in scope for the current version, and what is deliberately out? | `in_scope`, `out_of_scope` | Out-of-scope is a statement about *this version*, not a refusal. |
 | 4 | Which files carry weight — where a defect has consequences beyond the file? | `load_bearing` | The one question the review level, the follow-up qualifier and A11 all read. Shown **empty** by default. |
 | 5 | Which of these existing files is a layer-1 artifact — the thing that cannot be wrong? | `artifacts[]` | Each needs a `parser`: `sql`, `ts`, or `none`. Every artifact must also be in `load_bearing`; layer 1 wins over every doc, so it carries weight by construction. |
-| 6 | For each proposed doc: what does it own, and what happens when it is wrong? | `docs[].owns`, `docs[].layer` | The layer question is `references/layers.md` § Choosing a layer, in practice. A track that writes several files (layers 3 and 4) gets one **glob** row — `docs/adr/*.md` — because A10 reads this cell to decide whether a file is covered. |
+| 6 | For each proposed doc: what does it own, and what happens when it is wrong? | `docs[].owns`, `docs[].layer` | The layer question is `layers.md` § Choosing a layer, in practice — beside this file. A track that writes several files (layers 3 and 4) gets one **glob** row — `docs/adr/*.md` — because A10 reads this cell to decide whether a file is covered. |
 | 7 | For each proposed doc: what enforces it, if anything? | `docs[].enforces` | Empty is the default and the common answer. A value must be on `load_bearing`. |
-| 8 | One file per decision, or one dated file? | `adr.format` | `madr` or `single`. `references/layers.md` has the trade. Asked **once**. |
-| 9 | Which paths, if any, are prose-only enough that a cheap review is adequate? | `low_review_paths` | **Defaults to empty, and empty is the right answer for most repos.** Take an empty answer without arguing. |
+| 8 | One file per decision, or one dated file? | `adr.format` | `madr` or `single`. `layers.md` has the trade, beside this file. Asked **once**. |
+| 9 | Which paths, if any, are **prose-only** enough that a cheap review is adequate? | `low_review_paths` | **Defaults to empty, and empty is the right answer for most repos.** Take an empty answer without arguing. Ask for prose paths specifically: `low` is the sixth row of the level table and a path that also matches a `high` or `medium` row above takes the higher level, so a source file or a convention file on this list is a row that never fires. |
 | 10 | What are the domains work gets labelled with? | `domains[]` | One per source-of-truth row is the usual mapping. |
 | 11 | What is the build order? | `milestones[]` | From the infra or architecture doc if one exists. |
 | 12 | Which agents does this repo want, and what does each cover? | `agents[]` | Optional. An empty list is fine; a generic agent is worse than none. |
-| 13 | Checker language: Python 3 or Node? | `checker.language` | Both implement the same assertions with the same output. Pick what the repo already runs in CI. |
+| 13 | Checker language: Python 3 or Node? | `checker.language` | Both implement the same assertions with the same output. **Pick what the repo already runs in CI** — that is the whole rule, because a runner that has to install the other one is a check that can fail for a reason that is not drift. `checker.path` is optional and defaults to `scripts/check_docs.py` or `scripts/check_docs.mjs`; if you give it, the extension has to match the language. |
 | 14 | Anything still undecided? | `open_questions[]` | Each goes in **as a question**. Never promoted to a confident sentence. |
 
 ### The discipline
@@ -68,7 +68,8 @@ rather than asking open questions about them.
   "seam_version": "0.1.0",
   "repo":    { "name": "apiary", "default_branch": "main" },
   "table":   { "file": "CLAUDE.md" },            // which file hosts the sources-of-truth table
-  "checker": { "language": "python" | "node", "path": "scripts/check_docs.py" },
+  "checker": { "language": "python" | "node",
+               "path": "scripts/check_docs.py" },      // optional; defaults from the language
   "adr":     { "format": "madr", "dir": "docs/adr" },
   //         | { "format": "single", "file": "docs/decisions.md" }
   "prd":     { "dir": "docs/prd", "version": 1 },
@@ -115,8 +116,15 @@ rather than asking open questions about them.
 | `assertions.A5/A6/A7/A9` | off | Each needs a repo-specific list. An empty list that passes is worse than a switch that is off. |
 | `assertions.A8` | on iff a layer-5 doc exists | |
 | `assertions.A12/A13` | on iff a layer-3 or layer-4 doc exists | |
-| `low_review_paths` | `[]` | `low` is hunk-local and cannot verify a claim a document makes about the tree. |
+| `low_review_paths` | `[]` | `low` is hunk-local and cannot verify a claim a document makes about the tree. Absent means empty. |
+| `load_bearing` | `[]` | Absent means empty, which is the honest answer for a repo where nothing enforces anything yet. |
+| `checker.path` | from the language | `scripts/check_docs.py` or `scripts/check_docs.mjs`. |
+| `assertions.A4.not_fields` | a built-in list of extensions and TLDs, **plus** whatever you add | So a repo cannot blind A4 by naming one exemption of its own. `not_fields_override` replaces the list outright, for the repo whose column really is called `html`. |
 | `checker.language` | asked, no default | |
+
+**There is no `priorities` key.** The three priorities are fixed by the method — `p0`, `p1`, `p2`,
+by consequence — so there is nothing repo-specific to project. They live in the repo's
+`docs/taxonomy.md`, which is where a reader looks for them.
 
 ### Rejections
 
@@ -126,7 +134,9 @@ are not there. Each failure names the key path:
 
 - `table.file` missing
 - `checker.language` not `python` or `node`
+- `checker.path` given with an extension that does not match the language
 - `adr.format` not `madr` or `single`, or the matching `dir`/`file` missing
 - `docs` empty, or a row with no `path`, no `owns`, or a `layer` outside 1..6
-- `load_bearing` or `low_review_paths` not a list
+- `load_bearing` or `low_review_paths` present and not a list (absent is fine — both mean empty)
+- a glob row with `"create": true` outside layers 3 and 4 — a glob names a form, not a file
 - `artifacts[N].path` absent from `load_bearing`

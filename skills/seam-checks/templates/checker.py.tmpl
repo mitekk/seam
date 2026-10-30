@@ -142,11 +142,17 @@ def anchors(text: str) -> set[str]:
         out.add(h.lower())
         # Split on a comma as well as an em dash: "API, and what it refuses" is cited as
         # § API, and an em-dash-only split missed that shape repeatedly on a real repo.
-        for clause in re.split(r" — |, ", h):
-            c = clause.strip()
-            if not c:
-                continue
+        #
+        # Only the FIRST clause gets leading-word expansion. Expanding the tail clauses too fed
+        # one-word anchors like `and` and `a` into the set — from headings written "Checks, and
+        # what each one does" or "Pipeline, a note on scoring" — and since a citation matches any
+        # anchor it starts with on a word boundary, A2 then silently passed citations to sections
+        # that do not exist. A check that stops checking is worse than one that fails.
+        clauses = [c.strip() for c in re.split(r" — |, ", h) if c.strip()]
+        for i, c in enumerate(clauses):
             out.add(c.lower())
+            if i:
+                continue
             words = [w for w in c.lower().split() if w]
             for k in range(1, len(words) + 1):
                 out.add(" ".join(words[:k]))
@@ -302,13 +308,16 @@ def ts_unions(text: str) -> dict[str, set[str]]:
 
 # Right-hand sides that are not fields: file extensions and hostname endings. A dotted name
 # whose right half is one of these is a path or a host, not a reference.
+# Deliberately narrow: only endings that cannot plausibly be a column or a union member.
+# `html`, `json`, `log`, `env`, `css`, `txt`, `csv`, `xml`, `svg`, `pdf`, `app` and `dev` were all
+# in an earlier version of this list and are all plausible field names — a repo documenting
+# `pages.html` would have had A4 stay green forever through a rename. Set
+# `assertions.A4.not_fields_override` to replace this list outright.
 DEFAULT_NOT_FIELDS = {
-    "md", "sql", "yml", "yaml", "json", "toml", "ini", "cfg", "txt", "csv", "xml", "html", "css",
-    "py", "pyi", "mjs", "cjs", "js", "jsx", "ts", "tsx", "sh", "bash", "zsh", "rb", "go", "rs",
-    "java", "kt", "swift", "php", "lock", "log", "env", "example", "tmpl", "png", "jpg", "svg",
-    "webp", "ico", "pdf", "zip", "gz", "prisma", "proto", "graphql", "d",
-    "com", "org", "net", "io", "dev", "sh2", "co", "me", "ai", "app", "so", "gov", "edu", "il",
-    "uk", "de", "online",
+    "md", "sql", "yml", "yaml", "toml", "ini", "cfg", "tmpl",
+    "py", "pyi", "mjs", "cjs", "jsx", "tsx", "sh", "bash", "zsh", "rb", "rs", "kt", "swift",
+    "php", "prisma", "proto", "graphql", "lock", "webp", "ico", "gz", "tgz", "whl",
+    "com", "org", "net", "gov", "edu", "il", "uk", "online",
 }
 
 DEFAULT_TOKEN_RES = [
@@ -420,6 +429,26 @@ def main() -> int:
     A = cfg.get("assertions", {})
     on = lambda k: bool(A.get(k, {}).get("enabled"))
     opt = lambda k, name, default=None: A.get(k, {}).get(name, default)
+
+    # A checker that measures nothing cannot be told from one that passed, which is the thing
+    # this whole layer exists to prevent. Refuse rather than exit 0.
+    enabled = [k for k in A if A[k].get("enabled")]
+    if not enabled and not (ROOT / ".seam" / "assertions").is_dir():
+        print(f"seam: no assertions are enabled in {CONFIG_PATH}, and there are none in "
+              f".seam/assertions/ — this checker would measure nothing and exit 0, which cannot "
+              f"be told apart from passing. Enable at least one.", file=sys.stderr)
+        return 2
+
+    # An allow-list entry means "this will never be fixed", so the method requires a written
+    # reason. Nothing read the field, which made the requirement a sentence.
+    for aid, conf in sorted(A.items()):
+        for i, e in enumerate(conf.get("allow", []) or []):
+            if not str(e.get("reason", "")).strip():
+                print(f"seam: {CONFIG_PATH} assertions.{aid}.allow[{i}] exempts "
+                      f"{e.get('path', '<no path>')!r} with no reason. An allow-list entry means "
+                      f"\"this will never be fixed\" — write why, or use the baseline, which "
+                      f"means \"not yet\".", file=sys.stderr)
+                return 2
 
     host = cfg["table"]["file"]
     docs = walk_md(ROOT)
@@ -576,11 +605,16 @@ def main() -> int:
     # ── A4. Every `<identifier>.<field>` in prose resolves. ──────────────────
     if on("A4"):
         ran += 1
-        # A built-in default, because an empty list is not a sensible one: on a real repo it
-        # read `jobs.py` and `apiaries.io` as table columns. The config ADDS to this rather than
-        # replacing it, so a repo cannot lose the defaults by naming one exemption of its own.
-        not_fields = DEFAULT_NOT_FIELDS | set(opt("A4", "not_fields", []))
+        # A built-in default, because an empty list is not a sensible one: on a real repo it read
+        # `jobs.py` and `apiaries.io` as table columns. `not_fields` ADDS to the default, so a
+        # repo cannot lose it by naming one exemption of its own; `not_fields_override` replaces
+        # it outright, for the repo whose column really is called `html`.
+        override = opt("A4", "not_fields_override", None)
+        not_fields = (set(override) if override is not None
+                      else DEFAULT_NOT_FIELDS | set(opt("A4", "not_fields", [])))
         not_refs = set(opt("A4", "not_references", []))
+        # Own keys only, matched to the Node emission's Object.hasOwn: a prototype member name on
+        # the left of a dotted reference used to crash that side and pass silently here.
         tables: dict[str, set[str]] = {}
         for art in opt("A4", "artifacts", []):
             p = ROOT / art["path"]
@@ -763,11 +797,31 @@ def main() -> int:
             e = row["enforces"].strip()
             if not e:
                 continue
+            # A path-shaped value is held to `load_bearing`; a command is not. The plan allows an
+            # Enforces cell to name "a constraint, an index, a CI assertion", and a CI assertion
+            # is a command — which `load_bearing` must not carry, because the review policy and
+            # the follow-up qualifier read that list as path globs.
+            if " " in e or not re.search(r"[/.]", e):
+                continue
             if not any(rx.match(e) for rx in globs) and e not in load_bearing:
                 findings.append(finding("A11", host, row["line"], e,
                     f"the row for `{row['doc']}` says it is enforced by `{e}`, which is not on "
                     f"`load_bearing` in {CONFIG_PATH} — the two copies of what carries weight "
                     f"have drifted"))
+        # The layer exists in the table and in the config. Nothing read the config's copy, so a
+        # doc's layer could be two different things with nothing reconciling them — which is the
+        # exact failure the method's central rule exists to prevent.
+        by_path = {r["doc"]: r for r in table}
+        for d in cfg.get("docs", []):
+            row = by_path.get(d.get("path"))
+            if row is None:
+                findings.append(finding("A11", CONFIG_PATH, 1, d.get("path", ""),
+                    f"{CONFIG_PATH} lists `{d.get('path')}` and `{host}` has no row for it"))
+            elif row["layer"] is not None and d.get("layer") != row["layer"]:
+                findings.append(finding("A11", host, row["line"], d.get("path", ""),
+                    f"`{d.get('path')}` is layer {row['layer']} in the table and "
+                    f"layer {d.get('layer')} in {CONFIG_PATH} — the layer fixes the edit rule, so "
+                    f"two answers is two edit rules"))
 
     # ── A12. Append-only layers are byte-frozen on the default branch. ─────
     #

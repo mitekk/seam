@@ -381,3 +381,34 @@ test("rejects a glob row the wizard would be asked to create", () => {
   assert.match(r.stderr, /glob/i);
   rm(dir);
 });
+
+test("load_bearing and low_review_paths are optional, and default to empty", () => {
+  // references/interview.md documents low_review_paths as defaulting to [], and the program
+  // rejected the absent key — its own rejection message naming the default it would not apply.
+  const ans = answers();
+  delete ans.load_bearing;
+  delete ans.low_review_paths;
+  ans.artifacts = [];                 // an artifact must be load-bearing, so drop it too
+  const { dir, r } = init(ans);
+  assert.equal(r.status, 0, r.stderr);
+  const cfg = JSON.parse(read(dir, ".seam/config.json"));
+  assert.deepEqual(cfg.load_bearing, []);
+  assert.deepEqual(cfg.low_review_paths, []);
+  rm(dir);
+});
+
+test("checker.path defaults from the language, and a mismatch is still refused", () => {
+  // The interview never asked for checker.path and § Defaults never mentioned it, so an answers
+  // file built from the documented question set exited 2.
+  for (const [language, expected] of [["python", "scripts/check_docs.py"], ["node", "scripts/check_docs.mjs"]]) {
+    const ans = answers({ checker: { language } });
+    const { dir, r } = init(ans);
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(JSON.parse(read(dir, ".seam/config.json")).checker.path, expected);
+    rm(dir);
+  }
+  const { dir, r } = init(answers({ checker: { language: "node", path: "scripts/check.py" } }));
+  assert.equal(r.status, 2, r.stdout);
+  assert.match(r.stderr, /checker\.path/);
+  rm(dir);
+});

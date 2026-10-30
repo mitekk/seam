@@ -122,10 +122,17 @@ that are a convention rather than a reference, like a job kind `resolve.name` or
 `signals.SITEMAP_PATTERNS`.
 
 **`not_fields` has a built-in default and the config adds to it**: file extensions and hostname
-endings, so `jobs.py`, `docs/x.md` and `apiaries.io` are read as a path or a host rather than as a
-column. An empty default was not a sensible one — on a 45-doc repo it produced eleven findings,
+endings, so `jobs.py`, `docs/x.md` and `apiaries.org` are read as a path or a host rather than as
+a column. An empty default was not a sensible one — on a 45-doc repo it produced eleven findings,
 every one of them an extension or a TLD. Adding one exemption of your own cannot lose the
-defaults, because the config's list is unioned with them rather than replacing them.
+defaults, because the config's list is unioned with them.
+
+The default is **deliberately narrow**: it holds only endings that cannot plausibly be a column or
+a union member. `html`, `json`, `log`, `env`, `css`, `txt`, `csv`, `xml`, `svg`, `pdf`, `app`,
+`dev` and `io` were all in an earlier version of it and are all plausible field names — a repo
+documenting `pages.html` would have had A4 stay green forever through a rename, with no way to
+re-enable it. For the repo whose column really is called `html`, **`not_fields_override` replaces
+the list outright**.
 
 Does not reach: anything the parser does not parse. **Start with SQL `create table` and TypeScript
 unions; everything else is off by default**, because a parser that half-reads an artifact produces
@@ -211,8 +218,18 @@ There is no third state. A doc is in the table with a layer, or it is drift.
 
 ## A11 — the two copies of what carries weight agree
 
-Reads: every non-empty `Enforces` cell, against `load_bearing` in the config. A `load_bearing`
-entry may be a glob.
+Reads two things, because the human copy and the machine projection can disagree in two ways:
+
+1. **Every path-shaped `Enforces` cell is on `load_bearing`.** A value containing a space, or one
+   with no `/` and no `.`, is a **command** — "a constraint, an index, a CI assertion" is what an
+   Enforces cell may name, and a CI assertion is a command. Those are left alone, because
+   `load_bearing` must hold paths only: the review policy's first row and the follow-up
+   qualifier's second clause both read that list as path globs, so a command on it would be a row
+   that covers no diff.
+2. **Every `docs[]` entry's layer matches the table's.** The layer lives in both, and nothing read
+   the config's copy until this half existed — so a doc could be layer 2 in one place and layer 5
+   in the other, which is two edit rules for one file. It also reports a config row the table has
+   no row for.
 
 Needs: nothing beyond the two it compares. This is the assertion that keeps the human copy and the
 machine projection from drifting apart, which is the whole reason there are exactly two artifacts
@@ -254,6 +271,18 @@ Needs: `adr.format` and `adr.dir` or `adr.file`; `prd.dir`.
 
 Does not reach: whether the record is *true*, or whether the decision was a good one. It checks the
 shape the layer promises.
+
+## Two refusals before anything is checked
+
+Both are exit 2, and both exist because the alternative is a check that looks like a pass:
+
+- **No assertion enabled.** A config with no `assertions` block, or one with every switch off,
+  would emit a checker that measures nothing and exits 0. That cannot be told apart from passing,
+  which is the thing this whole layer exists to prevent. A repo that genuinely wants none should
+  not have a checker.
+- **An allow-list entry with no reason.** An entry means "this will never be fixed", and the
+  method says it requires a written reason. Nothing read the field until this refusal existed,
+  which made the requirement a sentence.
 
 ## Repo-invented assertions
 

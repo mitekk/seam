@@ -40,6 +40,32 @@ function die(msg, code = 2) {
   process.exit(code);
 }
 
+const USAGE = `generate-checker — emit a repo's drift checker from its .seam/config.json
+
+  node bin/generate-checker.mjs [--repo <dir>] [--language python|node] [--out <path>]
+                                [--write-baseline]
+
+  --repo <dir>        the repo to emit into. Defaults to the CURRENT WORKING DIRECTORY, and
+                      .seam/config.json is resolved against it — so run this from the repo root,
+                      or pass --repo.
+  --language <lang>   python (stdlib only) or node (.mjs). Defaults to checker.language in the
+                      config. Both implement the same assertions with the same output format.
+  --out <path>        where to write it. Defaults to checker.path in the config, else
+                      scripts/check_docs.py or scripts/check_docs.mjs. The extension has to match
+                      the language.
+  --write-baseline    after emitting, run the checker with --write-baseline so today's violations
+                      are recorded and it then fails only on what is new. An ORDINARY run never
+                      writes the baseline.
+
+  Exit 0 emitted, 2 there is nothing to emit from.
+
+  .seam/assertions/* is never read, written or overwritten here: those are the repo's own, and
+  the emitted checker discovers them.
+
+  No config yet? The wizard writes one: /seam:init, or
+  node bin/seam-init.mjs --answers <file> --repo <dir>.
+`;
+
 function parseArgs(argv) {
   const out = { repo: process.cwd(), language: null, out: null, writeBaseline: false };
   for (let i = 0; i < argv.length; i++) {
@@ -47,7 +73,10 @@ function parseArgs(argv) {
     else if (argv[i] === "--language") out.language = argv[++i];
     else if (argv[i] === "--out") out.out = argv[++i];
     else if (argv[i] === "--write-baseline") out.writeBaseline = true;
-    else die(`unknown argument ${argv[i]}`);
+    else if (argv[i] === "--help" || argv[i] === "-h") {
+      process.stdout.write(USAGE);
+      process.exit(0);
+    } else die(`unknown argument ${argv[i]}\n\n${USAGE}`);
   }
   return out;
 }
@@ -56,8 +85,13 @@ function main() {
   const args = parseArgs(process.argv.slice(2));
   const cfgFile = join(args.repo, CONFIG_PATH);
   if (!existsSync(cfgFile)) {
-    die(`no ${CONFIG_PATH} in ${args.repo} — run /seam:init first; the checker is generated from`
-      + ` the config, and there is nothing to generate from`);
+    // Name the non-slash-command route too: a session that installed the plugin mid-flight
+    // cannot reach /seam:init, and pointing only at the unreachable door is a dead end.
+    die(`no ${CONFIG_PATH} in ${args.repo} — the checker is generated from the config, and there`
+      + ` is nothing to generate from.\n\nWrite one with the wizard: /seam:init, or`
+      + ` \`node ${join(PLUGIN, "bin", "seam-init.mjs")} --answers <file> --repo ${args.repo}\`.`
+      + `\nIf you meant a different directory, pass --repo; the config is resolved against the`
+      + ` current working directory by default. \`--help\` for the rest.`);
   }
   let cfg;
   try {

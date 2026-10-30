@@ -116,13 +116,19 @@ function anchors(text) {
     out.add(h.toLowerCase());
     // Split on a comma as well as an em dash: "API, and what it refuses" is cited as
     // § API, and an em-dash-only split missed that shape repeatedly on a real repo.
-    for (const clause of h.split(/ — |, /)) {
-      const c = clause.trim();
-      if (!c) continue;
+    //
+    // Only the FIRST clause gets leading-word expansion. Expanding the tail clauses too fed
+    // one-word anchors like `and` and `a` into the set — from headings written "Checks, and what
+    // each one does" or "Pipeline, a note on scoring" — and since a citation matches any anchor
+    // it starts with on a word boundary, A2 then silently passed citations to sections that do
+    // not exist. A check that stops checking is worse than one that fails.
+    const clauses = h.split(/ — |, /).map((c) => c.trim()).filter(Boolean);
+    clauses.forEach((c, i) => {
       out.add(c.toLowerCase());
+      if (i) return;
       const words = c.toLowerCase().split(/\s+/).filter(Boolean);
       for (let k = 1; k <= words.length; k++) out.add(words.slice(0, k).join(" "));
-    }
+    });
   }
   return out;
 }
@@ -270,13 +276,16 @@ function tsUnions(text) {
 
 // Right-hand sides that are not fields: file extensions and hostname endings. A dotted name
 // whose right half is one of these is a path or a host, not a reference.
+// Deliberately narrow: only endings that cannot plausibly be a column or a union member.
+// `html`, `json`, `log`, `env`, `css`, `txt`, `csv`, `xml`, `svg`, `pdf`, `app` and `dev` were all
+// in an earlier version of this list and are all plausible field names — a repo documenting
+// `pages.html` would have had A4 stay green forever through a rename. Set
+// `assertions.A4.not_fields_override` to replace this list outright.
 const DEFAULT_NOT_FIELDS = new Set([
-  "md", "sql", "yml", "yaml", "json", "toml", "ini", "cfg", "txt", "csv", "xml", "html", "css",
-  "py", "pyi", "mjs", "cjs", "js", "jsx", "ts", "tsx", "sh", "bash", "zsh", "rb", "go", "rs",
-  "java", "kt", "swift", "php", "lock", "log", "env", "example", "tmpl", "png", "jpg", "svg",
-  "webp", "ico", "pdf", "zip", "gz", "prisma", "proto", "graphql", "d",
-  "com", "org", "net", "io", "dev", "sh2", "co", "me", "ai", "app", "so", "gov", "edu", "il",
-  "uk", "de", "online",
+  "md", "sql", "yml", "yaml", "toml", "ini", "cfg", "tmpl",
+  "py", "pyi", "mjs", "cjs", "jsx", "tsx", "sh", "bash", "zsh", "rb", "rs", "kt", "swift",
+  "php", "prisma", "proto", "graphql", "lock", "webp", "ico", "gz", "tgz", "whl",
+  "com", "org", "net", "gov", "edu", "il", "uk", "online",
 ]);
 
 const DEFAULT_TOKEN_RES = [
@@ -373,6 +382,31 @@ async function main() {
   const A = cfg.assertions ?? {};
   const on = (k) => Boolean(A[k]?.enabled);
   const opt = (k, name, dflt = undefined) => (A[k]?.[name] !== undefined ? A[k][name] : dflt);
+
+  // A checker that measures nothing cannot be told from one that passed, which is the thing this
+  // whole layer exists to prevent. Refuse rather than exit 0.
+  const enabledIds = Object.keys(A).filter((k) => A[k]?.enabled);
+  const assertionsDir = join(ROOT, ".seam", "assertions");
+  if (!enabledIds.length && !(existsSync(assertionsDir) && statSync(assertionsDir).isDirectory())) {
+    process.stderr.write(`seam: no assertions are enabled in ${CONFIG_PATH}, and there are none `
+      + `in .seam/assertions/ — this checker would measure nothing and exit 0, which cannot be `
+      + `told apart from passing. Enable at least one.\n`);
+    return 2;
+  }
+
+  // An allow-list entry means "this will never be fixed", so the method requires a written
+  // reason. Nothing read the field, which made the requirement a sentence.
+  for (const aid of Object.keys(A).sort()) {
+    const list = A[aid]?.allow ?? [];
+    for (let i = 0; i < list.length; i++) {
+      if (!String(list[i]?.reason ?? "").trim()) {
+        process.stderr.write(`seam: ${CONFIG_PATH} assertions.${aid}.allow[${i}] exempts `
+          + `'${list[i]?.path ?? "<no path>"}' with no reason. An allow-list entry means "this `
+          + `will never be fixed" — write why, or use the baseline, which means "not yet".\n`);
+        return 2;
+      }
+    }
+  }
 
   const host = cfg.table.file;
   const docs = walkMd(ROOT);
@@ -542,9 +576,13 @@ async function main() {
   if (on("A4")) {
     ran += 1;
     // A built-in default, because an empty list is not a sensible one: on a real repo it read
-    // `jobs.py` and `apiaries.io` as table columns. The config ADDS to this rather than replacing
-    // it, so a repo cannot lose the defaults by naming one exemption of its own.
-    const notFields = new Set([...DEFAULT_NOT_FIELDS, ...opt("A4", "not_fields", [])]);
+    // `jobs.py` and `apiaries.io` as table columns. `not_fields` ADDS to the default, so a repo
+    // cannot lose it by naming one exemption of its own; `not_fields_override` replaces it
+    // outright, for the repo whose column really is called `html`.
+    const override = opt("A4", "not_fields_override", null);
+    const notFields = override !== null
+      ? new Set(override)
+      : new Set([...DEFAULT_NOT_FIELDS, ...opt("A4", "not_fields", [])]);
     const notRefs = new Set(opt("A4", "not_references", []));
     const tables = {};
     for (const art of opt("A4", "artifacts", [])) {
@@ -564,7 +602,10 @@ async function main() {
           const whole = m[0].replaceAll("`", "");
           const left = m[1];
           const right = m[2];
-          if (notFields.has(right) || notRefs.has(whole) || !(left in tables)) continue;
+          // Object.hasOwn, not `in`: `constructor.name` passed through the prototype chain and
+          // then dereferenced a non-Set — a hard crash here and a silent skip in Python, which is
+          // exactly the divergence the two emissions are compared to prevent.
+          if (notFields.has(right) || notRefs.has(whole) || !Object.hasOwn(tables, left)) continue;
           if (!tables[left].has(right)) {
             findings.push(finding("A4", d, lineOf(textOf[d], m.index), whole,
               `\`${whole}\` does not resolve: \`${left}\` has no \`${right}\`. The artifact is `
@@ -750,11 +791,31 @@ async function main() {
     for (const row of table) {
       const e = row.enforces.trim();
       if (!e) continue;
+      // A path-shaped value is held to `load_bearing`; a command is not. An Enforces cell may
+      // name "a constraint, an index, a CI assertion", and a CI assertion is a command — which
+      // `load_bearing` must not carry, because the review policy and the follow-up qualifier read
+      // that list as path globs.
+      if (e.includes(" ") || !/[/.]/.test(e)) continue;
       if (!globs.some((rx) => rx.test(e)) && !loadBearing.includes(e)) {
         findings.push(finding("A11", host, row.line, e,
           `the row for \`${row.doc}\` says it is enforced by \`${e}\`, which is not on `
           + `\`load_bearing\` in ${CONFIG_PATH} — the two copies of what carries weight have `
           + `drifted`));
+      }
+    }
+    // The layer exists in the table and in the config. Nothing read the config's copy, so a doc's
+    // layer could be two different things with nothing reconciling them — which is the exact
+    // failure the method's central rule exists to prevent.
+    const byPath = new Map(table.map((r) => [r.doc, r]));
+    for (const d of cfg.docs ?? []) {
+      const row = byPath.get(d.path);
+      if (row === undefined) {
+        findings.push(finding("A11", CONFIG_PATH, 1, d.path ?? "",
+          `${CONFIG_PATH} lists \`${d.path}\` and \`${host}\` has no row for it`));
+      } else if (row.layer !== null && d.layer !== row.layer) {
+        findings.push(finding("A11", host, row.line, d.path ?? "",
+          `\`${d.path}\` is layer ${row.layer} in the table and layer ${d.layer} in `
+          + `${CONFIG_PATH} — the layer fixes the edit rule, so two answers is two edit rules`));
       }
     }
   }

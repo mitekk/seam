@@ -34,6 +34,12 @@ this file owns the *level* and the *rounds*, and two copies of the refusal is ho
 append-only, so a defect in one is permanent and the next round cannot fix it in place. Review is
 the only gate they get.
 
+**Read the order literally: `low` is the sixth row, and that is deliberate.** A path on
+`low_review_paths` that also matches a `high` or `medium` row above takes the higher level — so
+opting a convention file or a source file into `low` does not work, and should not. The list is
+for **prose-only paths**, which match none of rows 1 to 5; that is what makes row 6 reachable at
+all, and it is why the interview asks for prose paths specifically.
+
 **`low` is opt-in per path, and the list defaults to empty.** This repo's list is
 `low_review_paths` in `.seam/config.json`; if it is empty, nothing takes `low` and that is the
 expected state. `low` is hunk-local and is instructed not to look outside the hunk, so **it cannot
