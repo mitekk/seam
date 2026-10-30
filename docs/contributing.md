@@ -27,6 +27,7 @@ layer **cites** a higher one and never restates it.
 | `docs/contributing.md` | 2 Current | How work on seam is done, and this table's host file | `claude plugin validate --strict .` |
 | `docs/taxonomy.md` | 2 Current | The domain labels, the three priorities, and the milestones | `scripts/bootstrap-tracker.sh` |
 | `docs/superpowers/specs/*.md` | 5 Seam | Nothing — dated design documents. Superseded wholesale; a design that changes is rewritten or replaced, never amended into agreement with what shipped |  |
+| `docs/superpowers/plans/*.md` | 5 Seam | Nothing — implementation plans. Superseded wholesale; a plan whose shape changes is rewritten, never amended into agreement with what shipped |  |
 
 **Layer** fixes the edit rule, because the question behind it is *what happens when this file
 turns out to be wrong*:

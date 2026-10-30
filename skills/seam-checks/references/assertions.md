@@ -43,6 +43,12 @@ Does not reach:
   markdown-only too, and still needs an allow-list.
 - **A glob.** `` `docs/adr/*.md` `` names a *form*, not a file, and is skipped. That is why the
   table's track rows and the PRD templates' forward references are written as globs.
+- **A doc whose citations are intentions.** An implementation plan names the files it is about to
+  create, so by construction every one of those paths is absent — measured at 23 on this repo's
+  own plan. `intent_globs` exempts the **doc**, not each path, because neither existing mechanism
+  fits: a baseline entry means "not yet" and these evaporate the moment the work lands, and an
+  allow-list entry means "never". It defaults to `docs/superpowers/plans/*.md`, the one place this
+  is true by construction, and it exempts nothing else.
 - **A backticked label inside a markdown link.** In ``[`api.md`](.claude/rules/api.md)`` the link
   **target** is the claim and the label is how it reads, so the target is what gets resolved and
   the label is dropped. Measured on a repo nothing was tuned against: a README listing eight

@@ -531,3 +531,41 @@ test("an enabled assertion whose glob matches nothing says the comparison was no
   assert.ok(r.findings.some((l) => /not made|matches no/i.test(l)), r.findings.join("\n"));
   rm(dir);
 });
+
+test("A1 treats a citation in an intent doc as an intention, not a claim", () => {
+  // An implementation plan names the files it is about to create. By construction every one of
+  // those citations is to a file that does not exist yet — measured at 23 on this repo's own
+  // plan. They are not debt (a baseline means "not yet" and these evaporate on landing) and not
+  // approvals (an allow-list means "never"), so neither existing mechanism fits. The doc itself
+  // is the thing that is different: it describes work not yet done.
+  const { dir } = fixture({
+    mutate: ({ dir: d, write }) => {
+      write("docs/plans/third.md",
+        "# Third\n\n**Layer 5 — Seam.** Owns nothing.\n\n## The plan\n\n"
+        + "- Create: `src/not-yet.md`\n- Create: `docs/also-not-yet.md`\n");
+      const cfg = JSON.parse(readFileSync(join(d, ".seam/config.json"), "utf8"));
+      cfg.assertions.A1.intent_globs = ["docs/plans/third.md"];
+      cfg.assertions.A9.count_sites = [];     // the plan count changes; not this test's subject
+      writeFileSync(join(d, ".seam/config.json"), JSON.stringify(cfg, null, 2));
+    },
+  });
+  const r = both(dir);
+  assert.ok(!r.findings.some((l) => l.includes(" A1 ")),
+    `an intent doc's citations are intentions:\n${r.findings.join("\n")}`);
+  rm(dir);
+});
+
+test("A1 still holds every other doc to the tree", () => {
+  const { dir } = fixture({
+    mutate: ({ dir: d, edit }) => {
+      edit("docs/engineering.md", "`docs/checks.md` § Checks", "`docs/gone.md` § Checks");
+      const cfg = JSON.parse(readFileSync(join(d, ".seam/config.json"), "utf8"));
+      cfg.assertions.A1.intent_globs = ["docs/plans/*.md"];   // engineering.md is not one
+      writeFileSync(join(d, ".seam/config.json"), JSON.stringify(cfg, null, 2));
+    },
+  });
+  const r = both(dir);
+  assert.equal(r.status, 1, r.py.stdout);
+  assert.deepEqual(ids(r.findings), ["A1"]);
+  rm(dir);
+});

@@ -466,7 +466,14 @@ def main() -> int:
     if on("A1"):
         ran += 1
         allowed = {e["path"] for e in opt("A1", "allow", [])}
+        # A doc that describes work NOT YET DONE cites files as intentions, not as claims about
+        # the tree: an implementation plan names what it is about to create. Those citations are
+        # neither debt (a baseline means "not yet" and they evaporate on landing) nor approvals
+        # (an allow-list means "never"), so the doc is what is exempted rather than each path.
+        intent = [glob_re(g) for g in opt("A1", "intent_globs", [])]
         for d in docs:
+            if any(rx.match(d) for rx in intent):
+                continue
             for cited, at in md_citations(ROOT, d, text_of[d]):
                 if "*" in cited or cited in allowed:
                     continue

@@ -51,6 +51,13 @@
       "owns": "Nothing \u2014 dated design documents. Superseded wholesale; a design that changes is rewritten or replaced, never amended into agreement with what shipped",
       "enforces": "",
       "create": false
+    },
+    {
+      "path": "docs/superpowers/plans/*.md",
+      "layer": 5,
+      "owns": "Nothing \u2014 implementation plans. Superseded wholesale; a plan whose shape changes is rewritten, never amended into agreement with what shipped",
+      "enforces": "",
+      "create": false
     }
   ],
   "load_bearing": [
@@ -120,6 +127,9 @@
           "path": "prompt.md",
           "reason": "the filename inside an eval case directory, cited as a form. Every real one is at evals/<case>/prompt.md and resolves"
         }
+      ],
+      "intent_globs": [
+        "docs/superpowers/plans/*.md"
       ]
     },
     "A2": {

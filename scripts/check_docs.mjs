@@ -422,7 +422,13 @@ async function main() {
   if (on("A1")) {
     ran += 1;
     const allowed = new Set((opt("A1", "allow", [])).map((e) => e.path));
+    // A doc that describes work NOT YET DONE cites files as intentions, not as claims about the
+    // tree: an implementation plan names what it is about to create. Those citations are neither
+    // debt (a baseline means "not yet" and they evaporate on landing) nor approvals (an
+    // allow-list means "never"), so the doc is what is exempted rather than each path.
+    const intent = (opt("A1", "intent_globs", [])).map(globRe);
     for (const d of docs) {
+      if (intent.some((rx) => rx.test(d))) continue;
       for (const [cited, at] of mdCitations(ROOT, d, textOf[d])) {
         if (cited.includes("*") || allowed.has(cited)) continue;
         if (resolveMd(ROOT, d, cited) === null) {
