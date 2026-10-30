@@ -282,14 +282,31 @@ shape the layer promises.
 ## A14 — the units table has the shape it claims
 
 Reads: the `§ The units` table of each file matching the plan glob. For each row whose first cell
-is a bare numeral, the `Proves it` cell must be one backticked path, that path must be a file in
-the repo, and the file must contain `assert` or `expect` as a whole word — the word "assertion" in
-a comment is not one. A struck-through row (`~~2~~`) is not a unit and is skipped, as are the
-header and the rule under it. A plan with a `§ The issues` and no `§ The units` gets one finding
-saying the comparison was not made; so does a `§ The units` with no numbered row in it, because a
-heading with nothing under it compared nothing (a table whose rows are all struck through is the
-same case). An enabled glob that matches no doc says so too; a plan with neither section is
-another kind of file and is left alone.
+is a bare numeral, the `Proves it` cell must be one backticked path inside the repo (no leading `/`,
+no `..`), that path must be a file, and the file must contain an assertion. A struck-through row
+(`~~2~~`) is not a unit and is skipped, as are the header and the rule under it. A row is read by
+dropping at most one pipe at each end and trimming ASCII whitespace only, so a row with a doubled
+pipe, or a numeral padded with a non-ASCII space, is not a unit — and is read the same way by
+both emitted checkers.
+
+**What counts as an assertion**, so a repo whose test is rejected can see why: any of these as a
+whole word, case-sensitive —
+
+- `assert`, or `assert` followed by `_` or a capital: `assert x == 1`, `assert_eq!(a, b)`,
+  `assert_equal a, b`, `self.assertEqual(a, b)`, `assertEquals(a, b)`
+- `expect`, likewise: `expect(x).toBe(1)`
+- `ASSERT_…` and `EXPECT_…`, the googletest family: `ASSERT_EQ(a, b)`, `EXPECT_TRUE(x)`
+
+The word "assertion" or "expectation" in a comment is not one, and neither is a capitalised
+`Assert.` or `Expect.` from a framework that spells it that way — if a repo's test really is that,
+the answer is a line in the test that matches, not a looser rule here.
+
+Fails loudly, with the comparison named as not made, in four cases: a plan with a `§ The issues`
+and no `§ The units`; a `§ The units` with no numbered row in it (a table whose rows are all struck
+through is the same case); an enabled glob that matches no doc; and a test file that is there but
+cannot be read — that one is reported rather than crashing the checker, because every assertion
+after A14 would then silently stop running. A plan with neither section is another kind of file
+and is left alone.
 
 Needs: `plan_glob`, which the wizard fills from the layer-5 rows exactly as it does for A8.
 

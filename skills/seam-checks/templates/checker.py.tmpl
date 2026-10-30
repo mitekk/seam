@@ -16,6 +16,7 @@ Exit 0: no violations outside the baseline. Exit 1: violations, listed on stderr
 """
 from __future__ import annotations
 
+import errno
 import fnmatch
 import importlib.util
 import json
@@ -196,6 +197,27 @@ def section_body(text: str, name: str) -> str | None:
         if len(m.group(1)) <= start_level:
             return "\n".join(lines[start:i])
     return None if start is None else "\n".join(lines[start:])
+
+
+ASCII_WS = " \t\r\n\f\v"
+
+
+def table_cells(line: str) -> list[str] | None:
+    """The cells of a markdown table row, or None when the line is not one. A8 and A14 read their
+    tables through this and nothing else.
+
+    At most one pipe is dropped at each end, and only ASCII whitespace is trimmed. Both are on
+    purpose: the other checker has to read the same row the same way, and each language's own
+    strip has a different idea of both — Python's `strip("|")` takes every pipe, and `trim()` and
+    `strip()` disagree about U+FEFF and U+0085.
+    """
+    t = line.strip(ASCII_WS)
+    if not t.startswith("|"):
+        return None
+    t = t[1:]
+    if t.endswith("|"):
+        t = t[:-1]
+    return [c.strip(ASCII_WS) for c in t.split("|")]
 
 
 MD_CITE_RE = re.compile(r"`([\w./@-]+\.md)`")
@@ -738,9 +760,9 @@ def main() -> int:
                 continue
             base = text_of[d].split("\n").index(body.split("\n")[0]) + 1 if body.strip() else 0
             for i, line in enumerate(body.split("\n")):
-                if not line.strip().startswith("|"):
+                cells = table_cells(line)
+                if cells is None:
                     continue
-                cells = [c.strip() for c in line.strip().strip("|").split("|")]
                 if len(cells) < 2 or not re.fullmatch(r"~*\d+~*", cells[0]):
                     continue
                 m = re.search(r"#(\d+)", cells[1])
@@ -968,9 +990,9 @@ def main() -> int:
             base = line_of(text, text.find(body))
             units = 0
             for i, line in enumerate(body.split("\n")):
-                if not line.strip().startswith("|"):
+                cells = table_cells(line)
+                if cells is None:
                     continue
-                cells = [c.strip() for c in line.strip().strip("|").split("|")]
                 # A bare numeral only: the header, the rule under it, and a struck-through unit
                 # are not units, so none of them is held to the shape.
                 if not re.fullmatch(r"\d+", cells[0], re.A):
@@ -978,26 +1000,52 @@ def main() -> int:
                 units += 1
                 proves = cells[2] if len(cells) > 2 else ""
                 m = re.fullmatch(r"`([\w./-]+)`", proves, re.A)
-                # An absolute or `..` path is not a path in this repo, and the two checkers
-                # would resolve it differently.
-                if not m or m.group(1).startswith("/") or ".." in m.group(1).split("/"):
+                if not m:
                     findings.append(finding("A14", d, base + i, proves,
                         f"unit {cells[0]} has no test path in its \"Proves it\" cell — a unit is "
                         f"the smallest piece of work that carries its own test, so name the test "
                         f"as a backticked path"))
                     continue
-                tp = ROOT / m.group(1)
-                if not tp.is_file():
+                # A path outside the repo is not one a repo's own check should read, and an
+                # absolute one would not resolve the same in both languages: pathlib's `/`
+                # replaces the root where join concatenates onto it.
+                if m.group(1).startswith("/") or ".." in m.group(1).split("/"):
+                    findings.append(finding("A14", d, base + i, m.group(1),
+                        f"unit {cells[0]} names `{m.group(1)}` as its test, and that path is not "
+                        f"inside the repo — name the test relative to the repo root, without "
+                        f"`..`"))
+                    continue
+                # A file that is there and cannot be opened is not a missing one, and it must not
+                # take the checker down: every assertion after this one would stop running, and
+                # a crash exits nonzero, which looks the same as findings.
+                state, content = "ok", ""
+                try:
+                    tp = ROOT / m.group(1)
+                    tp.stat()
+                    if tp.is_file():
+                        content = tp.read_text(encoding="utf-8", errors="replace")
+                    else:
+                        state = "missing"
+                except OSError as e:
+                    state = "missing" if e.errno in (errno.ENOENT, errno.ENOTDIR) else "unreadable"
+                if state == "missing":
                     findings.append(finding("A14", d, base + i, m.group(1),
                         f"unit {cells[0]} names `{m.group(1)}` as its test, and there is no such "
                         f"file"))
-                    continue
-                # Whole words: "assertion" in a comment is not an assertion.
-                if not re.search(r"\bassert\b|\bexpect\b",
-                                 tp.read_text(encoding="utf-8", errors="replace"), re.A):
+                elif state == "unreadable":
+                    findings.append(finding("A14", d, base + i, m.group(1),
+                        f"unit {cells[0]} names `{m.group(1)}` as its test, and the file could "
+                        f"not be read — whether it asserts anything was not compared"))
+                elif not re.search(
+                        r"\bassert(?:[_A-Z]\w*)?\b|\bexpect(?:[_A-Z]\w*)?\b"
+                        r"|\b(?:ASSERT|EXPECT)_\w+\b", content, re.A):
+                    # Whole words, case-sensitive: `assert`, `assertEqual`, `assert_eq!`,
+                    # `expect(x)`, `ASSERT_EQ`. The word "assertion" or "expectation" in a
+                    # comment is not a call.
                     findings.append(finding("A14", d, base + i, m.group(1),
                         f"unit {cells[0]} names `{m.group(1)}` as its test, and the file asserts "
-                        f"nothing — neither `assert` nor `expect` appears in it"))
+                        f"nothing — no `assert`, `expect`, `ASSERT_` or `EXPECT_` call appears "
+                        f"in it"))
             # A heading with nothing under it compared nothing, which is the missing section again.
             if units == 0:
                 findings.append(finding("A14", d, 1, "The units",

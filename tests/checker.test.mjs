@@ -8,12 +8,17 @@
 // switch languages without changing what is enforced" is only true if it is checked.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cpSync, readFileSync, writeFileSync, existsSync, rmSync } from "node:fs";
+import { cpSync, readFileSync, writeFileSync, existsSync, rmSync, chmodSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { scratch, rm, run, REPO } from "./helpers.mjs";
 
 const CLEAN = join(REPO, "tests", "fixtures", "clean");
+
+/** Whether this process can open the file: false is what a mode-000 file looks like to a user. */
+function canRead(p) {
+  try { readFileSync(p); return true; } catch { return false; }
+}
 
 /** A copy of the clean fixture as a git repo with one commit, plus both checkers generated. */
 function fixture({ mutate = null, commitAfter = false } = {}) {
@@ -582,7 +587,8 @@ test("A14 flags a unit whose test file asserts nothing", () => {
   // and a check that passes on the name of the thing is one that has stopped checking.
   const { dir } = fixture({
     mutate: ({ write }) => write("spec/hives.check.mjs",
-      "// an assertion about the seed rows goes here, once somebody writes it\nexport {};\n"),
+      "// an assertion about the seed rows goes here, once somebody writes it, and the expectation\n"
+      + "// is that it will\nexport {};\n"),
   });
   const r = both(dir);
   assert.equal(r.status, 1, r.py.stdout + r.py.stderr);
@@ -602,6 +608,113 @@ test("A14 says the comparison was not made when a plan has no § The units", () 
   assert.deepEqual(ids(r.findings), ["A14"], r.findings.join("\n"));
   assert.match(r.findings[0], /^docs\/plans\/first\.md:\d+: A14 /, r.findings[0]);
   assert.match(r.findings[0], /not made/i, r.findings[0]);
+  rm(dir);
+});
+
+test("A14 reads a row with a doubled leading pipe the same way in both checkers", () => {
+  // Python's strip("|") takes every pipe and Node's replace takes one, so `|| 1 | …` was a unit in
+  // one language and not in the other: Python exited 0 and Node said "no unit in it".
+  const { dir } = fixture({
+    mutate: ({ edit }) => edit("docs/plans/first.md",
+      "| 1 | seed the hive table | `spec/hives.check.mjs` | the seed rows load and the count is stated |",
+      "|| 1 | seed the hive table | `spec/hives.check.mjs` | the seed rows load and the count is stated |"),
+  });
+  const r = both(dir);
+  assert.equal(r.status, 1, r.py.stdout + r.py.stderr);
+  assert.deepEqual(ids(r.findings), ["A14"], r.findings.join("\n"));
+  assert.match(r.findings[0], /not made/i, r.findings[0]);
+  rm(dir);
+});
+
+test("A14 and A8 read hostile table syntax identically in both checkers", () => {
+  // Every row below is built to be read one way by one language's strip and another way by the
+  // other's. `both()` fails on any disagreement; the expectation pins which way is right: only
+  // the last row is a unit, so it is the only finding, and the issues table gains no claim.
+  const NEL = "\u0085", BOM = "\ufeff", NBSP = "\u00a0";
+  const { dir } = fixture({
+    mutate: ({ edit }) => {
+      edit("docs/plans/first.md", "| 1 | seed the hive table |",
+        [
+          "|| 2 | doubled leading | `spec/gone.check.mjs` | never |",
+          `| ${NEL}3 | next-line before the numeral | \`spec/gone.check.mjs\` | never |`,
+          `| ${BOM}4 | byte-order mark before the numeral | \`spec/gone.check.mjs\` | never |`,
+          `| ${NBSP}5 | no-break space before the numeral | \`spec/gone.check.mjs\` | never |`,
+          "| 6 | doubled trailing | `spec/gone.check.mjs` | never ||",
+          "| 1 | seed the hive table |",
+        ].join("\n"));
+      edit("docs/plans/second.md", "| 1 | #5 render the week | #4 | the week reads what the seed wrote |",
+        "| 1 | #5 render the week | #4 | the week reads what the seed wrote |\n"
+        + "|| 2 | #4 shifted | — | never |\n"
+        + `| ${NEL}3 | #4 next-line | — | never |\n`
+        + `| ${BOM}4 | #4 byte-order mark | — | never |`);
+    },
+  });
+  const r = both(dir);
+  assert.equal(r.status, 1, r.py.stdout + r.py.stderr);
+  assert.deepEqual(ids(r.findings), ["A14"], r.findings.join("\n"));
+  assert.equal(r.findings.length, 1, r.findings.join("\n"));
+  assert.match(r.findings[0], /unit 6 names `spec\/gone\.check\.mjs`/, r.findings[0]);
+  rm(dir);
+});
+
+test("A14 says a test file it cannot read could not be read, and the checker keeps going", (t) => {
+  // chmod 000 on a file a Proves-it cell names. Python raised PermissionError and Node threw
+  // EACCES, both exited 1 with a stack trace, and no assertion after A14 ran: a checker that
+  // stops checking, with an exit status that looks like findings. A repo-invented assertion runs
+  // after every built-in one, so its finding turning up is the proof that the run got that far.
+  const target = "spec/hives.check.mjs";
+  const { dir } = fixture({
+    mutate: ({ dir: d }) => {
+      chmodSync(join(d, target), 0);
+      mkdirSync(join(d, ".seam/assertions"), { recursive: true });
+      writeFileSync(join(d, ".seam/assertions/x1.py"), "def run(ctx):\n"
+        + "    return [{'id': 'X1', 'file': 'CLAUDE.md', 'line': 1, 'text': 'x',\n"
+        + "             'message': 'ran after A14'}]\n");
+      writeFileSync(join(d, ".seam/assertions/x1.mjs"), "export function run(ctx) {\n"
+        + "  return [{ id: 'X1', file: 'CLAUDE.md', line: 1, text: 'x', message: 'ran after A14' }];\n}\n");
+    },
+  });
+  try {
+    if (canRead(join(dir, target))) {
+      t.skip("this process can read a mode-000 file (root, or a filesystem without modes)");
+      return;
+    }
+    const r = both(dir);
+    assert.equal(r.status, 1, r.py.stdout + r.py.stderr);
+    assert.deepEqual(ids(r.findings), ["A14", "X1"], r.findings.join("\n"));
+    assert.equal(r.findings.length, 2, r.findings.join("\n"));
+    assert.match(r.findings.find((l) => l.includes(" A14 ")), /could not be read/);
+    assert.doesNotMatch(r.py.stderr + r.js.stderr, /Traceback|EACCES|PermissionError/);
+  } finally {
+    chmodSync(join(dir, target), 0o644);
+    rm(dir);
+  }
+});
+
+test("A14 accepts the assertion idioms of the common test frameworks", () => {
+  // Rust, unittest, JUnit, minitest, googletest, a bare Python assert and jest. Each is one file,
+  // so a rejected idiom names itself.
+  const idioms = {
+    "rust": "assert_eq!(a, b);",
+    "unittest": "self.assertEqual(a, b)",
+    "junit": "assertEquals(a, b);",
+    "minitest": "assert_equal a, b",
+    "gtest-assert": "ASSERT_EQ(a, b);",
+    "gtest-expect": "EXPECT_TRUE(x);",
+    "bare": "assert x == 1",
+    "jest": "expect(x).toBe(1)",
+  };
+  const { dir } = fixture({
+    mutate: ({ edit, write }) => {
+      const rows = Object.keys(idioms).map((k, n) =>
+        `| ${n + 2} | ${k} | \`spec/idiom-${k}.txt\` | it asserts |`);
+      for (const [k, line] of Object.entries(idioms)) write(`spec/idiom-${k}.txt`, line + "\n");
+      edit("docs/plans/first.md", "| 1 | seed the hive table |", rows.join("\n") + "\n| 1 | seed the hive table |");
+    },
+  });
+  const r = both(dir);
+  assert.equal(r.status, 0, r.py.stdout + r.py.stderr);
+  assert.deepEqual(r.findings, []);
   rm(dir);
 });
 
@@ -630,6 +743,11 @@ test("A14 holds an absolute or .. path to be no test path, the same in both chec
   assert.equal(r.status, 1, r.py.stdout + r.py.stderr);
   assert.deepEqual(ids(r.findings), ["A14"], r.findings.join("\n"));
   assert.equal(r.findings.length, 2, r.findings.join("\n"));
+  // The cell does hold a backticked path, so "no test path" would be the wrong thing to say.
+  for (const f of r.findings) {
+    assert.match(f, /not inside the repo/, f);
+    assert.doesNotMatch(f, /no test path/, f);
+  }
   rm(dir);
 });
 

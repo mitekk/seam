@@ -171,6 +171,23 @@ function sectionBody(text, name) {
   return start === null ? null : lines.slice(start).join("\n");
 }
 
+const ASCII_WS = /^[ \t\r\n\f\v]+|[ \t\r\n\f\v]+$/g;
+
+/**
+ * The cells of a markdown table row, or null when the line is not one. A8 and A14 read their
+ * tables through this and nothing else.
+ *
+ * At most one pipe is dropped at each end, and only ASCII whitespace is trimmed. Both are on
+ * purpose: the other checker has to read the same row the same way, and each language's own
+ * strip has a different idea of both — Python's `strip("|")` takes every pipe, and `trim()` and
+ * `strip()` disagree about U+FEFF and U+0085.
+ */
+function tableCells(line) {
+  const t = line.replace(ASCII_WS, "");
+  if (!t.startsWith("|")) return null;
+  return t.slice(1).replace(/\|$/, "").split("|").map((c) => c.replace(ASCII_WS, ""));
+}
+
 const MD_CITE_RE = /`([\w./@-]+\.md)`/g;
 // A `|` ends a section name: it is a table cell boundary and never part of a heading.
 const TOKEN_RE = /`([^`\n]+)`|(?<![`\w./-])([\w./-]+\.md)(?![\w.-])|§[ \t\n]*([A-Za-z][^.;:—(*`§|\n]*)/g;
@@ -724,10 +741,8 @@ async function main() {
       const base = body.trim() ? textOf[d].split("\n").indexOf(first) + 1 : 0;
       const lines = body.split("\n");
       for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        if (!line.trim().startsWith("|")) continue;
-        const cells = line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|")
-          .map((c) => c.trim());
+        const cells = tableCells(lines[i]);
+        if (cells === null) continue;
         if (cells.length < 2 || !/^~*\d+~*$/.test(cells[0])) continue;
         const m = cells[1].match(/#(\d+)/);
         if (m) {
@@ -971,34 +986,55 @@ async function main() {
       const lines = body.split("\n");
       let units = 0;
       for (let i = 0; i < lines.length; i++) {
-        if (!lines[i].trim().startsWith("|")) continue;
-        const cells = lines[i].trim().replace(/^\|/, "").replace(/\|$/, "").split("|")
-          .map((c) => c.trim());
+        const cells = tableCells(lines[i]);
+        if (cells === null) continue;
         // A bare numeral only: the header, the rule under it, and a struck-through unit are not
         // units, so none of them is held to the shape.
         if (!/^\d+$/.test(cells[0])) continue;
         units += 1;
         const proves = cells[2] ?? "";
         const m = proves.match(/^`([\w./-]+)`$/);
-        // An absolute or `..` path is not a path in this repo, and the two checkers would
-        // resolve it differently.
-        if (!m || m[1].startsWith("/") || m[1].split("/").includes("..")) {
+        if (!m) {
           findings.push(finding("A14", d, base + i, proves,
             `unit ${cells[0]} has no test path in its "Proves it" cell — a unit is the smallest `
             + `piece of work that carries its own test, so name the test as a backticked path`));
           continue;
         }
-        const tp = join(ROOT, m[1]);
-        if (!existsSync(tp) || !statSync(tp).isFile()) {
+        // A path outside the repo is not one a repo's own check should read, and an absolute one
+        // would not resolve the same in both languages: pathlib's `/` replaces the root where
+        // join concatenates onto it.
+        if (m[1].startsWith("/") || m[1].split("/").includes("..")) {
           findings.push(finding("A14", d, base + i, m[1],
-            `unit ${cells[0]} names \`${m[1]}\` as its test, and there is no such file`));
+            `unit ${cells[0]} names \`${m[1]}\` as its test, and that path is not inside the repo — `
+            + `name the test relative to the repo root, without \`..\``));
           continue;
         }
-        // Whole words: "assertion" in a comment is not an assertion.
-        if (!/\bassert\b|\bexpect\b/.test(readFileSync(tp, "utf8"))) {
+        // A file that is there and cannot be opened is not a missing one, and it must not take
+        // the checker down: every assertion after this one would stop running, and a crash exits
+        // nonzero, which looks the same as findings.
+        let state = "ok";
+        let content = "";
+        try {
+          const tp = join(ROOT, m[1]);
+          if (statSync(tp).isFile()) content = readFileSync(tp, "utf8");
+          else state = "missing";
+        } catch (e) {
+          state = e.code === "ENOENT" || e.code === "ENOTDIR" ? "missing" : "unreadable";
+        }
+        if (state === "missing") {
           findings.push(finding("A14", d, base + i, m[1],
-            `unit ${cells[0]} names \`${m[1]}\` as its test, and the file asserts nothing — `
-            + `neither \`assert\` nor \`expect\` appears in it`));
+            `unit ${cells[0]} names \`${m[1]}\` as its test, and there is no such file`));
+        } else if (state === "unreadable") {
+          findings.push(finding("A14", d, base + i, m[1],
+            `unit ${cells[0]} names \`${m[1]}\` as its test, and the file could not be read — `
+            + `whether it asserts anything was not compared`));
+        } else if (!/\bassert(?:[_A-Z]\w*)?\b|\bexpect(?:[_A-Z]\w*)?\b|\b(?:ASSERT|EXPECT)_\w+\b/
+            .test(content)) {
+          // Whole words, case-sensitive: `assert`, `assertEqual`, `assert_eq!`, `expect(x)`,
+          // `ASSERT_EQ`. The word "assertion" or "expectation" in a comment is not a call.
+          findings.push(finding("A14", d, base + i, m[1],
+            `unit ${cells[0]} names \`${m[1]}\` as its test, and the file asserts nothing — no `
+            + `\`assert\`, \`expect\`, \`ASSERT_\` or \`EXPECT_\` call appears in it`));
         }
       }
       // A heading with nothing under it compared nothing, which is the missing section again.
