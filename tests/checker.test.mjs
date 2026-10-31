@@ -767,6 +767,15 @@ test("A14 holds a pattern to the subset both languages read the same way", () =>
     ["", "an empty pattern, which matches every file"],
     ["a]", "a bare closing bracket"],
     ["[]a]", "an empty class: Node reads it as matching nothing"],
+    ["\\B", "`\\B`: matches an empty string in Node and nowhere in one in Python"],
+    ["x\\B", "`\\B` again, after a literal"],
+    ["[a-z-_]", "a hyphen after a range"],
+    ["[a-z-]x[a-z-9]", "a hyphen in the middle of a class"],
+    ["[|]", "a bare `|` in a class, which Python warns may change meaning"],
+    ["[&]", "a bare `&` in a class, likewise"],
+    ["[~]", "a bare `~` in a class, likewise"],
+    ["[[]", "a bare `[` in a class"],
+    ["\\q", "an unknown letter escape: Python refuses it, Node reads a literal"],
   ];
   const { dir } = fixture();
   for (const [pattern, why] of refused) {
@@ -799,6 +808,12 @@ test("A14 matches a pattern against the same text in both languages", () => {
     [String.raw`\w+`, "\u00e9\n", false],
     [String.raw`a.{2}b`, "a\u{1F41D}\u{1F41D}b\n", false],
     [String.raw`a.b`, "a\u{1F41D}b\n", true],
+    // A backslash before any non-alphanumeric ASCII is a plain literal in both engines.
+    [String.raw`\#\[test\]`, "#[test]\nfn f() {}\n", true],
+    [String.raw`assert_eq\!`, "assert_eq!(a, b)\n", true],
+    [String.raw`\_\:\=\<\%\@\"\'`, "_:=<%@\"'\n", true],
+    [String.raw`[\#\!]x`, "!x\n", true],
+    [String.raw`[\#\!]x`, "-x\n", false],
   ];
   const { dir } = fixture({
     // The second plan names the same file, so the pattern under test is the only judge of both.
@@ -811,6 +826,24 @@ test("A14 matches a pattern against the same text in both languages", () => {
     assert.equal(r.status, passes ? 0 : 1,
       `${pattern} against ${JSON.stringify(file)} should ${passes ? "pass" : "find nothing"}\n${r.findings.join("\n")}`);
   }
+  rm(dir);
+});
+
+test("the default assertion pattern is one constant, substituted into both checkers", () => {
+  // Two hand-kept copies of it drifted undetected in review: a widening in one passed every test.
+  for (const tmpl of ["checker.py.tmpl", "checker.mjs.tmpl"]) {
+    const src = readFileSync(join(REPO, "skills/seam-checks/templates", tmpl), "utf8");
+    assert.equal(src.split("{{DEFAULT_ASSERTION_PATTERN}}").length - 1, 1, `${tmpl} takes it once`);
+    assert.ok(!src.includes("assert(?:"), `${tmpl} still carries a copy of the pattern`);
+  }
+  const { dir } = fixture();
+  const py = readFileSync(join(dir, "scripts/check_docs.py"), "utf8")
+    .match(/^DEFAULT_ASSERTION_PATTERN = r"(.+)"$/m);
+  const js = readFileSync(join(dir, "scripts/check_docs.mjs"), "utf8")
+    .match(/^const DEFAULT_ASSERTION_PATTERN =\s*String\.raw`(.+)`;$/m);
+  assert.ok(py && js, "both emitted checkers define it");
+  assert.equal(py[1], js[1]);
+  assert.ok(py[1].includes("assert") && !py[1].includes("{{"));
   rm(dir);
 });
 
@@ -853,22 +886,25 @@ test("A14 skips a struck-through unit, which is no longer one", () => {
   rm(dir);
 });
 
-test("A14 holds an absolute or .. path to be no test path, the same in both checkers", () => {
+test("A14 holds an absolute, .. or trailing-slash path to be no test file, the same in both", () => {
   // `/etc/hosts` exists on most machines, and Python's `ROOT / "/etc/hosts"` is `/etc/hosts`
-  // where Node's join(ROOT, "/etc/hosts") is not. Neither is a path in the repo.
+  // where Node's join(ROOT, "/etc/hosts") is not. A trailing slash is the other way round:
+  // pathlib drops it, so `spec/hives.check.mjs/` is the file in Python, while Node's stat of it
+  // fails with ENOTDIR. Neither is a file path in the repo.
   const { dir } = fixture({
     mutate: ({ edit }) => edit("docs/plans/first.md",
       "| 1 | seed the hive table |",
       "| 2 | outside | `/etc/hosts` | never |\n| 3 | above | `../hives.check.mjs` | never |\n"
+      + "| 4 | slash | `spec/hives.check.mjs/` | never |\n"
       + "| 1 | seed the hive table |"),
   });
   const r = both(dir);
   assert.equal(r.status, 1, r.py.stdout + r.py.stderr);
   assert.deepEqual(ids(r.findings), ["A14"], r.findings.join("\n"));
-  assert.equal(r.findings.length, 2, r.findings.join("\n"));
+  assert.equal(r.findings.length, 3, r.findings.join("\n"));
   // The cell does hold a backticked path, so "no test path" would be the wrong thing to say.
   for (const f of r.findings) {
-    assert.match(f, /not inside the repo/, f);
+    assert.match(f, /not a file path inside the repo/, f);
     assert.doesNotMatch(f, /no test path/, f);
   }
   rm(dir);

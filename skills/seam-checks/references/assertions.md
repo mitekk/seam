@@ -283,11 +283,16 @@ shape the layer promises.
 
 Reads: the `§ The units` table of each file matching the plan glob. For each row whose first cell
 is a bare numeral, the `Proves it` cell must be one backticked path inside the repo (no leading `/`,
-no `..`), that path must be a file, and the file must contain an assertion. A struck-through row
-(`~~2~~`) is not a unit and is skipped, as are the header and the rule under it. A row is read by
-dropping at most one pipe at each end and trimming ASCII whitespace only, so a row with a doubled
-pipe, or a numeral padded with a non-ASCII space, is not a unit — and is read the same way by
-both emitted checkers.
+no trailing `/`, no `..`), that path must be a file, and the file must contain an assertion. A
+struck-through row (`~~2~~`) is not a unit and is skipped, as are the header and the rule under it.
+A row is read by dropping at most one pipe at each end and trimming ASCII whitespace only, which is
+what lets both emitted checkers read it the same way.
+
+**A side effect of that, stated plainly:** a numeral padded with a non-ASCII space — a no-break
+space (U+00A0) pasted from a web page is the likely one — is not trimmed by either checker, so the
+row is not recognised as a unit and **is silently not held to the shape**. The same goes for a row
+with a doubled leading pipe (`|| 1 | …`). If a unit seems to be going unchecked, look for an
+invisible character in its first cell.
 
 **What counts as an assertion** is set by `assertions.A14.assertion_pattern`, a regular expression
 searched for in the test file. It is configurable because no default can be right for every repo,
@@ -314,12 +319,15 @@ groups, a range out of a class escape, possessive quantifiers, `{,n}` and `\B` o
 A checker that ran whatever its own engine accepted would pass a repo in one language and fail it in
 the other, which is the one thing the two are promised not to do. So the pattern is printable ASCII
 built from: literals; `.`; `^` and `$` (per line); `|`; groups `(…)` and `(?:…)` — no lookaround,
-flags or names; simple classes `[…]` and `[^…]` of literals, `a-z` ranges between literals, and the
-escapes below, with a `-` only at either end; the escapes `\w \W \d \D \s \S \b \n \r \t` and a backslash
-before any of `` . ^ $ | ? * + ( ) [ ] { } \ / - & ~ ``; and the quantifiers `* + ? {n} {n,} {n,m}`,
-each with an optional lazy `?`. There is no case-insensitive flag; write `[Aa]ssert`. The file is
-matched with line endings made `\n` and each run of non-ASCII characters made one `~`, so `.`, `\s`
-and `$` cannot tell the engines apart either.
+flags or names; simple classes `[…]` and `[^…]`; the escapes `\w \W \d \D \s \S \b \n \r \t`, and a
+backslash before any other non-alphanumeric ASCII character (`\#\[test\]`, `assert_eq\!`), which both
+engines read as that character — but not before a letter or digit, so no `\B`, `\1`, `\p{…}` or
+`\A`; and the quantifiers `* + ? {n} {n,} {n,m}`, each with an optional lazy `?`. A class holds
+literals, `a-z` ranges between two literals, and those escapes; it may **not** be empty, hold an
+unescaped `[`, `&`, `~` or `|` (write `[\|]`), or have a `-` anywhere but at either end (so `[\w-.]`
+and `[a-z-_]` are refused, `[a-z_-]` is not). There is no case-insensitive flag; write `[Aa]ssert`.
+The file is matched with line endings made `\n` and each run of non-ASCII characters made one `~`,
+so `.`, `\s` and `$` cannot tell the engines apart either.
 
 A pattern outside that subset, empty, or not a string is reported as one finding at
 `.seam/config.json:1` saying it could not be compiled and why, and only the asserts-something

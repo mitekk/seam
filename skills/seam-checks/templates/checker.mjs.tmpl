@@ -191,12 +191,15 @@ function tableCells(line) {
 // ── The assertion pattern ────────────────────────────────────────────────────
 
 const DEFAULT_ASSERTION_PATTERN =
-  String.raw`\bassert(?:[_A-Z]\w*)?\b|\bexpect(?:[_A-Z]\w*)?\b|\b(?:ASSERT|EXPECT)_\w+\b`;
+  String.raw`{{DEFAULT_ASSERTION_PATTERN}}`;
 
-// What a backslash may be followed by: a class or a control escape, or a character that would
-// otherwise mean something. `\b` is an anchor and is handled where it can appear; `\B` is left
-// out because Python's matches nowhere in an empty string and Node's matches there.
-const ESCAPABLE = "wWdDsSnrt" + ".^$|?*+()[]{}\\/-&~";
+// What a backslash may be followed by: a class or control escape, or any non-alphanumeric
+// printable ASCII character, which both engines read as that character. A letter or a digit is
+// refused — `\B` matches an empty string in Node and nowhere in one in Python, and `\q` is an
+// error in Python and a literal in Node. `\b` is an anchor and is handled where it can appear.
+const ESCAPE_LETTERS = "wWdDsSnrt";
+const ESCAPE_PUNCT_RE = /^[\x20-\x2f\x3a-\x40\x5b-\x60\x7b-\x7e]$/;
+const escapable = (d) => d !== "" && (ESCAPE_LETTERS.includes(d) || ESCAPE_PUNCT_RE.test(d));
 
 /**
  * Why `p` is not a pattern both emitted checkers read the same way, or null when it is.
@@ -223,7 +226,7 @@ function portableRegex(p) {
     if (c === "\\") {
       const d = p.charAt(i + 1);
       if (d === "b") prev = "anchor";
-      else if (d !== "" && ESCAPABLE.includes(d)) prev = "atom";
+      else if (escapable(d)) prev = "atom";
       else return bad(i);
       i += 2;
     } else if (c === "[") {
@@ -240,7 +243,7 @@ function portableRegex(p) {
         }
         if (k === "\\") {
           const d = p.charAt(j + 1);
-          if (d === "" || !ESCAPABLE.includes(d)) return bad(j);
+          if (!escapable(d)) return bad(j);
           j += 2;
         } else if (k === "[" || k === "&" || k === "~" || k === "|") {
           return bad(j);                                      // Python warns these may change
@@ -1130,13 +1133,16 @@ async function main() {
             + `piece of work that carries its own test, so name the test as a backticked path`));
           continue;
         }
-        // A path outside the repo is not one a repo's own check should read, and an absolute one
-        // would not resolve the same in both languages: pathlib's `/` replaces the root where
-        // join concatenates onto it.
-        if (m[1].startsWith("/") || m[1].split("/").includes("..")) {
+        // Only a plain repo-relative file path is read. An absolute one resolves differently in
+        // the two languages (pathlib's `/` replaces the root, join concatenates onto it), a
+        // trailing `/` does too (pathlib drops it, so the file is found; a stat in Node fails
+        // with ENOTDIR), and `..` leaves the repo, which a repo's own check has no business
+        // reading.
+        if (m[1].startsWith("/") || m[1].endsWith("/") || m[1].split("/").includes("..")) {
           findings.push(finding("A14", d, base + i, m[1],
-            `unit ${cells[0]} names \`${m[1]}\` as its test, and that path is not inside the repo — `
-            + `name the test relative to the repo root, without \`..\``));
+            `unit ${cells[0]} names \`${m[1]}\` as its test, and that is not a file path inside `
+            + `the repo — write it relative to the repo root, with no leading \`/\`, no trailing `
+            + `\`/\` and no \`..\``));
           continue;
         }
         // A file that is there and cannot be opened is not a missing one, and it must not take

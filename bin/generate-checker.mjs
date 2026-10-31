@@ -30,6 +30,13 @@ const PLUGIN = join(HERE, "..");
 const TEMPLATES = join(PLUGIN, "skills", "seam-checks", "templates");
 const CONFIG_PATH = ".seam/config.json";
 
+// What A14 counts as an assertion when `assertions.A14.assertion_pattern` is absent. It is written
+// once, here, and substituted into both templates: two hand-kept copies drifted undetected in
+// review, and a widening in one passed every test. It carries no quote, backtick or `${`, so it
+// is inserted raw into a Python raw string and a JS `String.raw` alike.
+const DEFAULT_ASSERTION_PATTERN =
+  String.raw`\bassert(?:[_A-Z]\w*)?\b|\bexpect(?:[_A-Z]\w*)?\b|\b(?:ASSERT|EXPECT)_\w+\b`;
+
 const LANGS = {
   python: { template: "checker.py.tmpl", ext: ".py", defaultOut: "scripts/check_docs.py" },
   node: { template: "checker.mjs.tmpl", ext: ".mjs", defaultOut: "scripts/check_docs.mjs" },
@@ -118,7 +125,9 @@ function main() {
   const body = readFileSync(join(TEMPLATES, lang.template), "utf8")
     .replaceAll("{{SEAM_VERSION}}", version)
     .replaceAll("{{CONFIG_PATH}}", CONFIG_PATH)
-    .replaceAll("{{CHECKER_PATH}}", outPath);
+    .replaceAll("{{CHECKER_PATH}}", outPath)
+    // A function, so that a `$` in the pattern is not read as a replacement token.
+    .replaceAll("{{DEFAULT_ASSERTION_PATTERN}}", () => DEFAULT_ASSERTION_PATTERN);
 
   const abs = join(args.repo, outPath);
   mkdirSync(dirname(abs), { recursive: true });
