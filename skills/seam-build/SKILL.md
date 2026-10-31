@@ -49,9 +49,9 @@ never whether there is one — the doc has the cut.
 
 A defect, a corner the plan did not mention, a better way. It is the same question — does a unit
 own it? If one does, it is that unit's work and no more paperwork is needed. If none does, it is a
-disposition, and **`seam-github` § Follow-ups owns the order** — plan it and do it, file it, or
-ledger it. Do not park it in a transcript and do not build it first; those are the two ways it is
-lost.
+disposition, and **`seam-github` § Follow-ups owns which of the four it takes** — read it there
+rather than guessing. Do not park it in a transcript and do not build it first; those are the two
+ways it is lost.
 
 ## Review findings
 

@@ -141,7 +141,8 @@ Closes #N.
 - <any · `domain` — planned, then folded in> no unit covered it: the unit was written, then done
 - <any · `domain` — issue #N> bigger than a unit this branch could write and finish, and it passes
   a qualifier clause — names which
-- <any · `domain` — ledger> true and not worth doing: one findings-ledger row
+- <any · `domain` — ledger> true, and either not worth doing or turned away by the qualifier:
+  one findings-ledger row
 - <one-liner · `domain` — on `main`> a one-line fix that belonged elsewhere
 ```
 
@@ -152,9 +153,10 @@ Closes #N.
 Everything you noticed along the way and did not treat as part of the original scope. Each item
 names its **domain**, its **size**, and its **disposition**.
 
-**The order is two questions, and neither of them is the size.** Does a unit of planned work cover
-the item? If none does, is it worth doing at all — and if it is, is the work bigger than a unit you
-could write and finish in this branch? Four dispositions, one per answer:
+**The order is two questions, and neither of them is the size.** Does a unit of planned work — or
+a document that owns the change — cover the item? If nothing does, is it worth doing at all, and if
+it is, is the work bigger than a unit you could write and finish in this branch? Four dispositions,
+one per answer:
 
 1. **A unit covers it → do it now**, in this branch. A document that owns the change stands in for
    the unit, so a change a document owns takes this disposition too.
@@ -164,10 +166,16 @@ could write and finish in this branch? Four dispositions, one per answer:
    could write and finish in this branch. **Filing is for complexity, not for coverage** —
    covering the corners of the work in front of you *is* that work, and an issue filed to record a
    corner inflates the board without moving anything.
-4. **Worth doing and not complex → write the unit, then do it**, in this branch. **This outranks
-   filing**, and the row is not a gate: it gets written and the work goes on.
+4. **Worth doing and not complex → write the unit, then do it**, in this branch. What that row
+   carries, and the rule that writing it is not a gate, are `docs/building.md`'s.
 
 The four are mutually exclusive, so there is no order to try them in — the two questions pick one.
+
+**Two routes sit beside the tree rather than in it.** A one-line fix belonging to another domain is
+not a disposition but a question of which branch carries it; § A one-line fix in another domain
+below has it, and it is asked **first**, because it takes the item out of this branch altogether.
+And the ledger has a second way in: an item the third disposition sends to an issue lands there
+instead when the qualifier turns it away.
 
 **`docs/building.md` is what this section reads for the things this file does not own**: what
 counts as a unit covering a change, what a row written for one carries, the carve-out that lets a
@@ -189,12 +197,12 @@ become one at all?** Three clauses, and it is one of them or it is not an issue:
 applies to the answers file; a hand-edited `.seam/config.json` can carry none, two, or no `active`
 key at all. **Where it is not exactly one, clause 3 does not fire**: the item qualifies on clause 1
 or 2, or it is a ledger row. Do not pick one of two, and do not infer the active milestone from the
-board. Then say which state the config is in. **No row marked `true`, or no `active` key on the
-rows at all, is a config that has not chosen yet** — name it and leave it alone, because which
-milestone is being built now is the repo's answer to give and not yours to infer. **Two rows marked
-`true` is broken**, so say so and offer to fix it in `.seam/answers.json`, which is the source the
-config is projected from. **No milestones at all** is neither of those: there is nothing to choose,
-so clause 3 simply never fires.
+board. Two states, and they are not the same thing. **`milestones: []`, no milestones at all, is
+the ordinary undecided case**: nothing has been chosen because there is nothing to choose yet, and
+clause 3 simply never fires. **A non-empty list that does not carry exactly one `true`** — two of
+them, none of them, or no `active` key on the rows — is a config `/seam:init` refuses to write, so
+it was hand-edited or is broken: say so, and do not repair it unasked. A repair goes into
+`.seam/answers.json`, since the config is the projection.
 
 **An item the qualifier turns away is one row in the findings ledger too**, committed in the same
 PR. That file owns nothing and is not a plan, so a row there is a record rather than a commitment.

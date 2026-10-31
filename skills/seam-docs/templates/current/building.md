@@ -38,9 +38,8 @@ cited by its row.
   contract would block work that has no test to write.
 
 **Something noticed mid-task is the same question**, not a reason to stop and not a reason to
-build. Does a unit own it? If so it is part of that unit's work. If not, it is a disposition — plan
-it and do it, file it, or ledger it — and the tracker conventions own that order. This file does
-not repeat it.
+build. Does a unit own it? If so it is part of that unit's work. If not, it is a disposition — one
+of four — and the tracker conventions own which of them it takes. This file does not repeat them.
 
 ## Rulings and direction corrections
 
@@ -102,10 +101,11 @@ DoD and no ruling.** Run that unit's test and go on.
 | Medium | anything in between — a handful of files, or a test that does not exist yet | both contracts; if no unit or document owns it, write the row |
 | Large | crosses a structural seam — a schema, a state machine, two runtimes | both contracts, and expect rulings: say what each costs if wrong; if no unit or document owns it, write the row |
 
-**This table is the only copy of the sizes.** The tracker conventions sort follow-ups by the same
-three, and they cite this file for them rather than defining their own. A size is **blast radius,
-not felt effort**: a one-line fix to a sentence in a doc is Small, and so is a typo in a README —
-and a document owns those, so they need no row.
+**This table is the only copy of the sizes.** The tracker conventions report a follow-up's size
+from these same three and cite this file for them rather than defining their own; what they sort a
+follow-up by is who owns it, never how big it is. A size is **blast radius, not felt effort**: a
+one-line fix to a sentence in a doc is Small, and so is a typo in a README — and a document owns
+those, so they need no row.
 
 **Who owns the work is a separate question from its size.** At every size, a document that owns
 the change stands in for the unit, as the start contract says: name it instead of writing a row.

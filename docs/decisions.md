@@ -63,20 +63,22 @@ planned work owns is still implementation that got ahead of the plan, and the on
 left for it was an issue — so corners of work already in front of someone went onto the board
 instead of into the branch.
 
-**Settled:** the disposition is decided by **two questions, neither of them the size**. Does a unit
-of planned work cover the item? If none does, is it worth doing at all — and if it is, is the work
-bigger than a unit you could write and finish in the branch in flight? A unit covers it → do it
-now; nothing covers it and it is not worth doing → one ledger row; worth doing and bigger than a
-unit you could finish here → file an issue, if it passes the qualifier; worth doing and not bigger
-than that → **write the unit, then do it**. The four are mutually exclusive, so no precedence
-between them has to be remembered, and "worth doing" is asked once.
+**Settled:** the disposition is decided by **two questions, neither of them the size**. Does a
+unit of planned work — or a document that owns the change — cover the item? If nothing does, is it
+worth doing at all, and if it is, is the work bigger than a unit you could write and finish in the
+branch in flight? A unit covers it → do it now; nothing covers it and it is not worth doing → one
+ledger row; worth doing and bigger than a unit you could finish here → file an issue, if it passes
+the qualifier; worth doing and not bigger than that → **write the unit, then do it**. The four are
+mutually exclusive, so no precedence between them has to be remembered, and "worth doing" is asked
+once.
 
-That last disposition is new and it **outranks filing**, in the owner's words: *"I'd rather it
-planned and implemented instead directly go with new issue just because we need to cover some
-corners."* Filing is for genuine complexity; covering corners is part of the work, and an issue
-filed to cover one inflates the board. **Complexity is reach, not size** — whether the work is
-bigger than a unit you could write and finish — because a size test in that slot would be the rule
-this entry reverses wearing a different name.
+That last disposition is new, and the old rule had no route for it: an item that fitted it became
+an issue instead. In the owner's words: *"I'd rather it planned and implemented instead directly
+go with new issue just because we need to cover some corners."* Filing is for genuine complexity;
+covering corners is part of the work, and an issue filed to cover one inflates the board.
+**Complexity is reach, not size** — whether the work is bigger than a unit you could write and
+finish — because a size test in that slot would be the rule this entry reverses wearing a
+different name.
 
 A change no unit owns may name the **document** that owns it instead, which takes the first
 disposition with the document standing in for the unit. Without it the ordering rule would route

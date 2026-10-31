@@ -120,12 +120,11 @@ Closes #12.
   OK**; a same-domain fix already inside this branch's scope would not have. The line says so,
   because the squash subject will file it under `hives` and the PR body is then the only place it is
   written down in the domain it belongs to.
-- The empty apiary took the plan-it-and-do-it disposition, the one that **outranks filing**: no unit
-  covered it, it was worth doing, and it was no bigger than a unit this branch could write and
-  finish — so the unit was written and then the work done here. Filing it would have been the cheap
-  move and the wrong one — covering that corner *is* the work this branch was doing, and an issue
-  for it inflates the board without moving anything. It is `hives` inside a `hives` branch, so it
-  needed no OK.
+- The empty apiary took the plan-it-and-do-it disposition: no unit covered it, it was worth doing,
+  and it was no bigger than a unit this branch could write and finish — so the unit was written and
+  then the work done here. **Filing it would have been the cheap move and the wrong one** — covering
+  that corner *is* the work this branch was doing, and an issue for it inflates the board without
+  moving anything. It is `hives` inside a `hives` branch, so it needed no OK.
 - The future-dated inspection is **genuinely complex** by the only test that decides anything —
   **reach**. The fix is bigger than a unit this branch could write and finish: it reaches the
   schema, the form and the API. That is why it is filed rather than planned and done. It

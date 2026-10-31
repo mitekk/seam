@@ -24,9 +24,10 @@ PASS requires all of:
    - item 4 (README link) → **a one-liner on the default branch**, domain `web`, not folded into
      this branch.
 
-6. **Filing is for complexity, not for coverage.** An item that no unit of planned work owns and
-   that is worth the time is **planned and then done in this branch** — the unit written first,
-   then the work — rather than filed. **None of this case's four items is that disposition**, so
+6. **Filing is for complexity, not for coverage.** An item that no unit of planned work owns, that
+   is **worth doing**, and that is **no bigger than a unit this branch could write and finish**, is
+   **planned and then done in this branch** — the unit written first, then the work — rather than
+   filed. **None of this case's four items is that disposition**, so
    what is required here is the negative: nothing may be filed *because* no unit of planned work
    owns it. Item 2 is filed because the work is bigger than a unit this branch could finish. An
    item done in this branch may say that a unit was written for it, and that is not a miss.
