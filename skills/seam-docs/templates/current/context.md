@@ -21,19 +21,25 @@ before the window runs out. Neither file owns the other's half.
 
 ## Thresholds
 
-| Level | Usage | Required action |
+| Level | Usage at or above | Required action |
 |---|---|---|
-| **Green** | 0–49% | Continue. |
-| **Yellow** | 50–59% | Summarise finished work to disk. Compact before a large read or dispatch. |
-| **Orange** | 60–74% | Compact now. Start no new large reads; work from what is on disk. |
-| **Red** | 75%+ | Stop new work. Write the handoff, commit, then compact or end the session. |
+| **Green** | 0% | Continue. |
+| **Yellow** | 50% | Summarise finished work to disk. Compact before a large read or dispatch. |
+| **Orange** | 60% | Compact now. Start no new large reads; work from what is on disk. |
+| **Red** | 75% | Stop new work. Write the handoff, commit, then compact or end the session. |
+
+**Take the highest level whose floor the figure has reached** — the same way the fallback table
+below is read. Floors rather than ranges, because a range has to pick a side at each boundary and
+picks it twice: 75% in both Orange and Red is the same disagreement as 74.6% in neither. Every
+figure reaches exactly one highest floor, and Green's is 0%.
 
 **Every action above Green is the same one at a different strength: write to disk, and prefer disk
 over context.** None of them is "be careful", because that is not an action anyone can take.
 
 **Where compaction is the human's command rather than the session's**, the session still owes the
-half that is its own: write the state to disk, say which level it is at and on what, then ask. An
-action that waits on someone else is not a reason to skip the part that does not.
+half that is its own: write the state to disk, then ask. **The gated work waits** — at Yellow the
+large read or the dispatch does not go ahead on the strength of having asked, or the gate is not
+one. An action that waits on someone else is not a reason to skip the part that does not.
 
 **The bands are not re-derived per session.** They arrive with the method, already in use
 elsewhere, and a band argued down on the day it binds is a band that never triggers again.
@@ -60,6 +66,11 @@ window, counted:
 are lower bounds and the rows overlap on purpose, so a session that matches two takes the worse of
 them: acting a level early costs a file written sooner than it had to be, and acting a level late
 is the degradation this table exists to catch.
+
+**Rows 2 and 3 share their count deliberately.** What separates them is not how many agents but
+whether the spend is anticipated or realised: two dispatched is context about to be paid, two
+returned with their output in the thread is context already paid. Change the counts together or
+not at all.
 
 Tune these counts here. They are a proxy, and one calibrated to someone else's session is the one
 that reads Green while the window fills.
@@ -94,10 +105,10 @@ its own is the same answer — what matters is that the files are not in git and
 
 **One file per writer, wherever they write.** Where agents run in parallel — which the dispatch
 rule above licenses — each writes a scoped file of its own, never a shared path, and the name
-carries the unit and the agent rather than the role: `progress-7-context.md`, not `progress.md`,
-because two agents given similar work collide on a role. Two handoffs at one name is one of them
-silently overwritten, and whoever picks the thread up reads the surviving agent's state as though
-it were both.
+carries the unit *and* the agent: `progress-<unit>-<agent>.md`, so `progress-7-schema.md` rather
+than `progress.md` or `progress-7.md`, because two agents on one unit collide on anything shorter.
+Two handoffs at one name is one of them silently overwritten, and whoever picks the thread up reads
+the surviving agent's state as though it were both.
 
 Add the line when this file is adopted:
 

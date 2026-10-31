@@ -440,15 +440,21 @@ test("a layer-2 row named context.md gets the context template", () => {
   const flat = t.replace(/\s+/g, " ");
   assert.match(t, /Layer 2/);
   assert.match(t, /amend in place/i);
-  // The four levels, on the decision points the method arrived with — 50, 60, 75 — and bands that
-  // do not overlap at them, so one figure gives one level. A table missing a level is a session
-  // with no action to take in that band.
-  assert.match(flat, /\| \*\*Green\*\* \| 0–49% \|/);
-  assert.match(flat, /\| \*\*Yellow\*\* \| 50–59% \|/);
-  assert.match(flat, /\| \*\*Orange\*\* \| 60–74% \|/);
-  assert.match(flat, /\| \*\*Red\*\* \| 75%\+ \|/);
+  // The four levels, on the decision points the method arrived with — 50, 60, 75 — written as
+  // floors, which is what leaves neither an overlap nor a gap at any of them: a range picks a side
+  // at each boundary and picks it twice. The header is pinned with them, because a column of bare
+  // floors means nothing without it.
+  assert.match(flat, /\| Level \| Usage at or above \| Required action \|/);
+  assert.match(flat, /\| \*\*Green\*\* \| 0% \|/);
+  assert.match(flat, /\| \*\*Yellow\*\* \| 50% \|/);
+  assert.match(flat, /\| \*\*Orange\*\* \| 60% \|/);
+  assert.match(flat, /\| \*\*Red\*\* \| 75% \|/);
+  assert.match(flat, /take the highest level whose floor the figure has reached/i);
   // Every action above Green is one move, which is what makes the table a policy and not a mood.
   assert.match(flat, /write to disk, and prefer disk over context/i);
+  // An action the session cannot take alone is still an action, and the work the gate holds does
+  // not proceed on the strength of having asked — or Yellow's gate is not a gate.
+  assert.match(flat, /the gated work waits/i);
   // What triggers a level: the harness's own indicator first, heuristics only as the fallback,
   // and the reason the fallback exists — without it the table is unenterable where there is no
   // indicator to read.
@@ -467,6 +473,9 @@ test("a layer-2 row named context.md gets the context template", () => {
   // matches Green and Red at once, and the skill forbids falling back to a feeling.
   assert.match(flat, /take the highest level whose row matches/i);
   assert.match(flat, /where none matches, the level is Green/i);
+  // Rows 2 and 3 carry the same count on purpose — anticipated spend against realised spend — so
+  // the equality reads as the rule it is rather than as a slip someone later corrects.
+  assert.match(flat, /anticipated or realised/i);
   // The dispatch rule: two reasons, and the closed list is the rule.
   assert.match(flat, /\*\*parallel\*\*/);
   assert.match(flat, /\*\*detached\*\*/);
@@ -479,6 +488,9 @@ test("a layer-2 row named context.md gets the context template", () => {
   // One directory plus a licence to dispatch in parallel is a collision the doc grants, so the
   // doc makes it safe: a scoped path per agent, or one handoff silently overwrites another.
   assert.match(flat, /a scoped file of its own/i);
+  // The form, not just an instance: an example alone leaves which segment is the agent unsaid, and
+  // two agents on one unit collide again.
+  assert.match(flat, /progress-<unit>-<agent>\.md/);
   assert.match(flat, /\bnever a shared path\b/i);
   // The checker's path reached it from the config rather than being hardcoded.
   assert.ok(t.includes("scripts/check_docs.py"), "the checker path did not substitute");
