@@ -8,7 +8,7 @@
 // switch languages without changing what is enforced" is only true if it is checked.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cpSync, readFileSync, writeFileSync, existsSync, rmSync, chmodSync, mkdirSync } from "node:fs";
+import { cpSync, readFileSync, writeFileSync, appendFileSync, existsSync, rmSync, chmodSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { execFileSync } from "node:child_process";
 import { scratch, rm, run, REPO } from "./helpers.mjs";
@@ -342,6 +342,86 @@ for (const [rel, from, to, frozen] of [
       assert.ok(!r.findings.some((l) => l.includes(" A12 ")),
         `${rel} is an index or the active text, not a record:\n${r.findings.join("\n")}`);
     }
+    rm(dir);
+  });
+}
+
+// ── A12 and an append-only file that has to be appended to ──────────────────────────────────
+//
+// A dated decisions file is ONE file that every new decision is added to. Byte-freezing the whole
+// of it makes an append-only file impossible to append to: the checker would red the moment the
+// next entry landed. So for `adr.format: single`, and for that one path only, what A12 asserts is
+// that the text on the default branch is an unbroken PREFIX of the working copy.
+
+const DECISIONS = "docs/decisions.md";
+const DECISIONS_BODY = "# Decisions\n\n**Layer 3 — Decisions.** Append-only and dated.\n\n"
+  + "## D-001 — Use a plain table for the queue\n\n*2026-01-01 · settled*\n\nRetries are hand-written.\n";
+const APPENDED = "\n## D-002 — Name the worker\n\n*2026-01-02 · settled*\n\nIt is called the worker.\n";
+
+/** The clean fixture with a dated decisions file beside its MADR records, `adr` pointed at it,
+ *  and all of it committed to `main` — so there is something on the branch for A12 to compare. */
+function singleFixture() {
+  return fixture({
+    commitAfter: true,
+    mutate: ({ dir, edit, write }) => {
+      write(DECISIONS, DECISIONS_BODY);
+      edit("CLAUDE.md", "| `docs/prd/*.md` |",
+        "| `docs/decisions.md` | 3 Decisions | What was chosen, and why |  |\n| `docs/prd/*.md` |");
+      const p = join(dir, ".seam/config.json");
+      const cfg = JSON.parse(readFileSync(p, "utf8"));
+      cfg.adr = { format: "single", file: DECISIONS };
+      cfg.docs.splice(3, 0, { path: DECISIONS, layer: 3, enforces: "", create: true });
+      writeFileSync(p, JSON.stringify(cfg, null, 2));
+    },
+  });
+}
+
+test("A12 allows an append to a dated decisions file", () => {
+  const { dir } = singleFixture();
+  // The committed state is clean, so a finding below can only have come from the append.
+  assert.deepEqual(both(dir).findings, []);
+  appendFileSync(join(dir, DECISIONS), APPENDED);
+  const r = both(dir);
+  assert.equal(r.status, 0, `an append is what the file is for:\n${r.py.stdout}${r.py.stderr}`);
+  assert.deepEqual(r.findings, []);
+  rm(dir);
+});
+
+for (const [what, change] of [
+  ["an entry edited in place", (body) => body.replace("hand-written", "automatic")],
+  ["an entry edited and a new one appended", (body) => body.replace("hand-written", "automatic") + APPENDED],
+  ["an entry deleted", (body) => body.slice(0, body.indexOf("## D-001"))],
+]) {
+  test(`A12 flags an edit to an existing entry in a dated file: ${what}`, () => {
+    const { dir } = singleFixture();
+    const p = join(dir, DECISIONS);
+    writeFileSync(p, change(readFileSync(p, "utf8")));
+    const r = both(dir);
+    assert.equal(r.status, 1, r.py.stdout);
+    assert.deepEqual(ids(r.findings), ["A12"], r.findings.join("\n"));
+    assert.ok(r.findings.some((l) => l.startsWith(`${DECISIONS}:1: A12 `)), r.findings.join("\n"));
+    const out = r.py.stdout + r.py.stderr;
+    // The message is the guidance: it says what went wrong in THIS file's terms, not the record rule's.
+    assert.match(out, /edited, not appended/);
+    assert.match(out, /reversal is a new dated entry/);
+    rm(dir);
+  });
+}
+
+for (const [what, mk, rel, line] of [
+  ["a MADR record", () => fixture(), "docs/adr/0001-use-a-plain-table-for-the-queue.md", "\nAn afterthought.\n"],
+  // Under `single`, the prefix allowance is for `adr.file` and for nothing else in layers 3 and 4.
+  ["a MADR record, when adr.format is single", singleFixture, "docs/adr/0001-use-a-plain-table-for-the-queue.md", "\nAn afterthought.\n"],
+  ["a PRD version, when adr.format is single", singleFixture, "docs/prd/PRD-v1.md", "\nAn afterthought.\n"],
+]) {
+  test(`A12 still demands byte-equality for ${what}`, () => {
+    const { dir } = mk();
+    appendFileSync(join(dir, rel), line);
+    const r = both(dir);
+    assert.equal(r.status, 1, `even an append changes a record's bytes:\n${r.py.stdout}${r.py.stderr}`);
+    assert.deepEqual(ids(r.findings), ["A12"], r.findings.join("\n"));
+    assert.ok(r.findings.some((l) => l.startsWith(`${rel}:1: A12 `)), r.findings.join("\n"));
+    assert.match(r.py.stdout + r.py.stderr, /bytes are final/);
     rm(dir);
   });
 }

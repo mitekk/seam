@@ -247,10 +247,15 @@ seam carries a sources-of-truth table of its own, and its own checker runs over 
 |---|---|---|
 | [`docs/contributing.md`](docs/contributing.md) | 2 Current | How work on seam is done, and the sources-of-truth table's host file |
 | [`docs/taxonomy.md`](docs/taxonomy.md) | 2 Current | The domain labels, the three priorities, and the milestones |
+| [`docs/decisions.md`](docs/decisions.md) | 3 Decisions | What was chosen, the options rejected, and why — plus in-flight rulings and direction corrections |
 
-Two things are open, and recorded as questions rather than guessed at: whether seam needs its own
-layer-3 decision track or whether its commit messages carry that weight, and whether it needs a
-layer-4 PRD given that this README is the intent and is public.
+Layer 3 is settled: `docs/decisions.md` holds decisions, rulings taken in flight, and direction
+corrections — the last because a live "not that way" otherwise dies in a session transcript. It is
+append-only, and assertion A12 holds it to that by checking that what is on the default branch is an
+unbroken prefix of the file, so an append passes and an edit does not.
+
+One thing is open, and recorded as a question rather than guessed at: whether seam needs a layer-4
+PRD, given that this README is the intent and is public.
 
 **Why the table lives in `docs/contributing.md` and not `CLAUDE.md`:** this repo is simultaneously
 the plugin and the project, and `claude plugin validate --strict` refuses a `CLAUDE.md` at a plugin

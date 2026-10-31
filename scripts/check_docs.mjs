@@ -968,9 +968,16 @@ async function main() {
   }
 
   // ── A12. Append-only layers are byte-frozen on the default branch. ─────
+  //
+  // One exception, for one file: a single dated decisions file is a record that is appended to by
+  // design, so byte-equality would make it impossible to append to. For that path alone the
+  // branch's bytes must be an unbroken PREFIX of the working copy. Bytes, not decoded text: a
+  // decode would let invalid UTF-8 compare differently here than in the Python checker.
   if (on("A12")) {
     ran += 1;
     const branch = opt("A12", "default_branch", cfg.repo?.default_branch ?? "main");
+    const adrCfg = cfg.adr ?? {};
+    const appendOnly = adrCfg.format === "single" ? (adrCfg.file ?? "docs/decisions.md") : null;
     const frozen = table.filter((r) => r.layer === 3 || r.layer === 4).map((r) => globRe(r.doc));
     let haveBranch = true;
     try {
@@ -990,8 +997,16 @@ async function main() {
             { cwd: ROOT, stdio: ["ignore", "pipe", "ignore"] });
         } catch { continue; }       // not on the branch yet: a new record, which is the point
         const now = readFileSync(join(ROOT, d));
-        if (!was.equals(now)) {
-          const layer = table.find((r) => globRe(r.doc).test(d)).layer;
+        const layer = table.find((r) => globRe(r.doc).test(d)).layer;
+        if (d === appendOnly) {
+          if (now.length < was.length || !now.subarray(0, was.length).equals(was)) {
+            findings.push(finding("A12", d, 1, d,
+              `is layer ${layer} (${LAYER_NAMES[layer]}), append-only, and already on `
+              + `\`${branch}\`: what is there must stay, byte for byte, at the top of this file. `
+              + `An entry was edited, not appended. A reversal is a new dated entry; a correction `
+              + `is not available here`));
+          }
+        } else if (!was.equals(now)) {
           findings.push(finding("A12", d, 1, d,
             `is layer ${layer} (${LAYER_NAMES[layer]}) and already on \`${branch}\`, so its `
             + `bytes are final. A reversal is a new entry; a correction is not available here`));

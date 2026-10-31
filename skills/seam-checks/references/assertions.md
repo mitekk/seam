@@ -255,6 +255,15 @@ layer-2 doc is byte-frozen by nothing, which is correct — wrong there is a bug
 fixed in place.
 
 - A file **not yet on the branch** is skipped. That is a new record, which is the point.
+- **A single dated decisions file is held to a prefix, not to equality.** When `adr.format` is
+  `single`, the one path `adr.file` is the record that every new decision is appended to, so
+  byte-equality would make an append-only file impossible to append to. For that path the bytes on
+  the branch must be an unbroken **prefix** of the working copy — compared as bytes, in both
+  checkers, never as decoded text. An append passes; an edit to anything already there, or a
+  deletion, fails, saying an entry was edited rather than appended and that a reversal is a new
+  dated entry. Every other layer-3 and layer-4 file, including a MADR record and a PRD version in
+  the same repo, keeps equality. Text that merely extends the file's last line also passes: a
+  prefix is a byte relation, and A12 does not read entries.
 - **No such branch fails**, saying the comparison was not made. Off is distinct from passing.
 - **An index is not a record.** `README.md`, `index.md`, `template.md` and `PRD-current.md` inside
   a frozen track are exempt: an index grows by design — adding a version means appending a row —

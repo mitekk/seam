@@ -1,0 +1,53 @@
+# Decisions
+
+**Layer 3 — Decisions.** What was chosen, the options rejected, and why. An entry here is
+**never wrong**, because it records what was decided at the time it was decided — so this file is
+**append-only and dated**. A reversal is a **new dated section** that supersedes an old one and
+names it; the old section stays exactly as written.
+
+Three kinds of entry live here, each in a `## ` section whose first line is its date:
+
+- **Decision** — the section itself: what was chosen, the options rejected, and why.
+- **Ruling** — a `### Ruling — <what>` taken in flight: what was decided, why, and what it costs
+  if wrong.
+- **Direction correction** — a `### Direction correction — <what>`: what was being built, what was
+  asked for instead, and the date it was said. It is the record of a live "not that way", which
+  otherwise lives only in a session transcript.
+
+Rulings and corrections are append-only like everything else in the file.
+
+Owns: the rationale for every significant choice in this repo. A layer-2 doc that explains *why*
+cites a section here rather than restating it.
+
+**A section marked `**Locked**` may not be amended at all** — not corrected, not softened, not
+re-scoped. Locking is for a doctrine the repo's correctness rests on, where an edit is a change
+of position rather than a change of wording. If a change would touch one, raise it rather than
+editing around it.
+
+That edit rule is what makes two assertions possible: a reversed decision can be checked for
+never being prescribed again, and text already on `master` can be held in place —
+an append passes, an edit to anything already there does not. Editing a section's substance
+breaks both.
+
+---
+
+## D-001 — Adopt the seam doc layers
+
+*2026-10-31 · settled*
+
+Documentation here had no rule for what happens when a file turns out to be wrong, so every file
+was edited the same way: in place, whenever someone noticed. That makes a rationale
+indistinguishable from a current fact, and it makes drift between prose and code invisible until
+somebody is bitten by it.
+
+**Settled:** docs are layered 1–6 — Artifact, Current, Decisions, Intent, Seam, Ledger — keyed on
+*what happens when the document turns out to be wrong*, because that one property fixes the edit
+rule, the authority rank, and which assertions can run against the file. **A lower layer cites a
+higher one and never restates it.**
+
+**Rejected:** grouping by topic, which says nothing about how to edit a file; grouping by tense,
+which puts a rationale and a current fact in the same bucket; and no layering at all, which
+leaves nothing to assert against.
+
+**Enforced by:** `scripts/check_docs.mjs`, assertion A10 — every doc under `docs/` is in
+`docs/contributing.md` § Sources of truth with a layer, or it is drift.

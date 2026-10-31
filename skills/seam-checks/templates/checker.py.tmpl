@@ -998,9 +998,17 @@ def main() -> int:
     # Layers 3 and 4 only, and only because their edit rule says a file already on the branch is
     # final: a record is never wrong, and an intent version is superseded rather than corrected.
     # A layer-2 doc is byte-frozen by nothing, correctly.
+    #
+    # One exception, for one file: a single dated decisions file is a record that is appended to by
+    # design, so byte-equality would make it impossible to append to. For that path alone the
+    # branch's bytes must be an unbroken PREFIX of the working copy. Bytes, not decoded text: a
+    # decode would let invalid UTF-8 compare differently here than in the Node checker.
     if on("A12"):
         ran += 1
         branch = opt("A12", "default_branch", cfg.get("repo", {}).get("default_branch", "main"))
+        adr_cfg = cfg.get("adr", {})
+        append_only = (adr_cfg.get("file", "docs/decisions.md")
+                       if adr_cfg.get("format") == "single" else None)
         frozen = [glob_re(r["doc"]) for r in table if r["layer"] in (3, 4)]
         try:
             subprocess.run(["git", "rev-parse", "--verify", branch], cwd=ROOT, check=True,
@@ -1022,9 +1030,16 @@ def main() -> int:
                 except Exception:
                     continue          # not on the branch yet: a new record, which is the point
                 now = (ROOT / d).read_bytes()
-                if was != now:
-                    layer = next(r["layer"] for _, rx, r in
-                                 [(x["doc"], glob_re(x["doc"]), x) for x in table] if rx.match(d))
+                layer = next(r["layer"] for _, rx, r in
+                             [(x["doc"], glob_re(x["doc"]), x) for x in table] if rx.match(d))
+                if d == append_only:
+                    if not now.startswith(was):
+                        findings.append(finding("A12", d, 1, d,
+                            f"is layer {layer} ({LAYER_NAMES[layer]}), append-only, and already on "
+                            f"`{branch}`: what is there must stay, byte for byte, at the top of "
+                            f"this file. An entry was edited, not appended. A reversal is a new "
+                            f"dated entry; a correction is not available here"))
+                elif was != now:
                     findings.append(finding("A12", d, 1, d,
                         f"is layer {layer} ({LAYER_NAMES[layer]}) and already on `{branch}`, so "
                         f"its bytes are final. A reversal is a new entry; a correction is not "

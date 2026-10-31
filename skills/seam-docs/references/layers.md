@@ -39,7 +39,9 @@ The edit rule is what makes a layer **checkable**:
 - **A7** — a reversed decision is never prescribed again — works only because layer 3 is dated
   and never edited. If a record could be rewritten, "what was reversed" would have no record.
 - **A12** — byte-freeze — applies to **3 and 4 only**, and only because their edit rule says a
-  file on the default branch is final. A layer-2 doc is byte-frozen by nothing, correctly.
+  file on the default branch is final. A layer-2 doc is byte-frozen by nothing, correctly. The one
+  file that is appended to by design, a single dated decisions file, is held to a prefix instead:
+  an append passes and an edit does not.
 - **A8 and A10** key on layer 5 owning nothing: a plan can claim an issue, but it cannot claim a
   question, so "two files claiming one seam" is resolvable.
 - **A13** reads the shape layer 3 and 4 promise: a date, a status, a successor for a superseded

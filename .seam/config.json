@@ -34,6 +34,12 @@
       "create": false
     },
     {
+      "path": "docs/decisions.md",
+      "layer": 3,
+      "enforces": "",
+      "create": true
+    },
+    {
       "path": "docs/superpowers/specs/*.md",
       "layer": 5,
       "enforces": "",
@@ -93,10 +99,6 @@
         {
           "path": "docs/building.md",
           "reason": "a doc an ADOPTING repo has, named in prose about what the templates produce — not a file in this repo. Same class as CLAUDE.md above"
-        },
-        {
-          "path": "docs/decisions.md",
-          "reason": "its ABSENCE is the subject of the sentence citing it — whether seam gets a layer-3 decision track is an open question, and docs/superpowers/specs/2026-10-30-plan-first-implementation-design.md is where it is posed"
         },
         {
           "path": "docs/routing.md",
@@ -161,11 +163,24 @@
       "enabled": true
     },
     "A12": {
-      "enabled": false,
+      "enabled": true,
       "default_branch": "master"
     },
     "A13": {
-      "enabled": false
+      "enabled": true
+    },
+    "A14": {
+      "enabled": false,
+      "plan_glob": [
+        "docs/superpowers/specs/*.md",
+        "docs/superpowers/plans/*.md"
+      ]
+    },
+    "A15": {
+      "enabled": false,
+      "default_branch": "master",
+      "impl_globs": [],
+      "test_globs": []
     }
   },
   "baseline": {
