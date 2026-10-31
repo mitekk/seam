@@ -405,6 +405,12 @@ test("a layer-2 row named routing.md gets the routing template", () => {
   // The two seams with the docs that create those phases, each stated from this side too.
   assert.match(flat, /decides \*whether\* to dispatch/);
   assert.match(flat, /what done means/i);
+  // Every bullet that hands a question to another layer-2 doc hedges, because all three of those
+  // docs are proposals a repo may decline: an unhedged bullet assigns the question to an owner
+  // that does not exist. The count is what keeps a fourth bullet from arriving unhedged.
+  assert.match(flat, /The review policy doc owns the level, where this repo writes one down/);
+  assert.equal((flat.match(/where this repo writes one down/g) ?? []).length, 3,
+    "a cross-reference to a declinable doc is unhedged, or a fourth one arrived");
   assert.ok(!/\{\{[\w.]+\}\}/.test(t), "an unrendered placeholder is left in the doc");
   rm(dir);
 });

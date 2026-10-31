@@ -70,8 +70,8 @@ here, because an agent that has to look it up will not.
 ## What this does not own
 
 - **Review depth.** The review level is review depth, not model effort — two dials that look like
-  one. The review policy doc owns the level; this file owns effort. Settling one does not touch the
-  other.
+  one. The review policy doc owns the level, where this repo writes one down; this file owns
+  effort. Settling one does not touch the other.
 - **Whether work goes to a subagent at all.** The context budget's, where this repo writes one
   down. That doc decides *whether* to dispatch; this one says what the dispatched run fires at.
 - **When a unit gets written, and what done means.** The build contract's, where this repo writes
