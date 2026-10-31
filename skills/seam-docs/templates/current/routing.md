@@ -15,10 +15,13 @@ own frontmatter value, and this row is what explains it.
 | Phase | Owning artifact | Model | Effort |
 |---|---|---|---|
 | Planning — writing the unit | the planning skill, or the harness | — | session |
-| Implement | `.claude/agents/<name>.md` | — | — |
+{{implement_rows}}
 | Dispatched subagent | the agent file the dispatch names | — | — |
 | Code review | the review command | — | session |
 | Commit / PR / merge | the tracker skill | — | — |
+
+**The Implement rows arrive filled** where the answers named agents: one row per agent, carrying
+the same model and effort its own file's frontmatter carries. Everything else is for you to fill.
 
 Fill the Model and Effort columns for this repo. A `—` means **not pinned here**, which is
 different from "no model": planning and review run at whatever the session is set to, because the
@@ -58,9 +61,7 @@ One per seam, scoped to what this repo actually has. **A generic agent is worse 
 reads the whole tree, knows which row of the table it is accountable to only by accident, and
 hands back work nobody can place.
 
-| Agent | Scope | Reads before changing |
-|---|---|---|
-| `<name>` | `<the paths and the subsystem>` | `<the source-of-truth row it is accountable to>` |
+{{agents_table}}
 
 Each agent's own file states the layer rules it must follow — a lower layer cites a higher one and
 never restates it; the artifact wins over every doc. That is in the agent template rather than
@@ -73,6 +74,6 @@ here, because an agent that has to look it up will not.
   other.
 - **Whether work goes to a subagent at all.** The context budget's, where this repo writes one
   down. That doc decides *whether* to dispatch; this one says what the dispatched run fires at.
-- **When a unit gets written, and what done means.** The build contract's. This file pins only
-  what the session that writes the unit runs at.
+- **When a unit gets written, and what done means.** The build contract's, where this repo writes
+  one down. This file pins only what the session that writes the unit runs at.
 - **Which doc owns what.** That is the sources-of-truth table in `{{table.file}}`.

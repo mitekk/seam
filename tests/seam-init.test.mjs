@@ -19,6 +19,45 @@ function init(ans, extraArgs = [], seed = () => {}) {
   return { dir, r };
 }
 
+/**
+ * The interview's two tables, each sliced to its own section. **Both ends of both slices are
+ * pinned**: a doc's name appears in more than one section, so a slice running to EOF accepts a
+ * row moved into any later one — § Rejections included — and a renamed heading fails loudly
+ * instead of widening the region to the rest of the file.
+ */
+function interviewTables() {
+  const md = readFileSync(join(REPO, "skills/seam-docs/references/interview.md"), "utf8");
+  const bounds = {
+    questions: ["### What must be asked, never inferred", "### The discipline"],
+    defaults: ["### Defaults the program fills", "### Rejections"],
+  };
+  const out = {};
+  for (const [half, [from, to]] of Object.entries(bounds)) {
+    const [i, j] = [md.indexOf(from), md.indexOf(to)];
+    assert.ok(i !== -1 && j > i, `interview.md's ${from} .. ${to} slice moved; update this test`);
+    out[half] = md.slice(i, j);
+  }
+  return out;
+}
+
+/**
+ * A layer-2 doc is proposed when a question **asks for it as a proposal** and carries the row it
+ * writes, and when § Defaults records that default. Both halves match on the words the convention
+ * uses rather than on the shape of a proposal: a row can carry the row it would write and still
+ * say never to ask, and `**not proposed by default**` contains the word `proposed`.
+ */
+function assertProposed(tables, base) {
+  const esc = (s) => s.replace(/\./g, "\\.");
+  const asked = "\\*\\*Proposed by default; ask it as a proposal, not an open question\\.\\*\\*";
+  const writes = `"path": "docs/${esc(base)}"[^\\n]*"create": true`;
+  const row = `^\\|[^\\n]*${asked}[^\\n]*${writes}[^\\n]*\\|[ \\t]*$`;
+  assert.match(tables.questions, new RegExp(row, "m"),
+    `no question proposes docs/${base} by default and writes its row with "create": true`);
+  const dflt = `^\\|[^|\\n]*${esc(base)}[^|\\n]*\\|\\s*\\*\\*proposed by default\\*\\*\\s*\\|`;
+  assert.match(tables.defaults, new RegExp(dflt, "m"),
+    `§ Defaults has no row recording docs/${base} as **proposed by default**`);
+}
+
 test("writes .seam/config.json as the answers minus every prose key", () => {
   const { dir, r } = init(answers());
   assert.equal(r.status, 0, r.stderr);
@@ -370,6 +409,81 @@ test("a layer-2 row named routing.md gets the routing template", () => {
   rm(dir);
 });
 
+// The doc says "this table is the only copy", so the levels a run pins have to be in it. The
+// program already knows them: it writes `.claude/agents/<name>.md` with the model and the effort
+// in frontmatter and the pair into `.seam/config.json`, so a hand-fill clause here would leave
+// the one table that claims to be authoritative as the only place they are missing.
+test("routing.md records the per-agent levels the run pinned, and the agents it wrote", () => {
+  const ans = answers({
+    agents: [
+      { name: "schema", covers: "Postgres schema, migrations", model: "opus", effort: "high" },
+      { name: "app", covers: "The Next.js app", model: "sonnet", effort: "medium" },
+    ],
+  });
+  ans.docs.push({
+    path: "docs/routing.md",
+    layer: 2,
+    owns: "Model and effort pinned per artifact, and this repo's agent shape",
+    enforces: "",
+    create: true,
+  });
+  const { dir, r } = init(ans);
+  assert.equal(r.status, 0, r.stderr);
+  const t = read(dir, "docs/routing.md");
+  const flat = t.replace(/\s+/g, " ");
+
+  // One Implement row per agent, carrying that agent's two levels, and no placeholder row left.
+  const implement = (n, m, e) => {
+    const path = `\`\\.claude/agents/${n}\\.md\``;
+    const cells = [`Implement — ${n}`, path, `\`${m}\``, `\`${e}\``].join(" \\| ");
+    return new RegExp(`\\| ${cells} \\|`);
+  };
+  assert.match(flat, implement("schema", "opus", "high"));
+  assert.match(flat, implement("app", "sonnet", "medium"));
+  assert.ok(!flat.includes("| Implement | `.claude/agents/<name>.md` |"),
+    "the generic Implement row survived a run that named agents");
+
+  // The Agents table is this repo's, in the words the answers used.
+  assert.match(flat, /\| `schema` \| Postgres schema, migrations \|/);
+  assert.match(flat, /\| `app` \| The Next.js app \|/);
+  assert.ok(!flat.includes("`<the paths and the subsystem>`"),
+    "the placeholder agent row survived a run that named agents");
+
+  // One value per level, projected to the three places that carry it — doc, agent file, config.
+  for (const [name, model, effort] of [["schema", "opus", "high"], ["app", "sonnet", "medium"]])
+    assert.match(read(dir, `.claude/agents/${name}.md`),
+      new RegExp(`model: ${model}\\neffort: ${effort}`), `${name}'s frontmatter disagrees`);
+  const cfg = JSON.parse(read(dir, ".seam/config.json"));
+  assert.deepEqual(cfg.agents.map((g) => [g.name, g.model, g.effort]),
+    [["schema", "opus", "high"], ["app", "sonnet", "medium"]]);
+
+  assert.ok(!/\{\{[\w.]+\}\}/.test(t), "an unrendered placeholder is left in the doc");
+  rm(dir);
+});
+
+test("routing.md with no agents gets a sentence where the table would be", () => {
+  const ans = answers();                            // answers() names no agents
+  ans.docs.push({
+    path: "docs/routing.md",
+    layer: 2,
+    owns: "Model and effort pinned per artifact, and this repo's agent shape",
+    enforces: "",
+    create: true,
+  });
+  const { dir, r } = init(ans);
+  assert.equal(r.status, 0, r.stderr);
+  const t = read(dir, "docs/routing.md");
+  const flat = t.replace(/\s+/g, " ");
+  // A header over no rows reads as a table someone forgot to fill; an empty list is an answer.
+  assert.match(flat, /This repo named no agents/);
+  assert.ok(!flat.includes("| Agent | Scope | Reads before changing |"),
+    "a table header with no rows shipped for a repo that named no agents");
+  // With no agent to pin, the Implement row stays the form it has always been.
+  assert.match(flat, /\| Implement \| `\.claude\/agents\/<name>\.md` \| — \| — \|/);
+  assert.ok(!/\{\{[\w.]+\}\}/.test(t), "an unrendered placeholder is left in the doc");
+  rm(dir);
+});
+
 test("a layer-2 row named building.md gets the build template", () => {
   const ans = answers();
   ans.docs.push({
@@ -424,20 +538,7 @@ test("a layer-2 row named building.md gets the build template", () => {
 });
 
 test("the interview has a question proposing building.md, and § Defaults records it as proposed", () => {
-  const md = readFileSync(join(REPO, "skills/seam-docs/references/interview.md"), "utf8");
-
-  // The two halves are sliced apart, because the doc's name appears in both and a bare
-  // `includes` over the whole file passes when either one is deleted.
-  const qFrom = md.indexOf("### What must be asked, never inferred");
-  const qTo = md.indexOf("### The discipline");
-  assert.ok(qFrom !== -1 && qTo > qFrom, "the question table's headings moved; update this slice");
-  assert.match(md.slice(qFrom, qTo), /^\|[^\n]*docs\/building\.md[^\n]*\|[ \t]*$/m,
-    "no row of the question table proposes docs/building.md");
-
-  const dFrom = md.indexOf("### Defaults the program fills");
-  assert.ok(dFrom !== -1, "the § Defaults heading moved; update this slice");
-  assert.match(md.slice(dFrom), /^\|[^|\n]*building\.md[^|\n]*\|[^|\n]*proposed[^|\n]*\|/mi,
-    "§ Defaults has no row recording that building.md is proposed by default");
+  assertProposed(interviewTables(), "building.md");
 });
 
 test("a layer-2 row named context.md gets the context template", () => {
@@ -515,20 +616,7 @@ test("a layer-2 row named context.md gets the context template", () => {
 });
 
 test("the interview has a question proposing context.md, and § Defaults records it as proposed", () => {
-  const md = readFileSync(join(REPO, "skills/seam-docs/references/interview.md"), "utf8");
-
-  // The two halves are sliced apart, because the doc's name appears in both and a bare
-  // `includes` over the whole file passes when either one is deleted.
-  const qFrom = md.indexOf("### What must be asked, never inferred");
-  const qTo = md.indexOf("### The discipline");
-  assert.ok(qFrom !== -1 && qTo > qFrom, "the question table's headings moved; update this slice");
-  assert.match(md.slice(qFrom, qTo), /^\|[^\n]*docs\/context\.md[^\n]*\|[ \t]*$/m,
-    "no row of the question table proposes docs/context.md");
-
-  const dFrom = md.indexOf("### Defaults the program fills");
-  assert.ok(dFrom !== -1, "the § Defaults heading moved; update this slice");
-  assert.match(md.slice(dFrom), /^\|[^|\n]*context\.md[^|\n]*\|[^|\n]*proposed[^|\n]*\|/mi,
-    "§ Defaults has no row recording that context.md is proposed by default");
+  assertProposed(interviewTables(), "context.md");
 });
 
 // The class behind the two tests above. A layer-2 template the wizard has but no question
@@ -537,7 +625,6 @@ test("the interview has a question proposing context.md, and § Defaults records
 // nobody wrote one for, which is the only case this test exists to catch.
 test("every named layer-2 template is proposed by a question, and § Defaults records it", () => {
   const src = readFileSync(join(REPO, "bin/seam-init.mjs"), "utf8");
-  const md = readFileSync(join(REPO, "skills/seam-docs/references/interview.md"), "utf8");
   const dir = "skills/seam-docs/templates/current";
 
   // The map is parsed out of the wizard's source, because that is the one place a template
@@ -555,34 +642,20 @@ test("every named layer-2 template is proposed by a question, and § Defaults re
   assert.ok(!named.some((n) => n.base === "doc.md"),
     "the named map names doc.md, which is the fallback and not a named template");
 
-  // Non-empty and the size expected: an iteration set that quietly emptied would pass.
-  assert.equal(named.length, 5, "expected 5 named layer-2 templates — a new one needs its own "
-    + "interview question, its § Defaults row, and this count raised");
+  // The two sets name the same templates, asserted before the count so that a map this regex
+  // cannot read fails as the mismatch it is rather than as a missing interview question.
   assert.deepEqual(named.map((n) => n.base).sort(), onDisk.filter((f) => f !== "doc.md"),
     `the map and ${dir} name different templates; one nothing names is never written`);
+  // The count is the tripwire: it makes a sixth template touch this test, where the message says
+  // what the template still owes. The deepEqual above is what catches a set that emptied.
+  assert.equal(named.length, 5, "expected 5 named layer-2 templates — a new one needs its own "
+    + "interview question, its § Defaults row, and this count raised");
   for (const { base, rel } of named)
     assert.ok(existsSync(join(REPO, "skills/seam-docs/templates", rel)),
       `the map sends ${base} to ${rel}, which is not there — writeDoc falls back to doc.md`);
 
-  // The interview's two halves are sliced apart, because a name appears in both and a bare
-  // `includes` over the whole file passes when either one is deleted.
-  const qFrom = md.indexOf("### What must be asked, never inferred");
-  const qTo = md.indexOf("### The discipline");
-  assert.ok(qFrom !== -1 && qTo > qFrom, "the question table's headings moved; update this slice");
-  const dFrom = md.indexOf("### Defaults the program fills");
-  assert.ok(dFrom !== -1, "the § Defaults heading moved; update this slice");
-  const esc = (s) => s.replace(/\./g, "\\.");
-
-  for (const { base } of named) {
-    // The row has to carry the row it writes, not merely mention the file: a question that names
-    // a doc in passing proposes nothing, and `"create": true` is what writes it.
-    const q = `"path": "docs/${esc(base)}"[^\\n]*"create": true`;
-    assert.match(md.slice(qFrom, qTo), new RegExp(`^\\|[^\\n]*${q}[^\\n]*\\|[ \\t]*$`, "m"),
-      `no row of the question table proposes docs/${base} with "create": true`);
-    assert.match(md.slice(dFrom),
-      new RegExp(`^\\|[^|\\n]*${esc(base)}[^|\\n]*\\|[^|\\n]*proposed[^|\\n]*\\|`, "mi"),
-      `§ Defaults has no row recording that ${base} is proposed`);
-  }
+  const tables = interviewTables();
+  for (const { base } of named) assertProposed(tables, base);
 });
 
 test("a glob row with matching files is not reported missing; one with none is", () => {

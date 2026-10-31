@@ -347,6 +347,10 @@ function templateVars(a, cfg) {
   const version = cfg.prd.version ?? 1;
   const planRow = (a.docs ?? []).find((d) => d.layer === 5);
   const artifact = (a.artifacts ?? [])[0];
+  const agents = a.agents ?? [];
+  // A level the answers did not pin reads as `—` here, which this doc defines as "not pinned
+  // here" — the honest cell for an agent whose frontmatter the answers left blank.
+  const level = (v) => (v ? `\`${v}\`` : "—");
   return {
     date: a.date ?? new Date().toISOString().slice(0, 10),
     repo: cfg.repo,
@@ -377,6 +381,26 @@ function templateVars(a, cfg) {
           `| ${m.n} | ${m.title} | ${m.green ?? "_not recorded_"} | ${m.active ? "yes" : "no"} |`)
           .join("\n")
       : "| — | _none recorded_ | _the build order is asked for, not inferred_ | — |",
+    // The levels the answers pin are written into the doc that claims to be their only copy, the
+    // same way the taxonomy doc's tables are. The program knows them — it writes them into each
+    // agent's frontmatter and into the config — so a hand-fill instruction would leave the
+    // authoritative table as the one place they are missing.
+    implement_rows: agents.length
+      ? agents.map((g) => `| Implement — ${g.name} | \`.claude/agents/${g.name}.md\` `
+          + `| ${level(g.model)} | ${level(g.effort)} |`).join("\n")
+      : "| Implement | `.claude/agents/<name>.md` | — | — |",
+    // A header over no rows reads as a table someone forgot to fill, and an empty list is a real
+    // answer here, so the whole block is the variable rather than just its rows.
+    agents_table: agents.length
+      ? [
+          "| Agent | Scope | Reads before changing |",
+          "|---|---|---|",
+          ...agents.map((g) => `| \`${g.name}\` | ${g.covers ?? "_not recorded_"} `
+            + "| `<the source-of-truth row it is accountable to>` |"),
+        ].join("\n")
+      : "**This repo named no agents**, so there is no table here — an empty list is a complete\n"
+        + "answer, for the reason above. The day one is written it gets a row, with the model and\n"
+        + "the effort it is pinned to.",
   };
 }
 
