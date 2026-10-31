@@ -1,6 +1,6 @@
 # The assertions
 
-Fourteen built in, plus whatever the repo invents. Each one says what it reads, what it needs from
+Fifteen built in, plus whatever the repo invents. Each one says what it reads, what it needs from
 `.seam/config.json`, and — the part that matters most — **what it deliberately does not reach**. A
 reader who thinks a check reaches further will trust a green run further than they should.
 
@@ -24,10 +24,11 @@ mean the same thing on a plane as in CI.
 | A12 | Append-only layers are byte-frozen on the default branch | 3, 4 | on iff layer 3 or 4 exists |
 | A13 | ADRs carry a date and a status; PRD versions are indexed | 3, 4 | on iff layer 3 or 4 exists |
 | A14 | Every unit in a plan's `§ The units` names a test that exists and asserts | 5 | on iff a layer-5 doc exists |
+| A15 | A test arrives before, or with, the implementation it proves | — | **off** |
 
 **Off is not passing.** An assertion that needs a repo-specific list is off until the list exists,
 because an empty list that passes reads as evidence the thing is fine. Where an assertion is on
-and *cannot make its comparison*, it **fails** and says so — see A3 and A12.
+and *cannot make its comparison*, it **fails** and says so — see A3, A12 and A15.
 
 ## A1 — a cited markdown path resolves
 
@@ -350,6 +351,62 @@ list per unit drifts within a day and is the ceremony that makes people stop fil
 in. Whether every changed file is covered by a unit is a procedural check made while building,
 not a mechanical one made here. It also does not reach whether the test is any good, or whether it
 passes — only that it exists and that it asserts something.
+
+## A15 — a test arrives before the implementation it proves
+
+Reads: the commits on this branch that the default branch does not have, oldest first
+(`git rev-list --reverse --topo-order --no-merges <default_branch>..HEAD`), and for each the paths it
+**added** (`git diff-tree`). A path matching `test_globs` is a test; one matching `impl_globs` is an
+implementation. Walking forward, the first commit that adds a test ends the check — nothing after it
+can be early — and every implementation file added in a commit before that one is a finding. An
+implementation added in the **same** commit as the first test is fine: with, not after.
+
+A path matching both lists is a test. Only an added file counts: a modification of an
+implementation file is not an arrival, and neither is a rename or a copy, so moving code does not
+make it new. It is the history that is read, not the tree: a file added with no test, removed, and
+added again is reported once, and one removed for good is still reported, because what the commits
+did is what was asked.
+
+Off by default, because it needs two repo-specific lists and an empty one is not a sensible
+default: the interview asks which paths are implementation and which are tests, and writes
+`"A15": { "enabled": true, "impl_globs": […], "test_globs": […] }` only once it has both.
+
+Needs: `default_branch` (defaults from `repo.default_branch`), `impl_globs` and `test_globs`, each a
+list of path globs written the way `plan_glob` is. `seam-init` refuses one list given without the
+other, naming the missing key.
+
+**A finding names the implementation file at line 1, with the file's path as its text** — never a
+commit. A sha is fresh on every branch, and a finding keyed on one could not be baselined.
+
+**Not applicable is not passing.** After a squash merge a test and its implementation are always in
+one commit, so on the default branch this check has nothing to compare, and a silent pass would be
+a check with no teeth pretending otherwise. When the range is empty the checker prints one line to
+stdout, `A15: not applicable on <branch> — a squash merge puts test and implementation in one
+commit`, reports no finding, and does **not** count A15 among the assertions that ran.
+
+**Fails loudly, with the comparison named as not made**, as one finding at `.seam/config.json:1`, in
+four cases:
+
+- an enabled A15 with `impl_globs` or `test_globs` missing or empty — checked first, so it is
+  reported on every branch, the default one included;
+- a `default_branch` git cannot resolve to a commit, which is also what no `git` binary or no
+  repository looks like. In CI the usual cause is a checkout holding only `origin/main`: set
+  `default_branch` to that;
+- **a shallow clone** whose history was cut before the branch point. Git then shows every file in
+  the oldest commit it has as added by it, so the range would look like one enormous first commit
+  and the comparison would be against nothing. A15 asks `git merge-base`, and when it finds none it
+  says so and names `fetch-depth: 0`;
+- `git rev-list` or `git diff-tree` failing partway through.
+
+A detached HEAD is not a failure: the range is `<default_branch>..HEAD` either way.
+
+Does not reach: **which test proves which implementation.** One test file added anywhere at or
+before an implementation file satisfies it, however unrelated — the same boundary A14 draws, for the
+same reason: pairing them needs a declaration per file that drifts within a day. It does not read
+file contents, so it cannot tell a test that asserts something from one that does not (A14 reads that
+for the units table). It reads only the commits on the branch, so a test that already sits on the
+default branch does not count for an implementation added now. And it is only as good as the history:
+a branch squashed before it is checked has one commit, and passes.
 
 ## Two refusals before anything is checked
 

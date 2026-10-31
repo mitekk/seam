@@ -461,3 +461,44 @@ test("several layer-5 rows give A8 every one of them", () => {
     ["docs/plans/first-subsystem.md", "docs/plans/*.md"]);
   rm(dir);
 });
+
+test("A15 is off by default, with empty lists and the repo's default branch", () => {
+  // It needs two repo-specific lists, and an empty list that passes would read as evidence.
+  const { dir, r } = init(answers({ repo: { name: "scratch", default_branch: "trunk" } }));
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(JSON.parse(read(dir, ".seam/config.json")).assertions.A15,
+    { enabled: false, default_branch: "trunk", impl_globs: [], test_globs: [] });
+  rm(dir);
+});
+
+test("A15's answers reach the config, keeping the default branch the repo already named", () => {
+  const { dir, r } = init(answers({
+    assertions: { A15: { enabled: true, impl_globs: ["src/**/*.ts"], test_globs: ["**/*.test.ts"] } },
+  }));
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(JSON.parse(read(dir, ".seam/config.json")).assertions.A15,
+    { enabled: true, default_branch: "main", impl_globs: ["src/**/*.ts"], test_globs: ["**/*.test.ts"] });
+  rm(dir);
+});
+
+test("one of A15's two lists without the other is rejected, naming the one that is missing", () => {
+  // Either list alone would enable a comparison with one side empty, which is a check that can
+  // only fail or only pass.
+  for (const [given, missing] of [["impl_globs", "test_globs"], ["test_globs", "impl_globs"]]) {
+    const { dir, r } = init(answers({ assertions: { A15: { enabled: true, [given]: ["x/**"] } } }));
+    assert.equal(r.status, 2, `${given} alone: ${r.stdout}`);
+    assert.match(r.stderr, new RegExp(`assertions\\.A15\\.${missing}`), r.stderr);
+    assert.ok(!has(dir, ".seam/config.json"), "a rejected run still wrote a config");
+    rm(dir);
+  }
+});
+
+test("A15's lists must be lists", () => {
+  const { dir, r } = init(answers({
+    assertions: { A15: { enabled: true, impl_globs: "src/**", test_globs: ["tests/**"] } },
+  }));
+  assert.equal(r.status, 2, r.stdout);
+  assert.match(r.stderr, /assertions\.A15\.impl_globs/);
+  assert.ok(!has(dir, ".seam/config.json"), "a rejected run still wrote a config");
+  rm(dir);
+});

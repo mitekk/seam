@@ -51,6 +51,7 @@ rather than asking open questions about them.
 | 12 | Which agents does this repo want, and what does each cover? | `agents[]` | Optional. An empty list is fine; a generic agent is worse than none. |
 | 13 | Checker language: Python 3 or Node? | `checker.language` | Both implement the same assertions with the same output. **Pick what the repo already runs in CI** — that is the whole rule, because a runner that has to install the other one is a check that can fail for a reason that is not drift. `checker.path` is optional and defaults to `scripts/check_docs.py` or `scripts/check_docs.mjs`; if you give it, the extension has to match the language. |
 | 14 | Anything still undecided? | `open_questions[]` | Each goes in **as a question**. Never promoted to a confident sentence. |
+| 15 | Which paths are implementation, and which are tests? | `assertions.A15.impl_globs`, `assertions.A15.test_globs` | **A15 is off until both are answered**, and one without the other is rejected. Read the tree first — a `tests/` directory, `*.test.ts` files — and state what it shows for correction. Globs are written as `plan_glob` is: `src/**/*.ts`, `**/*.test.ts`; a path matching both is a test. Write `"A15": { "enabled": true, "impl_globs": […], "test_globs": […] }`. "We do not write tests first" is a complete answer: leave A15 out and record nothing. |
 
 ### The discipline
 
@@ -115,6 +116,7 @@ rather than asking open questions about them.
 | `assertions.A4` | on iff `artifacts` is non-empty | Nothing to resolve against otherwise. |
 | `assertions.A5/A6/A7/A9` | off | Each needs a repo-specific list. An empty list that passes is worse than a switch that is off. |
 | `assertions.A8/A14` | on iff a layer-5 doc exists | |
+| `assertions.A15` | **off** | It compares two repo-specific lists — which paths are implementation, which are tests — and an empty list is not a sensible default. `default_branch` defaults from `repo.default_branch`. |
 | `assertions.A12/A13` | on iff a layer-3 or layer-4 doc exists | |
 | `low_review_paths` | `[]` | `low` is hunk-local and cannot verify a claim a document makes about the tree. Absent means empty. |
 | `load_bearing` | `[]` | Absent means empty, which is the honest answer for a repo where nothing enforces anything yet. |
@@ -140,3 +142,4 @@ are not there. Each failure names the key path:
 - `load_bearing` or `low_review_paths` present and not a list (absent is fine — both mean empty)
 - a glob row with `"create": true` outside layers 3 and 4 — a glob names a form, not a file
 - `artifacts[N].path` absent from `load_bearing`
+- `assertions.A15.impl_globs` or `assertions.A15.test_globs` given without the other, or not a list

@@ -121,6 +121,22 @@ function validate(a) {
     "must be a list of paths, or absent, which means empty — and empty is the right answer for"
     + " most repos");
 
+  // A15 compares two lists, and one without the other is a comparison with one side empty: it
+  // could only ever fail, or only ever pass. The checker reports an enabled A15 with an empty
+  // list; this catches the half-answered interview before a config is written at all.
+  const a15 = a.assertions?.A15;
+  if (a15 && typeof a15 === "object") {
+    const keys = ["impl_globs", "test_globs"];
+    for (const k of keys) {
+      need(a15[k] === undefined || Array.isArray(a15[k]), `assertions.A15.${k}`,
+        "must be a list of path globs");
+    }
+    for (const [k, other] of [keys, keys.slice().reverse()]) {
+      need(a15[k] === undefined || a15[other] !== undefined, `assertions.A15.${other}`,
+        `${k} is given and ${other} is not — A15 compares the two, so it needs both`);
+    }
+  }
+
   (a.artifacts ?? []).forEach((art, i) => {
     need(typeof art.path === "string" && art.path, `artifacts[${i}].path`, "an artifact needs a path");
     // Layer 1 wins over every doc on what is true now, so an artifact carries weight by
@@ -229,6 +245,14 @@ function defaultAssertions(a) {
     A13: { enabled: has(3) || has(4) },
     // A14 reads the same plans A8 does, so it takes the same glob for the same reason.
     A14: { enabled: has(5), plan_glob: layer5Globs(a) },
+    // A15 compares two repo-specific lists — which paths are implementation and which are tests —
+    // and an empty list is not a sensible default, so it is off until the interview has both.
+    A15: {
+      enabled: false,
+      default_branch: a.repo?.default_branch ?? "main",
+      impl_globs: [],
+      test_globs: [],
+    },
   };
 }
 

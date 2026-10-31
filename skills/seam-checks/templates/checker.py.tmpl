@@ -1208,6 +1208,122 @@ def main() -> int:
                     "A unit is a numbered row naming the test that proves it; a struck-through "
                     "row is not one"))
 
+    # ── A15. A test arrives before the implementation it proves. ───────────
+    #
+    # Off by default: it needs two repo-specific lists. Reads the commits this branch has and the
+    # default branch has not, oldest first, and holds the files ADDED in them to the order a
+    # test-first method promises. A finding names the implementation file, line 1 — never a
+    # commit, because a sha is fresh on every branch and a finding carrying one could not be
+    # baselined.
+    if on("A15"):
+        branch = opt("A15", "default_branch", cfg.get("repo", {}).get("default_branch", "main"))
+
+        def globs_of(key):
+            v = opt("A15", key, [])
+            v = [v] if isinstance(v, str) else v if isinstance(v, list) else []
+            return [g for g in v if isinstance(g, str) and g != ""]
+
+        impl_globs = globs_of("impl_globs")
+        test_globs = globs_of("test_globs")
+
+        def git(*args):
+            # Every way git can fail — a branch that is not there, a shallow clone, no git at
+            # all — is None, because each means the same thing here: the comparison cannot be made.
+            try:
+                return subprocess.run(["git", *args], cwd=ROOT, check=True, stdin=subprocess.DEVNULL,
+                                      stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
+                                      ).stdout.decode("utf-8", errors="replace")
+            except Exception:
+                return None
+
+        unreadable = (branch,
+            f"git could not read the commits in `{branch}..HEAD` — the test-first comparison was "
+            f"not made. Switch A15 off if this checkout cannot be given its history; off is "
+            f"distinct from passing")
+        not_made = None      # (text, message) when the comparison cannot be made
+        walked = False       # whether the range held a commit at all
+        late: list[str] = []     # implementation files added before any test
+        if not impl_globs or not test_globs:
+            empty = [k for k, g in (("impl_globs", impl_globs), ("test_globs", test_globs)) if not g]
+            names = " and ".join(f"`{k}`" for k in empty)
+            not_made = (", ".join(empty),
+                f"assertions.A15 is enabled with nothing in {names} — the test-first comparison "
+                f"was not made. A15 compares the paths that are implementation with the paths "
+                f"that are tests, so it needs both. Fill them in, or switch A15 off; off is "
+                f"distinct from passing")
+        elif git("rev-parse", "--verify", "--quiet", f"{branch}^{{commit}}") is None:
+            not_made = (branch,
+                f"git cannot resolve `{branch}` to a commit — the test-first comparison was not "
+                f"made. Set assertions.A15.default_branch to a branch this checkout has (CI often "
+                f"has only `origin/<branch>`), or switch A15 off; off is distinct from passing")
+        elif git("merge-base", branch, "HEAD") is None:
+            # A shallow clone cuts the history off, so git shows every file in the oldest commit
+            # it has as added by it. Comparing that would be comparing nothing.
+            not_made = (branch,
+                f"HEAD and `{branch}` share no history git can see (a shallow clone is the usual "
+                f"cause), so which commits are this branch's is unknown and the test-first "
+                f"comparison was not made. Fetch the full history (in CI, `fetch-depth: 0`), or "
+                f"switch A15 off; off is distinct from passing")
+        else:
+            # Merges are skipped: what a merge brings in is either on the default branch already,
+            # and so outside the range, or another branch's commits, which the range lists in
+            # their own right.
+            listed = git("rev-list", "--reverse", "--topo-order", "--no-merges", f"{branch}..HEAD")
+            if listed is None:
+                not_made = unreadable
+            shas = [x for x in (listed or "").split("\n") if x != ""]
+            walked = len(shas) > 0
+            test_res = [glob_re(g) for g in test_globs]
+            impl_res = [glob_re(g) for g in impl_globs]
+            is_test = lambda p: any(rx.match(p) for rx in test_res)
+            is_impl = lambda p: any(rx.match(p) for rx in impl_res)
+            for sha in shas:
+                # `-z` so a path with a space or a non-ASCII character is not quoted, `-M` so a
+                # rename is told from a new file, `--relative` so a checker below the repo root
+                # sees its own paths. Plumbing, because `git show` obeys the user's config and
+                # diff-tree does not.
+                out = git("diff-tree", "--no-commit-id", "--root", "-r", "-z", "-M", "--relative",
+                          "--name-status", sha)
+                if out is None:
+                    not_made = unreadable
+                    break
+                added = []
+                toks = out.split("\0")
+                i = 0
+                while i < len(toks) and toks[i] != "":
+                    if toks[i][0] in "RC":          # a move or copy is not an arrival
+                        i += 3
+                        continue
+                    if toks[i] == "A":
+                        added.append(toks[i + 1])
+                    i += 2
+                # Once a test has arrived, nothing after it can be early. It is checked before the
+                # implementations, so a file matching both lists is a test: read as an
+                # implementation, a test beside the code it proves would be its own missing test.
+                if any(is_test(p) for p in added):
+                    break
+                for p in added:
+                    if is_impl(p) and p not in late:
+                        late.append(p)
+        if not_made is not None:
+            ran += 1
+            findings.append(finding("A15", CONFIG_PATH, 1, not_made[0], not_made[1]))
+        elif not walked:
+            # After a squash merge a test and its implementation are always one commit, so on the
+            # default branch this check has nothing to compare. Saying so is not a finding, and
+            # it is not counted among the assertions that ran: silence would read as a pass.
+            print(f"A15: not applicable on {branch} — a squash merge puts test and "
+                  f"implementation in one commit")
+        else:
+            ran += 1
+            for p in late:
+                findings.append(finding("A15", p, 1, p,
+                    f"is an implementation file (`assertions.A15.impl_globs`) added in "
+                    f"`{branch}..HEAD` with no test (`assertions.A15.test_globs`) before it or in "
+                    f"the same commit — a test arrives before, or with, the implementation it "
+                    f"proves. Reorder the commits so a test comes first, or put one in the commit "
+                    f"that adds this file"))
+
     # ── Repo-invented assertions. Discovered, never overwritten. ───────────
     adir = ROOT / ".seam" / "assertions"
     if adir.is_dir():

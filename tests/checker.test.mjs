@@ -9,7 +9,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { cpSync, readFileSync, writeFileSync, existsSync, rmSync, chmodSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { execFileSync } from "node:child_process";
 import { scratch, rm, run, REPO } from "./helpers.mjs";
 
@@ -57,11 +57,11 @@ function fixture({ mutate = null, commitAfter = false } = {}) {
   return { dir, git };
 }
 
-function check(dir, language) {
+function check(dir, language, extra = []) {
   const script = language === "python" ? "scripts/check_docs.py" : "scripts/check_docs.mjs";
   const argv = language === "python" ? ["python3", "-I", script] : [process.execPath, script];
   try {
-    const stdout = execFileSync(argv[0], argv.slice(1), {
+    const stdout = execFileSync(argv[0], [...argv.slice(1), ...extra], {
       cwd: dir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
     });
     return { status: 0, stdout, stderr: "" };
@@ -968,5 +968,283 @@ test("A1 still holds every other doc to the tree", () => {
   const r = both(dir);
   assert.equal(r.status, 1, r.py.stdout);
   assert.deepEqual(ids(r.findings), ["A1"]);
+  rm(dir);
+});
+
+// ── A15: a test arrives before the implementation it proves ──────────────────
+//
+// A15 reads git history, so these fixtures are repos with a branch and real commits: the clean
+// tree is committed on `main` with A15 switched on, and each test then makes its own commits on
+// `feat`. A15 is off in the clean fixture itself — it needs two repo-specific lists.
+
+const A15 = {
+  enabled: true, default_branch: "main",
+  impl_globs: ["src/**/*.ts"], test_globs: ["tests/**/*.test.ts"],
+};
+const IMPL = "export const hive = 1;\n";
+const TEST = "import assert from 'node:assert';\n";
+const NOT_APPLICABLE =
+  "A15: not applicable on main — a squash merge puts test and implementation in one commit";
+
+/** Rewrite assertions.A15 in a fixture's config. A key set to `undefined` is left out. */
+function setA15(dir, overrides = {}) {
+  const p = join(dir, ".seam/config.json");
+  const cfg = JSON.parse(readFileSync(p, "utf8"));
+  cfg.assertions.A15 = { ...A15, ...overrides };
+  writeFileSync(p, JSON.stringify(cfg, null, 2));
+}
+
+function put(dir, rel, body = IMPL) {
+  mkdirSync(dirname(join(dir, rel)), { recursive: true });
+  writeFileSync(join(dir, rel), body);
+}
+
+/** The clean fixture with A15 on, committed on `main`; then a branch `feat` off it. Each entry
+ *  of `commits` is a map of path to body, added and committed together, or a function that does
+ *  its own git work. `base` can add files to `main` first. */
+function a15Repo(commits, { a15 = {}, base = null } = {}) {
+  const { dir, git } = fixture({
+    mutate: ({ dir: d }) => { setA15(d, a15); if (base) base(d); },
+    commitAfter: true,
+  });
+  git("checkout", "-b", "feat");
+  commits.forEach((c, i) => {
+    if (typeof c === "function") { c({ dir, git }); return; }
+    for (const [rel, body] of Object.entries(c)) put(dir, rel, body);
+    git("add", "--", ...Object.keys(c));
+    git("commit", "-m", `c${i + 1}`);
+  });
+  return { dir, git };
+}
+
+test("A15 flags an implementation file committed with no test in the range", () => {
+  const { dir } = a15Repo([{ "src/hive.ts": IMPL }]);
+  const r = both(dir);
+  assert.equal(r.status, 1, r.py.stdout + r.py.stderr);
+  assert.deepEqual(ids(r.findings), ["A15"], r.findings.join("\n"));
+  assert.equal(r.findings.length, 1, r.findings.join("\n"));
+  // Keyed on the implementation file's path and line 1. A sha in the finding would make it
+  // unbaselinable, because every branch produces a fresh one.
+  assert.match(r.findings[0], /^src\/hive\.ts:1: A15 /, r.findings[0]);
+  assert.doesNotMatch(r.findings[0], /\b[0-9a-f]{7,40}\b/, "a finding that names a sha");
+  rm(dir);
+});
+
+test("A15 passes when the test is in the same commit", () => {
+  const { dir } = a15Repo([{ "tests/hive.test.ts": TEST, "src/hive.ts": IMPL }]);
+  const r = both(dir);
+  assert.equal(r.status, 0, r.py.stdout + r.py.stderr);
+  assert.deepEqual(r.findings, []);
+  rm(dir);
+});
+
+test("A15 passes when the test is in an earlier commit", () => {
+  const { dir } = a15Repo([{ "tests/hive.test.ts": TEST }, { "src/hive.ts": IMPL }]);
+  const r = both(dir);
+  assert.equal(r.status, 0, r.py.stdout + r.py.stderr);
+  assert.deepEqual(r.findings, []);
+  rm(dir);
+});
+
+test("A15 flags an implementation whose test only arrives in a later commit", () => {
+  // The order is the whole assertion: a test that exists at the tip of the branch proves nothing
+  // about whether it was written first.
+  const { dir } = a15Repo([{ "src/hive.ts": IMPL }, { "tests/hive.test.ts": TEST }]);
+  const r = both(dir);
+  assert.equal(r.status, 1, r.py.stdout + r.py.stderr);
+  assert.deepEqual(r.findings.map((l) => l.split(" ")[0]), ["src/hive.ts:1:"], r.findings.join("\n"));
+  assert.deepEqual(ids(r.findings), ["A15"]);
+  rm(dir);
+});
+
+test("A15 reports not-applicable on the default branch rather than passing", () => {
+  // After a squash merge the test and its implementation are always in one commit, so a silent
+  // pass would be a check with no teeth pretending otherwise.
+  const { dir, git } = a15Repo([{ "src/hive.ts": IMPL }]);
+  git("checkout", "main");
+  git("merge", "--ff-only", "feat");          // main now holds an implementation with no test
+  const r = both(dir);
+  assert.equal(r.status, 0, r.py.stdout + r.py.stderr);
+  assert.deepEqual(r.findings, []);
+  for (const [lang, res] of [["python", r.py], ["node", r.js]]) {
+    assert.ok(res.stdout.split("\n").includes(NOT_APPLICABLE),
+      `${lang} did not say A15 was not applicable:\n${res.stdout}`);
+    // Something that measured nothing is not counted among the assertions that ran.
+    assert.match(res.stdout, /\b14 assertions\b/, lang);
+  }
+  rm(dir);
+});
+
+test("A15 enabled with a list missing or empty says the comparison was not made", () => {
+  const cases = [
+    ["impl_globs absent", { impl_globs: undefined }, "`impl_globs`"],
+    ["test_globs empty", { test_globs: [] }, "`test_globs`"],
+    ["both empty", { impl_globs: [], test_globs: [] }, "`impl_globs` and `test_globs`"],
+  ];
+  for (const [what, overrides, named] of cases) {
+    const { dir } = a15Repo([{ "src/hive.ts": IMPL }], { a15: overrides });
+    const r = both(dir);
+    assert.equal(r.status, 1, `${what}: ${r.py.stdout}${r.py.stderr}`);
+    assert.deepEqual(ids(r.findings), ["A15"], `${what}: ${r.findings.join("\n")}`);
+    assert.equal(r.findings.length, 1, `${what}: ${r.findings.join("\n")}`);
+    assert.match(r.findings[0], /^\.seam\/config\.json:1: A15 /, what);
+    assert.match(r.findings[0], /comparison was not made/, what);
+    assert.ok(r.findings[0].includes(named), `${what}: ${r.findings[0]}`);
+    rm(dir);
+  }
+  // A config that cannot compare is wrong on every branch, so it does not hide behind
+  // "not applicable" on the default branch.
+  const { dir } = a15Repo([], { a15: { impl_globs: [] } });
+  const r = both(dir);
+  assert.deepEqual(ids(r.findings), ["A15"], r.findings.join("\n"));
+  rm(dir);
+});
+
+test("A15 with a default branch git cannot find says the comparison was not made", () => {
+  const { dir } = a15Repo([{ "src/hive.ts": IMPL }], { a15: { default_branch: "nonesuch" } });
+  const r = both(dir);
+  assert.equal(r.status, 1, r.py.stdout + r.py.stderr);
+  assert.deepEqual(ids(r.findings), ["A15"], r.findings.join("\n"));
+  assert.equal(r.findings.length, 1, r.findings.join("\n"));
+  assert.match(r.findings[0], /^\.seam\/config\.json:1: A15 .*nonesuch.*comparison was not made/,
+    r.findings[0]);
+  rm(dir);
+});
+
+test("A15 on a shallow clone says the comparison was not made, not that the history is short", () => {
+  // In a depth-1 clone the tip commit has no parent, so git shows every file in it as added and
+  // the range looks like one enormous first commit. Comparing that would be comparing nothing.
+  const { dir } = a15Repo([{ "tests/hive.test.ts": TEST }, { "src/hive.ts": IMPL }]);
+  const clone = scratch("seam-shallow-");
+  const g = (...args) => execFileSync("git", args, { cwd: clone, stdio: "pipe" });
+  execFileSync("git", ["clone", "--quiet", "--depth", "1", "--branch", "feat", `file://${dir}`, clone],
+    { stdio: "pipe" });
+  g("fetch", "--quiet", "--depth", "1", "origin", "main:main");
+  for (const [language, out] of [["python", "scripts/check_docs.py"], ["node", "scripts/check_docs.mjs"]]) {
+    const gen = run("generate-checker.mjs", ["--repo", clone, "--language", language, "--out", out]);
+    assert.equal(gen.status, 0, gen.stderr);
+  }
+  const r = both(clone);
+  assert.equal(r.status, 1, r.py.stdout + r.py.stderr);
+  assert.deepEqual(ids(r.findings), ["A15"], r.findings.join("\n"));
+  assert.equal(r.findings.length, 1, r.findings.join("\n"));
+  assert.match(r.findings[0], /^\.seam\/config\.json:1: A15 .*shallow.*comparison was not made/,
+    r.findings[0]);
+  rm(dir);
+  rm(clone);
+});
+
+test("A15's finding survives the commit being rewritten, because it carries no sha", () => {
+  const { dir, git } = a15Repo([{ "src/hive.ts": IMPL }]);
+  const expected = [{ id: "A15", file: "src/hive.ts", line: 1, text: "src/hive.ts" }];
+  for (const language of ["python", "node"]) {
+    const w = check(dir, language, ["--write-baseline"]);
+    assert.equal(w.status, 0, w.stderr);
+    const entries = JSON.parse(readFileSync(join(dir, ".seam/baseline.json"), "utf8")).entries;
+    assert.deepEqual(entries, expected, language);
+  }
+  const before = git("rev-parse", "HEAD").toString();
+  git("commit", "--amend", "-m", "the same change under a different sha");
+  assert.notEqual(git("rev-parse", "HEAD").toString(), before, "the amend did not change the sha");
+  const r = both(dir);
+  assert.equal(r.status, 0, r.py.stdout + r.py.stderr);
+  assert.deepEqual(r.findings, []);
+  assert.match(r.py.stdout, /\(1 baselined\)/);
+  rm(dir);
+});
+
+test("A15 reads a detached HEAD the way it reads a branch", () => {
+  const { dir, git } = a15Repo([{ "src/hive.ts": IMPL }]);
+  git("checkout", "--quiet", "--detach");
+  const flagged = both(dir);
+  assert.deepEqual(flagged.findings.map((l) => l.split(" ")[0]), ["src/hive.ts:1:"]);
+  git("checkout", "--quiet", "--detach", "main");
+  const idle = both(dir);
+  assert.deepEqual(idle.findings, []);
+  assert.ok(idle.py.stdout.split("\n").includes(NOT_APPLICABLE), idle.py.stdout);
+  assert.ok(idle.js.stdout.split("\n").includes(NOT_APPLICABLE), idle.js.stdout);
+  rm(dir);
+});
+
+test("A15 does not count a rename as an implementation arriving", () => {
+  const { dir } = a15Repo(
+    [({ git }) => { git("mv", "src/old.ts", "src/new.ts"); git("commit", "-m", "move it"); }],
+    { base: (d) => put(d, "src/old.ts", IMPL.repeat(20)) });
+  const r = both(dir);
+  assert.equal(r.status, 0, r.py.stdout + r.py.stderr);
+  assert.deepEqual(r.findings, []);
+  rm(dir);
+});
+
+test("A15 does not read what main brought into the branch as the branch's own work", () => {
+  const { dir } = a15Repo([
+    { "tests/hive.test.ts": TEST, "src/hive.ts": IMPL },
+    ({ dir: d, git }) => {
+      git("checkout", "--quiet", "main");
+      put(d, "src/elsewhere.ts");
+      git("add", "--", "src/elsewhere.ts");
+      git("commit", "-m", "main moves on, with no test");
+      git("checkout", "--quiet", "feat");
+      git("merge", "--no-ff", "-m", "bring main in", "main");
+    },
+  ]);
+  const r = both(dir);
+  assert.equal(r.status, 0, r.py.stdout + r.py.stderr);
+  assert.deepEqual(r.findings, []);
+  rm(dir);
+});
+
+test("A15 reads a path with a space and a non-ASCII character as it is", () => {
+  const { dir } = a15Repo([{ "src/hé llo.ts": IMPL }]);
+  const py = check(dir, "python");
+  const js = check(dir, "node");
+  // `findings()` splits on non-space, so a path with a space is compared here by hand.
+  const a15 = (res) => res.stderr.split("\n").filter((l) => l.includes(": A15 "));
+  assert.deepEqual(a15(js), a15(py));
+  assert.equal(a15(py).length, 1, py.stderr);
+  assert.ok(a15(py)[0].startsWith("src/hé llo.ts:1: A15 "), a15(py)[0]);
+  rm(dir);
+});
+
+test("A15 counts a file that matches both lists as a test", () => {
+  const overlap = { impl_globs: ["src/**/*.ts"], test_globs: ["src/**/*.test.ts"] };
+  // A test beside its implementation lives under the implementation glob too; read as an
+  // implementation it would be its own missing test.
+  const alone = a15Repo([{ "src/hive.test.ts": TEST }], { a15: overlap });
+  const r = both(alone.dir);
+  assert.equal(r.status, 0, r.py.stdout + r.py.stderr);
+  assert.deepEqual(r.findings, []);
+  rm(alone.dir);
+
+  const late = a15Repo([{ "src/hive.ts": IMPL }, { "src/hive.test.ts": TEST }], { a15: overlap });
+  const l = both(late.dir);
+  assert.deepEqual(l.findings.map((x) => x.split(" ")[0]), ["src/hive.ts:1:"], l.findings.join("\n"));
+  rm(late.dir);
+});
+
+test("A15 reports a file once, however many commits add it before a test arrives", () => {
+  // Added, removed and added again: three commits touch the path, one finding is the answer.
+  const { dir } = a15Repo([
+    { "src/hive.ts": IMPL },
+    ({ git }) => { git("rm", "--quiet", "src/hive.ts"); git("commit", "-m", "take it back out"); },
+    { "src/hive.ts": IMPL },
+  ]);
+  const r = both(dir);
+  assert.deepEqual(r.findings.map((l) => l.split(" ")[0]), ["src/hive.ts:1:"], r.findings.join("\n"));
+  rm(dir);
+});
+
+test("A15 says the comparison was not made when git cannot read a commit it listed", () => {
+  // A partial or damaged object store lists a commit and then cannot show what it changed.
+  // Treating that as "nothing was added" would pass a branch that was never compared.
+  const { dir, git } = a15Repo([{ "src/hive.ts": IMPL }]);
+  const tree = git("rev-parse", "HEAD^{tree}").toString().trim();
+  rmSync(join(dir, ".git", "objects", tree.slice(0, 2), tree.slice(2)));
+  const r = both(dir);
+  assert.equal(r.status, 1, r.py.stdout + r.py.stderr);
+  assert.deepEqual(ids(r.findings), ["A15"], r.findings.join("\n"));
+  assert.equal(r.findings.length, 1, r.findings.join("\n"));
+  assert.match(r.findings[0], /^\.seam\/config\.json:1: A15 .*could not read.*comparison was not made/,
+    r.findings[0]);
   rm(dir);
 });

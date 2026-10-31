@@ -1184,6 +1184,110 @@ async function main() {
     }
   }
 
+  // ── A15. A test arrives before the implementation it proves. ───────────
+  //
+  // Off by default: it needs two repo-specific lists. Reads the commits this branch has and the
+  // default branch has not, oldest first, and holds the files ADDED in them to the order a
+  // test-first method promises. A finding names the implementation file, line 1 — never a commit,
+  // because a sha is fresh on every branch and a finding carrying one could not be baselined.
+  if (on("A15")) {
+    const branch = opt("A15", "default_branch", cfg.repo?.default_branch ?? "main");
+    const globsOf = (k) => {
+      const v = opt("A15", k, []);
+      return (typeof v === "string" ? [v] : Array.isArray(v) ? v : [])
+        .filter((g) => typeof g === "string" && g !== "");
+    };
+    const implGlobs = globsOf("impl_globs");
+    const testGlobs = globsOf("test_globs");
+    // Every way git can fail — a branch that is not there, a shallow clone, no git at all — is
+    // null, because each means the same thing here: the comparison cannot be made.
+    const git = (...args) => {
+      try {
+        return execFileSync("git", args, { cwd: ROOT, encoding: "utf8", maxBuffer: 1 << 30,
+          stdio: ["ignore", "pipe", "ignore"] });
+      } catch { return null; }
+    };
+    const unreadable = [branch,
+      `git could not read the commits in \`${branch}..HEAD\` — the test-first comparison was `
+      + `not made. Switch A15 off if this checkout cannot be given its history; off is distinct `
+      + `from passing`];
+    let notMade = null;      // [text, message] when the comparison cannot be made
+    let walked = false;      // whether the range held a commit at all
+    const late = [];         // implementation files added before any test
+    if (!implGlobs.length || !testGlobs.length) {
+      const empty = [implGlobs.length ? null : "impl_globs", testGlobs.length ? null : "test_globs"]
+        .filter((k) => k !== null);
+      notMade = [empty.join(", "),
+        `assertions.A15 is enabled with nothing in ${empty.map((k) => `\`${k}\``).join(" and ")} — `
+        + `the test-first comparison was not made. A15 compares the paths that are implementation `
+        + `with the paths that are tests, so it needs both. Fill them in, or switch A15 off; off is `
+        + `distinct from passing`];
+    } else if (git("rev-parse", "--verify", "--quiet", `${branch}^{commit}`) === null) {
+      notMade = [branch,
+        `git cannot resolve \`${branch}\` to a commit — the test-first comparison was not made. Set `
+        + `assertions.A15.default_branch to a branch this checkout has (CI often has only `
+        + `\`origin/<branch>\`), or switch A15 off; off is distinct from passing`];
+    } else if (git("merge-base", branch, "HEAD") === null) {
+      // A shallow clone cuts the history off, so git shows every file in the oldest commit it has
+      // as added by it. Comparing that would be comparing nothing.
+      notMade = [branch,
+        `HEAD and \`${branch}\` share no history git can see (a shallow clone is the usual cause), `
+        + `so which commits are this branch's is unknown and the test-first comparison was not `
+        + `made. Fetch the full history (in CI, \`fetch-depth: 0\`), or switch A15 off; off is `
+        + `distinct from passing`];
+    } else {
+      // Merges are skipped: what a merge brings in is either on the default branch already, and so
+      // outside the range, or another branch's commits, which the range lists in their own right.
+      const listed = git("rev-list", "--reverse", "--topo-order", "--no-merges", `${branch}..HEAD`);
+      if (listed === null) notMade = unreadable;
+      const shas = (listed ?? "").split("\n").filter((x) => x !== "");
+      walked = shas.length > 0;
+      const testRes = testGlobs.map(globRe);
+      const implRes = implGlobs.map(globRe);
+      const isTest = (p) => testRes.some((rx) => rx.test(p));
+      const isImpl = (p) => implRes.some((rx) => rx.test(p));
+      for (const sha of shas) {
+        // `-z` so a path with a space or a non-ASCII character is not quoted, `-M` so a rename is
+        // told from a new file, `--relative` so a checker below the repo root sees its own paths.
+        // Plumbing, because `git show` obeys the user's config and diff-tree does not.
+        const out = git("diff-tree", "--no-commit-id", "--root", "-r", "-z", "-M", "--relative",
+          "--name-status", sha);
+        if (out === null) { notMade = unreadable; break; }
+        const added = [];
+        const toks = out.split("\0");
+        for (let i = 0; i < toks.length && toks[i] !== "";) {
+          if (/^[RC]/.test(toks[i])) { i += 3; continue; }      // a move or copy is not an arrival
+          if (toks[i] === "A") added.push(toks[i + 1]);
+          i += 2;
+        }
+        // Once a test has arrived, nothing after it can be early. It is checked before the
+        // implementations, so a file matching both lists is a test: read as an implementation,
+        // a test beside the code it proves would be its own missing test.
+        if (added.some(isTest)) break;
+        for (const p of added.filter(isImpl)) if (!late.includes(p)) late.push(p);
+      }
+    }
+    if (notMade !== null) {
+      ran += 1;
+      findings.push(finding("A15", CONFIG_PATH, 1, notMade[0], notMade[1]));
+    } else if (!walked) {
+      // After a squash merge a test and its implementation are always one commit, so on the
+      // default branch this check has nothing to compare. Saying so is not a finding, and it is
+      // not counted among the assertions that ran: silence would read as a pass.
+      process.stdout.write(`A15: not applicable on ${branch} — a squash merge puts test and `
+        + `implementation in one commit\n`);
+    } else {
+      ran += 1;
+      for (const p of late) {
+        findings.push(finding("A15", p, 1, p,
+          `is an implementation file (\`assertions.A15.impl_globs\`) added in \`${branch}..HEAD\` `
+          + `with no test (\`assertions.A15.test_globs\`) before it or in the same commit — a test `
+          + `arrives before, or with, the implementation it proves. Reorder the commits so a test `
+          + `comes first, or put one in the commit that adds this file`));
+      }
+    }
+  }
+
   // ── Repo-invented assertions. Discovered, never overwritten. ───────────
   const adir = join(ROOT, ".seam", "assertions");
   if (existsSync(adir) && statSync(adir).isDirectory()) {
