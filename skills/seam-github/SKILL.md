@@ -148,6 +148,13 @@ Closes #N.
 
 (or `- None`.)
 
+**The size slot is a vocabulary, not free prose: `Small`, `Medium` or `Large`** — the three
+`docs/building.md` defines — or `one-liner`, the marker the route in § A one-line fix in another
+domain carries. The three names are here so a **required** slot does not depend on an **optional**
+file read; what each one *means*, and which one a given change is, stay that file's and are read
+there. Where a repo's own `docs/building.md` names a different set, **its table is the vocabulary
+and this line is not**.
+
 ### Follow-ups — where scope discipline actually lives
 
 Everything you noticed along the way and did not treat as part of the original scope. Each item
@@ -211,7 +218,8 @@ A row that later blocks the active milestone qualifies on clause 3 and becomes a
 **Size decides how, never whether.** It says what a disposition costs — what the fold-in has to
 carry, what the issue has to say — and it never moves an item from one disposition to another.
 Which size a change is, and what each one costs, are `docs/building.md`'s as above; this file only
-reports it.
+reports it. **The three values the slot takes are named once, with the skeleton in § Pull
+requests**, and this paragraph deliberately does not repeat them — one enum, one place.
 
 **A fold-in needs an OK only when it is cross-domain or widens the branch's scope** — either of
 the two dispositions that land work in this branch, since writing the unit does not buy scope that
