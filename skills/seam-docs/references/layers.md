@@ -41,7 +41,8 @@ The edit rule is what makes a layer **checkable**:
 - **A12** — byte-freeze — applies to **3 and 4 only**, and only because their edit rule says a
   file on the default branch is final. A layer-2 doc is byte-frozen by nothing, correctly. The one
   file that is appended to by design, a single dated decisions file, is held to a prefix instead:
-  an append passes and an edit does not.
+  an append passes and an edit does not. A MADR record may change its `**Status:**` line and
+  nothing else, because that is the field a reversal changes.
 - **A8 and A10** key on layer 5 owning nothing: a plan can claim an issue, but it cannot claim a
   question, so "two files claiming one seam" is resolvable.
 - **A13** reads the shape layer 3 and 4 promise: a date, a status, a successor for a superseded

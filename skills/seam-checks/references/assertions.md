@@ -261,9 +261,19 @@ fixed in place.
   the branch must be an unbroken **prefix** of the working copy — compared as bytes, in both
   checkers, never as decoded text. An append passes; an edit to anything already there, or a
   deletion, fails, saying an entry was edited rather than appended and that a reversal is a new
-  dated entry. Every other layer-3 and layer-4 file, including a MADR record and a PRD version in
-  the same repo, keeps equality. Text that merely extends the file's last line also passes: a
-  prefix is a byte relation, and A12 does not read entries.
+  dated entry. Every other layer-3 and layer-4 file keeps equality, with the one
+  exception in the next bullet. Text that merely extends the file's last line also passes: a prefix
+  is a byte relation, and A12 does not read entries.
+- **A MADR record's Status line may change; nothing else may.** When `adr.format` is `madr`, every
+  file under `adr.dir` must match the default branch line for line **except a line that opens
+  `**Status:**`** (on the branch and now), and the line count must be unchanged. This is the
+  one field the method itself says changes after merge: a reversal gives the old record
+  `superseded by NNNN`, and A13 requires that a superseded record names a successor that exists.
+  Asked of the same bytes, byte-equality and A13 could not both be satisfied the first time any
+  repo reversed a decision. The record's substance stays frozen — a Status flip beside any other
+  edit to the record still fails — and the exemption is **not** a way to correct a record: it is
+  one line, and it does not reach a PRD version, or a MADR record in a repo whose format is
+  `single`. Compared as bytes, in both checkers.
 - **No such branch fails**, saying the comparison was not made. Off is distinct from passing.
 - **An index is not a record.** `README.md`, `index.md`, `template.md` and `PRD-current.md` inside
   a frozen track are exempt: an index grows by design — adding a version means appending a row —

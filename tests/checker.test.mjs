@@ -426,6 +426,69 @@ for (const [what, mk, rel, line] of [
   });
 }
 
+// ── A12 and the one field a MADR record is allowed to change ────────────────────────────────
+//
+// The method's own rule for a reversal is that the OLD record gains a `superseded by NNNN` status,
+// and A13 requires a superseded record to name a successor that exists. Both are asked of the same
+// bytes, so a byte-equality A12 made the two unsatisfiable the first time any repo reversed a
+// decision. For a layer-3 MADR record every line must still match the default branch except a line
+// that opens `**Status:**`: the record's substance stays frozen, and its status is metadata about
+// supersession. Nothing wider — it is not a way to correct a record.
+
+const OLD_RECORD = "docs/adr/0001-use-a-plain-table-for-the-queue.md";
+const SUCCESSOR = "# 0002. Adopt a queue library\n\n**Date:** 2026-02-01\n**Status:** accepted\n"
+  + "**Deciders:** apiary maintainers\n\n## Context\n\nRetries were hand-written and are now most "
+  + "of the code.\n\n## Outcome\n\nA queue library replaces the table. This supersedes 0001.\n";
+
+/** What the method prescribes for a reversal, all of it: the old record's Status becomes
+ *  `superseded by 0002`, the successor is added, and the index says so. */
+function supersede({ edit, write }) {
+  edit(OLD_RECORD, "**Status:** accepted", "**Status:** superseded by 0002");
+  write("docs/adr/0002-adopt-a-queue-library.md", SUCCESSOR);
+  edit("docs/adr/README.md", "| 2026-01-01 | accepted |",
+    "| 2026-01-01 | superseded by 0002 |\n"
+    + "| [0002](0002-adopt-a-queue-library.md) | Adopt a queue library | 2026-02-01 | accepted |");
+}
+
+test("A12 allows a MADR record's Status to become `superseded by NNNN`, the prescribed reversal", () => {
+  const { dir } = fixture({ mutate: supersede });
+  const r = both(dir);
+  assert.equal(r.status, 0, `the method's own reversal must not red its own checker:\n${r.py.stdout}${r.py.stderr}`);
+  assert.deepEqual(r.findings, []);
+  rm(dir);
+});
+
+for (const [what, extra] of [
+  ["the Date line", ({ edit }) => edit(OLD_RECORD, "**Date:** 2026-01-01", "**Date:** 2026-01-02")],
+  ["a body line", ({ edit }) => edit(OLD_RECORD, "retries are hand-written", "retries are automatic")],
+  ["a line added", ({ edit }) => edit(OLD_RECORD, "The queue is a plain table.\n", "The queue is a plain table.\n\nAn afterthought.\n")],
+  ["a line deleted", ({ edit }) => edit(OLD_RECORD, "**Deciders:** apiary maintainers\n", "")],
+  // The exemption is for a line that IS a status line on the branch, not for any line that is
+  // rewritten to look like one.
+  ["a body line rewritten to open with **Status:**",
+    ({ edit }) => edit(OLD_RECORD, "The queue is a plain table.", "**Status:** the queue is a plain table.")],
+]) {
+  test(`A12 still fires on ${what}, even beside a legitimate Status flip in the same record`, () => {
+    const { dir } = fixture({ mutate: (m) => { supersede(m); extra(m); } });
+    const r = both(dir);
+    assert.equal(r.status, 1, `the exemption must not become a wildcard:\n${r.py.stdout}${r.py.stderr}`);
+    assert.deepEqual(ids(r.findings), ["A12"], r.findings.join("\n"));
+    assert.ok(r.findings.some((l) => l.startsWith(`${OLD_RECORD}:1: A12 `)), r.findings.join("\n"));
+    assert.match(r.py.stdout + r.py.stderr, /Only its \*\*Status:\*\* line may change/);
+    rm(dir);
+  });
+}
+
+test("A12 fires on a change to any line but Status, with no Status flip at all", () => {
+  const { dir } = fixture({
+    mutate: ({ edit }) => edit(OLD_RECORD, "**Date:** 2026-01-01", "**Date:** 2026-01-02"),
+  });
+  const r = both(dir);
+  assert.equal(r.status, 1, r.py.stdout);
+  assert.deepEqual(ids(r.findings), ["A12"], r.findings.join("\n"));
+  rm(dir);
+});
+
 // ── Three defects found by running the emitted checker against a 45-doc repo ─────────────────
 
 test("a heading's comma-separated first clause is citable", () => {

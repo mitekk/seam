@@ -379,6 +379,24 @@ def frozen_record(path: str) -> bool:
     return os.path.basename(path) not in NOT_A_RECORD
 
 
+# The one field a MADR record may change after it is on the default branch. The method's own rule
+# for a reversal is that the OLD record gains `superseded by NNNN`, and A13 requires that a
+# superseded record names a successor that exists — both asked of the same bytes, so byte-equality
+# alone made them unsatisfiable the first time a repo reversed a decision. Its substance stays
+# frozen; its status is metadata about supersession. Nothing wider than this one line.
+STATUS_LINE = re.compile(rb"^\*\*Status:\*\*")
+
+
+def differs_only_in_status_lines(was: bytes, now: bytes) -> bool:
+    """True when `was` and `now` have the same number of lines and differ only on lines that open
+    `**Status:**` in BOTH. Compared as bytes, never as decoded text, so it cannot read invalid
+    UTF-8 differently from the Node checker."""
+    a, b = was.split(b"\n"), now.split(b"\n")
+    return len(a) == len(b) and all(
+        x == y or (STATUS_LINE.match(x) is not None and STATUS_LINE.match(y) is not None)
+        for x, y in zip(a, b))
+
+
 def md_citations(root: Path, frm: str, text: str) -> list[tuple[str, int]]:
     """Every `*.md` path this file claims exists, with its offset.
 
@@ -1009,6 +1027,8 @@ def main() -> int:
         adr_cfg = cfg.get("adr", {})
         append_only = (adr_cfg.get("file", "docs/decisions.md")
                        if adr_cfg.get("format") == "single" else None)
+        # The same directory and the same test for "a MADR record" that A13 uses.
+        madr_dir = adr_cfg.get("dir", "docs/adr") if adr_cfg.get("format") == "madr" else None
         frozen = [glob_re(r["doc"]) for r in table if r["layer"] in (3, 4)]
         try:
             subprocess.run(["git", "rev-parse", "--verify", branch], cwd=ROOT, check=True,
@@ -1040,10 +1060,15 @@ def main() -> int:
                             f"this file. An entry was edited, not appended. A reversal is a new "
                             f"dated entry; a correction is not available here"))
                 elif was != now:
+                    madr = madr_dir is not None and d.startswith(madr_dir + "/")
+                    if madr and differs_only_in_status_lines(was, now):
+                        continue
                     findings.append(finding("A12", d, 1, d,
                         f"is layer {layer} ({LAYER_NAMES[layer]}) and already on `{branch}`, so "
                         f"its bytes are final. A reversal is a new entry; a correction is not "
-                        f"available here"))
+                        f"available here"
+                        + (". Only its **Status:** line may change, to name what superseded it"
+                           if madr else "")))
 
     # ── A13. The append-only layers keep their shape. ──────────────────────
     if on("A13"):

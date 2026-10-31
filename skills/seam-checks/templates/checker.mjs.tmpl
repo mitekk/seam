@@ -325,6 +325,23 @@ const NOT_A_RECORD = new Set(["README.md", "template.md", "PRD-current.md", "ind
 
 const frozenRecord = (path) => !NOT_A_RECORD.has(basename(path));
 
+// The one field a MADR record may change after it is on the default branch. The method's own rule
+// for a reversal is that the OLD record gains `superseded by NNNN`, and A13 requires that a
+// superseded record names a successor that exists — both asked of the same bytes, so byte-equality
+// alone made them unsatisfiable the first time a repo reversed a decision. Its substance stays
+// frozen; its status is metadata about supersession. Nothing wider than this one line.
+const STATUS_LINE = /^\*\*Status:\*\*/;
+
+/** True when `was` and `now` have the same number of lines and differ only on lines that open
+ *  `**Status:**` in BOTH. Compared as bytes (latin1 maps one byte to one char), never as decoded
+ *  text, so it cannot read invalid UTF-8 differently from the Python checker. */
+function differsOnlyInStatusLines(was, now) {
+  const a = was.toString("latin1").split("\n");
+  const b = now.toString("latin1").split("\n");
+  if (a.length !== b.length) return false;
+  return a.every((line, i) => line === b[i] || (STATUS_LINE.test(line) && STATUS_LINE.test(b[i])));
+}
+
 /** Every `*.md` path this file claims exists, with its offset.
  *
  *  A backticked path that is the TEXT of a markdown link is a label, not a citation: in
@@ -978,6 +995,8 @@ async function main() {
     const branch = opt("A12", "default_branch", cfg.repo?.default_branch ?? "main");
     const adrCfg = cfg.adr ?? {};
     const appendOnly = adrCfg.format === "single" ? (adrCfg.file ?? "docs/decisions.md") : null;
+    // The same directory and the same test for "a MADR record" that A13 uses.
+    const madrDir = adrCfg.format === "madr" ? (adrCfg.dir ?? "docs/adr") : null;
     const frozen = table.filter((r) => r.layer === 3 || r.layer === 4).map((r) => globRe(r.doc));
     let haveBranch = true;
     try {
@@ -1007,9 +1026,12 @@ async function main() {
               + `is not available here`));
           }
         } else if (!was.equals(now)) {
+          const madr = madrDir !== null && d.startsWith(madrDir + "/");
+          if (madr && differsOnlyInStatusLines(was, now)) continue;
           findings.push(finding("A12", d, 1, d,
             `is layer ${layer} (${LAYER_NAMES[layer]}) and already on \`${branch}\`, so its `
-            + `bytes are final. A reversal is a new entry; a correction is not available here`));
+            + `bytes are final. A reversal is a new entry; a correction is not available here`
+            + (madr ? ". Only its **Status:** line may change, to name what superseded it" : "")));
         }
       }
     }
