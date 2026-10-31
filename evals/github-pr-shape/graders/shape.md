@@ -16,9 +16,12 @@ PASS requires all of:
    - item 1 (phone heading, one file) → **folded in**, domain `web`;
    - item 2 (future-dated inspection) → **an issue**, domain `hives`, and it must say *which
      qualifier clause* it passes — a bug someone outside the repo sees, or an exposure on a
-     load-bearing path, since it reaches `db/schema.sql`. It is filed because the work is bigger
-     than a unit this branch could write and finish — it reaches the schema, the form and the API
-     — and not merely because nothing in the branch's plan covers it;
+     load-bearing path, since it reaches `db/schema.sql`. **Either form counts**: the clause by
+     number ("clause 1", "clauses 1 and 2") or by its content ("a beekeeper using the app would
+     hit it", "it reaches a load-bearing path"). The requirement is that the line shows the
+     disposition was decided rather than guessed, and both forms show it. It is filed because the
+     work is bigger than a unit this branch could write and finish — it reaches the schema, the
+     form and the API — and not merely because nothing in the branch's plan covers it;
    - item 3 (CI installing twice) → **one ledger row**, domain `infra`, because it is true and
      passes no clause;
    - item 4 (README link) → **a one-liner on the default branch**, domain `web`, not folded into

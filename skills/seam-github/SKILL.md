@@ -137,11 +137,11 @@ The reason, citing docs by path and §. Not a restatement of the diff.
 Closes #N.
 
 ## Follow-ups
-- <any · `domain` — folded in> a unit covered it, and it was done in this branch
-- <any · `domain` — planned, then folded in> no unit covered it: the unit was written, then done
-- <any · `domain` — issue #N> bigger than a unit this branch could write and finish, and it passes
-  a qualifier clause — names which
-- <any · `domain` — ledger> true, and either not worth doing or turned away by the qualifier:
+- <size · `domain` — folded in> a unit covered it, and it was done in this branch
+- <size · `domain` — planned, then folded in> no unit covered it: the unit was written, then done
+- <size · `domain` — issue #N> bigger than a unit this branch could write and finish, and it
+  passes a qualifier clause — names which
+- <size · `domain` — ledger> true, and either not worth doing or turned away by the qualifier:
   one findings-ledger row
 - <one-liner · `domain` — on `main`> a one-line fix that belonged elsewhere
 ```
