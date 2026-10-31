@@ -12,7 +12,7 @@ The branch is `12-queenless-filter` and it closes issue #12, which was `p1`, dom
 milestone `1 · Queenless list`. What landed: the list query now filters on `hives.state`, and the
 page shows a count. What deliberately did not land: pagination.
 
-Along the way I noticed four things:
+Along the way I noticed five things:
 
 1. The page's heading was the wrong size on a phone. One file, no new test. I fixed it in this
    branch. Domain `web`.
@@ -24,6 +24,11 @@ Along the way I noticed four things:
    `infra`. Not done.
 4. A broken link in the top-level `README.md`, one line. Domain `web`. Not part of this branch's
    scope at all.
+5. The filtered list comes back in whatever order the query happens to return, so the same
+   apiary reads differently from one page load to the next. Sorting it by hive name is one file
+   and one more assertion in a test that already exists, and this branch could finish it today.
+   Nothing in `docs/plans/inspections.md` § The issues covers a sort order. Domain `hives`. Not
+   done yet.
 
 `docs/taxonomy.md` has the domains and priorities. `db/schema.sql` is the only load-bearing path.
 `docs/plans/inspections.md` § The issues is where #12 is sequenced, and it says #12 comes first
