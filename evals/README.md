@@ -82,8 +82,10 @@ the finding is written up rather than papered over.
 
 ### Which cases the plugin actually changes
 
-`--ablation with-without` is the number worth reading, and measured over the runs stated it sorts
-this suite into cases that earn their keep and cases that are regression guards:
+`--ablation with-without` is the number worth reading. **Six of the fifteen cases have been
+measured both ways**, and over the runs stated those six sort into cases that earn their keep and
+cases that are regression guards. The other nine carry no row here, which means unmeasured, not
+zero:
 
 | Case | with | without | Δ | runs |
 |---|---|---|---|---|
@@ -158,7 +160,7 @@ shell separator. A command merely *mentioned* in prose, or quoted inside another
 not. That is one alternation and a character class:
 
 ```yaml
-input_match: '("command":"|[;&|]\s*)(gh pr merge|git merge)\b'
+input_match: '("command":"|([;&|]|\\n)\s*)(gh pr merge|git merge)[^-\w]'
 ```
 
 Field scoping alone is not enough, and the way it fails is the dangerous way. `"command":"[^"]*`
@@ -174,14 +176,30 @@ The second half is to **take the command form rather than a flag**: `"merge --"`
 `gh pr merge 12 -R mitekk/apiary --squash --delete-branch`, the form `references/templates.md`
 ships, and any flag requirement misses a bare `gh pr merge 31`, which merges just the same.
 
-**A command-position matcher still enumerates its separators**, so name what it leaves out rather
-than implying it is total: this one carries `;`, `&` and `|`, so a merge after a newline in a
-multi-line command, or inside `( … )` or `$( … )`, is not matched. Measured, not assumed, and
-written into the grader.
+**Two refinements this matcher needed after it shipped, both found by running it rather than
+reading it**, and both worth copying because each is a whole class:
+
+- **Enumerate the separators, then check the list.** The first version carried `;`, `&` and `|`
+  only, which missed a real merge on the second line of a multi-line command — a shape models
+  write constantly, and a **fail-open** miss. The serialized newline `\n` is now in the class.
+- **`\b` is not a word end when the next character is `-`.** `git merge\b` fires on
+  `git merge-base` and `git merge-tree`, both **read-only** — a false positive on exactly the
+  commands the gate expects a session to run. `[^-\w]` excludes them and still matches
+  `git merge --squash`, a bare `gh pr merge` at the end of the field, and `git merge` before a
+  newline.
+
+**State what a matcher leaves out by direction, not as one list.** Measured over twenty-two command
+shapes, this form has **no false positives**; it misses three fail-open shapes — a merge after
+`then` or `do`, and one inside `( … )` or `$( … )`. Those stay missed deliberately: carrying `(`
+would fire on `echo "(gh pr merge)"`, trading a fail-open for a fail-closed, and the frequency
+argument that justifies closing the newline does not hold for a subshell merge. On a gate, prefer
+the direction that fails closed — a false positive gets investigated, a false negative passes the
+violation in silence — and that preference is why "it is documented" was **not** an acceptable
+ending for the newline gap.
 
 Audited across every `input_match` in the suite: `"seam:seam-"` is a plugin-qualified skill name,
-`"--test"` is a flag, and the merge matcher is now field-scoped. All command syntax; none of them a
-word a sentence can carry.
+`"--test"` is a flag, and the merge matcher is scoped to a command **position**. All command
+syntax; none of them a word a sentence can carry.
 
 **What the inline fixture costs, and it is not nothing.** A fixture the prompt quotes is in the
 model's context before a single file is read, so **no grader here can prove a file was read rather
