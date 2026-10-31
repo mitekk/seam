@@ -776,6 +776,14 @@ test("A14 holds a pattern to the subset both languages read the same way", () =>
     ["[~]", "a bare `~` in a class, likewise"],
     ["[[]", "a bare `[` in a class"],
     ["\\q", "an unknown letter escape: Python refuses it, Node reads a literal"],
+    ["\\Aassert", "`\\A`: Python anchors at the start of the text, Node reads a literal A — both accept it"],
+    ["assert\\Z", "`\\Z`: Python anchors at the end of the text, Node reads a literal Z — both accept it"],
+    ["[\\B]", "`\\B` inside a class: Node accepts it, Python raises"],
+    ["[\\q]", "an unknown letter escape inside a class: Node accepts it, Python raises"],
+    ["[a-\\w]", "a range ending in a class escape: Node accepts it, Python refuses"],
+    // `[a-\w]` is also a descending range ('\\' sorts before 'a'), so the ordering check rejects it
+    // on its own. With an endpoint that sorts below the backslash, only the endpoint check does.
+    ["[A-\\w]", "the same range, ascending: only the endpoint check can refuse this one"],
   ];
   const { dir } = fixture();
   for (const [pattern, why] of refused) {
