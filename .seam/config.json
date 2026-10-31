@@ -34,6 +34,24 @@
       "create": false
     },
     {
+      "path": "docs/building.md",
+      "layer": 2,
+      "enforces": "",
+      "create": true
+    },
+    {
+      "path": "docs/context.md",
+      "layer": 2,
+      "enforces": "",
+      "create": true
+    },
+    {
+      "path": "docs/routing.md",
+      "layer": 2,
+      "enforces": "",
+      "create": true
+    },
+    {
       "path": "docs/decisions.md",
       "layer": 3,
       "enforces": "",
@@ -96,10 +114,6 @@
         {
           "path": "SKILL.md",
           "reason": "a filename form: skills/<name>/SKILL.md. Every real one is cited with its directory and resolves"
-        },
-        {
-          "path": "docs/routing.md",
-          "reason": "a doc an ADOPTING repo has, named in prose about what the templates produce — not a file in this repo. Same class as CLAUDE.md above"
         },
         {
           "path": "prompt.md",
@@ -167,7 +181,7 @@
       "enabled": true
     },
     "A14": {
-      "enabled": false,
+      "enabled": true,
       "plan_glob": [
         "docs/superpowers/specs/*.md",
         "docs/superpowers/plans/*.md"

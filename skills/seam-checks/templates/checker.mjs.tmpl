@@ -152,7 +152,13 @@ function sectionBody(text, name) {
   let start = null;
   let startLevel = 0;
   const low = name.toLowerCase();
+  let fenced = false;
   for (let i = 0; i < lines.length; i++) {
+    // A heading inside a fenced block is a QUOTE of a section, not that section. A doc that shows
+    // a template inside ```markdown had its example read as the real thing, so the assertion
+    // measured the placeholder row in the example rather than the table below it.
+    if (/^[ \t]*(?:```|~~~)/.test(lines[i])) { fenced = !fenced; continue; }
+    if (fenced) continue;
     // Levels 2 to 6: a `#` heading is the document's title, not a section of it. Without that
     // bound, `§ Checks` in a file called "# Checks" matched the title, whose body is the
     // whole file — so a renamed section still compared something and passed.
@@ -189,6 +195,28 @@ function tableCells(line) {
   const t = line.replace(ASCII_WS, "");
   if (!t.startsWith("|")) return null;
   return t.slice(1).replace(/\|$/, "").split("|").map((c) => c.replace(ASCII_WS, ""));
+}
+
+/**
+ * Every table row in a section body, as `[index, cells]`, **skipping fenced blocks**.
+ *
+ * A doc that QUOTES a table — a plan showing the template it was written from — has rows in its
+ * body that are an example and not a row. Measured on this repo's own plan: `§ The units`
+ * reported "unit 1 has no test path" from a ```markdown block eighty lines below the real table.
+ * A8 and A14 read their tables through here and nothing else, so the two agree about what a row
+ * is. `sectionBody` skips a fenced heading for the same reason.
+ */
+function tableRows(body) {
+  const out = [];
+  let fenced = false;
+  const lines = body.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    if (/^[ \t]*(?:```|~~~)/.test(lines[i])) { fenced = !fenced; continue; }
+    if (fenced) continue;
+    const cells = tableCells(lines[i]);
+    if (cells !== null) out.push([i, cells]);
+  }
+  return out;
 }
 
 // ── The assertion pattern ────────────────────────────────────────────────────
@@ -925,10 +953,7 @@ async function main() {
       if (body === null) continue;
       const first = body.split("\n")[0];
       const base = body.trim() ? textOf[d].split("\n").indexOf(first) + 1 : 0;
-      const lines = body.split("\n");
-      for (let i = 0; i < lines.length; i++) {
-        const cells = tableCells(lines[i]);
-        if (cells === null) continue;
+      for (const [i, cells] of tableRows(body)) {
         if (cells.length < 2 || !/^~*\d+~*$/.test(cells[0])) continue;
         const m = cells[1].match(/#(\d+)/);
         if (m) {
@@ -1204,11 +1229,8 @@ async function main() {
       // that line up by its content instead would send a blank first line to the first blank
       // line in the file.
       const base = lineOf(text, text.indexOf(body));
-      const lines = body.split("\n");
       let units = 0;
-      for (let i = 0; i < lines.length; i++) {
-        const cells = tableCells(lines[i]);
-        if (cells === null) continue;
+      for (const [i, cells] of tableRows(body)) {
         // A bare numeral only: the header, the rule under it, and a struck-through unit are not
         // units, so none of them is held to the shape.
         if (!/^\d+$/.test(cells[0])) continue;

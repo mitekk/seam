@@ -1408,3 +1408,21 @@ test("a layer-2 doc cites the PRD only where the repo has a layer-4 row", () => 
   assert.match(read(withPrd, "docs/engineering.md"), /`docs\/prd\/PRD-current\.md`/);
   rm(withPrd);
 });
+
+test("an empty milestones list and a one-row active list are both accepted", () => {
+  // Both shapes are live: a repo whose first milestone is not settled yet carries `[]`, and the
+  // row lands later. The row keys `n` and `title` are required (above), so the one-row case has
+  // to be checked with them present rather than only in the rejection tests.
+  const empty = init(answers({ milestones: [] }));
+  assert.equal(empty.r.status, 0, empty.r.stderr);
+  assert.deepEqual(JSON.parse(read(empty.dir, ".seam/config.json")).milestones, []);
+  rm(empty.dir);
+
+  const one = init(answers({
+    milestones: [{ n: 1, title: "Green or brown field", green: "the determination is recorded", active: true }],
+  }));
+  assert.equal(one.r.status, 0, one.r.stderr);
+  assert.deepEqual(JSON.parse(read(one.dir, ".seam/config.json")).milestones,
+    [{ n: 1, title: "Green or brown field", active: true }]);
+  rm(one.dir);
+});

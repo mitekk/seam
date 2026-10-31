@@ -51,6 +51,14 @@ there are milestones, exactly one is active — the row marked `yes` above, `mil
 `.seam/config.json` — and clause 3 of the follow-up qualifier, "blocks the active milestone", is
 answered from it rather than from how important something feels.
 
+**Advancing it is one edit, and the answers file is where it goes.** The `yes` moves when the row
+carrying it is green by its own column and the next row is started — not when it feels finished,
+and not as a tidy-up afterwards. Flip `active` in `.seam/answers.json`, regenerate, and change
+this column in the same commit, because the two are kept in step by hand as this file says above.
+Editing `.seam/config.json` instead is the one way that fails silently: the config is a projection
+of the answers file, so the next regeneration reverts the edit without a word, and assertion A16
+is what reports it.
+
 ## What this does not own
 
 - **Which issues build a subsystem, in what order.** That is layer 5, under the plans directory.

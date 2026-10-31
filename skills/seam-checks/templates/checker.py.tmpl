@@ -183,7 +183,16 @@ def section_body(text: str, name: str) -> str | None:
     start = None
     start_level = 0
     low = name.lower()
+    fenced = False
     for i, line in enumerate(lines):
+        # A heading inside a fenced block is a QUOTE of a section, not that section. A doc that
+        # shows a template inside ```markdown had its example read as the real thing, so the
+        # assertion measured the placeholder row in the example rather than the table below it.
+        if re.match(r"[ \t]*(?:```|~~~)", line):
+            fenced = not fenced
+            continue
+        if fenced:
+            continue
         # Levels 2 to 6: a `#` heading is the document's title, not a section of it. Without that
         # bound, `§ Checks` in a file called "# Checks" matched the title, whose body is the
         # whole file — so a renamed section still compared something and passed.
@@ -221,6 +230,29 @@ def table_cells(line: str) -> list[str] | None:
     if t.endswith("|"):
         t = t[:-1]
     return [c.strip(ASCII_WS) for c in t.split("|")]
+
+
+def table_rows(body: str) -> list[tuple[int, list[str]]]:
+    """Every table row in a section body, as `(index, cells)`, **skipping fenced blocks**.
+
+    A doc that QUOTES a table — a plan showing the template it was written from — has rows in its
+    body that are an example and not a row. Measured on this repo's own plan: `§ The units`
+    reported "unit 1 has no test path" from a fenced block eighty lines below the real table. A8
+    and A14 read their tables through here and nothing else, so the two agree about what a row is.
+    `section_body` skips a fenced heading for the same reason.
+    """
+    out: list[tuple[int, list[str]]] = []
+    fenced = False
+    for i, line in enumerate(body.split("\n")):
+        if re.match(r"[ \t]*(?:```|~~~)", line):
+            fenced = not fenced
+            continue
+        if fenced:
+            continue
+        cells = table_cells(line)
+        if cells is not None:
+            out.append((i, cells))
+    return out
 
 
 # ── The assertion pattern ────────────────────────────────────────────────────
@@ -966,10 +998,7 @@ def main() -> int:
             if body is None:
                 continue
             base = text_of[d].split("\n").index(body.split("\n")[0]) + 1 if body.strip() else 0
-            for i, line in enumerate(body.split("\n")):
-                cells = table_cells(line)
-                if cells is None:
-                    continue
+            for i, cells in table_rows(body):
                 if len(cells) < 2 or not re.fullmatch(r"~*\d+~*", cells[0]):
                     continue
                 m = re.search(r"#(\d+)", cells[1])
@@ -1234,10 +1263,7 @@ def main() -> int:
             # first blank line in the file.
             base = line_of(text, text.find(body))
             units = 0
-            for i, line in enumerate(body.split("\n")):
-                cells = table_cells(line)
-                if cells is None:
-                    continue
+            for i, cells in table_rows(body):
                 # A bare numeral only: the header, the rule under it, and a struck-through unit
                 # are not units, so none of them is held to the shape.
                 if not re.fullmatch(r"\d+", cells[0], re.A):

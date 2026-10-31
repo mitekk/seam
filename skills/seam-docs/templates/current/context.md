@@ -105,10 +105,12 @@ its own is the same answer — what matters is that the files are not in git and
 
 **One file per writer, wherever they write.** Where agents run in parallel — which the dispatch
 rule above licenses — each writes a scoped file of its own, never a shared path, and the name
-carries the unit *and* the agent: `progress-<unit>-<agent>.md`, so `progress-7-schema.md` rather
-than `progress.md` or `progress-7.md`, because two agents on one unit collide on anything shorter.
+carries the unit *and* the agent: `progress-<unit>-<agent>.md`, so *progress-7-schema.md* rather
+than *progress.md* or *progress-7.md*, because two agents on one unit collide on anything shorter.
 Two handoffs at one name is one of them silently overwritten, and whoever picks the thread up reads
-the surviving agent's state as though it were both.
+the surviving agent's state as though it were both. The three example names are in italics and not
+in backticks on purpose: a backticked `*.md` path is a **citation**, and `{{checker.path}}`'s A1
+holds every one of them to resolving. An example filename is a form, not a file.
 
 Add the line when this file is adopted:
 

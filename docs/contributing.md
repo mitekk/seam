@@ -26,6 +26,9 @@ layer **cites** a higher one and never restates it.
 |---|---|---|---|
 | `docs/contributing.md` | 2 Current | How work on seam is done, and this table's host file | `claude plugin validate --strict .` |
 | `docs/taxonomy.md` | 2 Current | The domain labels, the three priorities, and the milestones | `scripts/bootstrap-tracker.sh` |
+| `docs/building.md` | 2 Current | The start contract, the finish contract, the test-first rule, and the proportionality rule with its three sizes |  |
+| `docs/context.md` | 2 Current | The threshold table, what triggers a level, the dispatch rule, and where a session's own artifacts live |  |
+| `docs/routing.md` | 2 Current | The model and effort pinned per artifact, and this repo's agent shape |  |
 | `docs/decisions.md` | 3 Decisions | What was chosen, the options rejected, and why — plus in-flight rulings and direction corrections |  |
 | `docs/superpowers/specs/*.md` | 5 Seam | Nothing — dated design documents. Superseded wholesale; a design that changes is rewritten or replaced, never amended into agreement with what shipped |  |
 | `docs/superpowers/plans/*.md` | 5 Seam | Nothing — implementation plans. Superseded wholesale; a plan whose shape changes is rewritten, never amended into agreement with what shipped |  |

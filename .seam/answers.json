@@ -46,6 +46,27 @@
       "create": false
     },
     {
+      "path": "docs/building.md",
+      "layer": 2,
+      "owns": "The start contract, the finish contract, the test-first rule, and the proportionality rule with its three sizes",
+      "enforces": "",
+      "create": true
+    },
+    {
+      "path": "docs/context.md",
+      "layer": 2,
+      "owns": "The threshold table, what triggers a level, the dispatch rule, and where a session's own artifacts live",
+      "enforces": "",
+      "create": true
+    },
+    {
+      "path": "docs/routing.md",
+      "layer": 2,
+      "owns": "The model and effort pinned per artifact, and this repo's agent shape",
+      "enforces": "",
+      "create": true
+    },
+    {
       "path": "docs/decisions.md",
       "layer": 3,
       "owns": "What was chosen, the options rejected, and why \u2014 plus in-flight rulings and direction corrections",
@@ -119,10 +140,6 @@
           "reason": "a filename form: skills/<name>/SKILL.md. Every real one is cited with its directory and resolves"
         },
         {
-          "path": "docs/routing.md",
-          "reason": "a doc an ADOPTING repo has, named in prose about what the templates produce \u2014 not a file in this repo. Same class as CLAUDE.md above"
-        },
-        {
           "path": "prompt.md",
           "reason": "the filename inside an eval case directory, cited as a form. Every real one is at evals/<case>/prompt.md and resolves"
         }
@@ -155,9 +172,6 @@
     },
     "A13": {
       "enabled": true
-    },
-    "A14": {
-      "enabled": false
     }
   },
   "baseline": {

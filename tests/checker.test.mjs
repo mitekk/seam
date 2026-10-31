@@ -1950,3 +1950,79 @@ test("an empty allow list is not a finding", () => {
   assert.deepEqual(r.findings, []);
   rm(dir);
 });
+
+test("a section heading inside a fenced block is not that section", () => {
+  // A doc that QUOTES a section — a plan template shown inside a ```markdown fence, which is how
+  // both of this repo's own layer-5 docs introduce `§ The units` — had its quoted heading read as
+  // the real one, so A14 measured the placeholder row in the example instead of the units table
+  // below it. Shared by A3, A5, A8 and A14, all of which find a section the same way.
+  const quoted = [
+    "```markdown",
+    "## The units",
+    "",
+    "| # | Unit | Proves it | Done when |",
+    "|---|---|---|---|",
+    "| 1 | <what this unit makes true> | `<path to the test>` | <what makes it done> |",
+    "```",
+    "",
+    "## The units",
+  ].join("\n");
+  const { dir } = fixture({ mutate: ({ edit }) =>
+    edit("docs/plans/first.md", "## The units", quoted) });
+  const r = both(dir);
+  assert.equal(r.status, 0, `the quoted example was read as the section:\n${r.py.stdout}${r.py.stderr}`);
+  assert.deepEqual(r.findings, []);
+  rm(dir);
+});
+
+test("a table row inside a fenced block is not a row", () => {
+  // The other half of the same defect. A14 and A8 read their rows off the section body, and a
+  // quoted table — a plan showing the template it was written from — put a placeholder row in
+  // that body. Measured on this repo's own plan: `§ The units` reported "unit 1 has no test path"
+  // from a ```markdown example eighty lines below the real table.
+  const units = [
+    "| 1 | seed the hive table | `spec/hives.check.mjs` | the seed rows load and the count is stated |",
+    "",
+    "The template this came from:",
+    "",
+    "```markdown",
+    "| # | Unit | Proves it | Done when |",
+    "|---|---|---|---|",
+    "| 1 | <what this unit makes true> | `<path to the test>` | <what makes it done> |",
+    "```",
+  ].join("\n");
+  // A8's side of the same helper: a quoted issues row naming the issue the OTHER plan owns would
+  // otherwise read as a second owner for #5.
+  const issues = [
+    "| 1 | #4 seed the database | — | nothing reads before something writes |",
+    "",
+    "```markdown",
+    "| 1 | #5 render the week | #4 | the week reads what the seed wrote |",
+    "```",
+  ].join("\n");
+  const { dir } = fixture({ mutate: ({ edit }) => {
+    edit("docs/plans/first.md",
+      "| 1 | seed the hive table | `spec/hives.check.mjs` | the seed rows load and the count is stated |",
+      units);
+    edit("docs/plans/first.md",
+      "| 1 | #4 seed the database | — | nothing reads before something writes |", issues);
+  } });
+  const r = both(dir);
+  assert.equal(r.status, 0, `a quoted row was read as a row:\n${r.py.stdout}${r.py.stderr}`);
+  assert.deepEqual(r.findings, []);
+  rm(dir);
+
+  // And the same rows, unfenced, ARE read — so the pass above is the fence being honoured and
+  // not the rows being invisible for some other reason.
+  const { dir: bare } = fixture({ mutate: ({ dir: d, edit }) => {
+    edit("docs/plans/first.md",
+      "| 1 | seed the hive table | `spec/hives.check.mjs` | the seed rows load and the count is stated |",
+      units.replaceAll("```markdown\n", "").replaceAll("\n```", ""));
+    edit("docs/plans/first.md",
+      "| 1 | #4 seed the database | — | nothing reads before something writes |",
+      issues.replaceAll("```markdown\n", "").replaceAll("\n```", ""));
+  } });
+  const bareR = both(bare);
+  assert.deepEqual(ids(bareR.findings), ["A14", "A8"].sort(), bareR.findings.join("\n"));
+  rm(bare);
+});

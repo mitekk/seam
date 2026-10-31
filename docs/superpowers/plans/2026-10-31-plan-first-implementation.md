@@ -34,7 +34,36 @@ Five things the spec implies, that no task below would otherwise exercise, most 
 4. **A unit whose `Proves it` names a test file that exists but asserts nothing** — a shape check that passes on an empty test is a check with no teeth. Task 1 owns this test.
 5. **A template no interview question proposes, so nothing ever writes it.** Measured on `docs/routing.md`, which has shipped in that state. Task 8 owns the test, and it asserts the **class** — every named layer-2 template has a question — not just the one instance.
 
+## The units
+
+A unit is the smallest piece of work that carries its own test. It is **not** an issue — planning
+something is not filing it — so a unit needs no issue number. The eleven tasks below are this
+plan's units, and A14 reads this table: each row names a test that exists and asserts something.
+
+**Three of them are procedural**, and their proof is not a unit test of a function: units 5 and 9
+change skill prose, and unit 10 writes eval cases. Each still names a **deterministic** test of
+its own output — `tests/prescribed.test.mjs` performs the dispositions' prescribed actions in both
+ADR formats, and `tests/evals.test.mjs` reads every eval case's shape — rather than naming the
+eval run, which costs a model call and asserts nothing locally.
+
+| # | Unit | Proves it | Done when |
+|---|---|---|---|
+| 1 | A plan's `§ The units` has a shape, and A14 reads it: every unit names a test that exists and asserts something | `tests/checker.test.mjs` | the four planted drifts each report A14 and nothing else, in both languages |
+| 2 | A15 reads git history and holds an added implementation file to arriving with or after a test | `tests/checker.test.mjs` | the five A15 fixtures pass, not-applicable on the default branch included |
+| 3 | seam has a layer-3 track, and A12 holds a single dated file to a prefix rather than to byte-equality | `tests/checker.test.mjs` | an append passes, an edit to an existing entry fails, a MADR record still needs byte-equality |
+| 4 | `docs/building.md` exists as a template, and `seam-build` follows it without restating it | `tests/seam-init.test.mjs` | a layer-2 row named building.md gets the build template, with both contracts in it |
+| 5 | A follow-up's disposition is decided by who owns the change rather than by its size, and the reversal is recorded | `tests/prescribed.test.mjs` | every disposition's prescribed artifact — ledger row, issue body, the recorded reversal — leaves the checker green in both ADR formats |
+| 6 | Exactly one milestone is active, as a boolean the qualifier's third clause can read | `tests/seam-init.test.mjs` | two active rows and none active are both refused, naming `milestones[N].active` |
+| 7 | `docs/context.md` exists as a template, and `seam-context` follows it | `tests/seam-init.test.mjs` | a layer-2 row named context.md gets the context template, with four levels and both dispatch reasons |
+| 8 | Every named layer-2 template is proposed by an interview question, so nothing ships unwritable | `tests/seam-init.test.mjs` | the class assertion passes for all five named templates, not just routing.md |
+| 9 | `seam-github` carries the merge sequence, the teardown as its last step, and the owned-row invariant | `tests/seam-init.test.mjs` | every key path the skill reads resolves against a projected config, and § Teardown's steps are in a performable order |
+| 10 | The three new procedural rules have eval cases that load and can fail | `tests/evals.test.mjs` | every case has a prompt, graders of types the runner has, and a `tool_used: Skill` grader |
+| 11 | seam runs its own new layer, and A16 holds the config to being the projection of its answers file | `tests/checker.test.mjs` | A16's not-made cases and its two mismatch cases pass in both languages, and seam's own checker is green on its own tree |
+
+
 ---
+
+## The tasks, in the order they are built
 
 ### Task 1: `§ The units`, and A14 — the units table has the shape it claims
 
