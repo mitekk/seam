@@ -21,7 +21,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { join, dirname } from "node:path";
-import { readFileSync, writeFileSync, appendFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, appendFileSync, mkdirSync, rmSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { scratch, rm, write, run } from "./helpers.mjs";
 
@@ -42,6 +42,15 @@ function adopterAnswers(format) {
     artifacts: [],
     docs: [
       { path: "docs/engineering.md", layer: 2, owns: "The stack", enforces: "", create: true },
+      // The five NAMED layer-2 templates. `maximal()` in tests/seam-init.test.mjs renders them
+      // and never runs a checker; `adopter()` ran a checker and rendered only the generic
+      // `current/doc.md`. So "a shipped template that reds A1 on an adopter's day one" — the
+      // class of two defects this task fixed — was untested for exactly these five.
+      { path: "docs/building.md", layer: 2, owns: "The start and finish contracts", enforces: "", create: true },
+      { path: "docs/context.md", layer: 2, owns: "The context thresholds and the dispatch rule", enforces: "", create: true },
+      { path: "docs/routing.md", layer: 2, owns: "Model and effort per artifact", enforces: "", create: true },
+      { path: "docs/taxonomy.md", layer: 2, owns: "The domains, the priorities and the milestones", enforces: "", create: true },
+      { path: "docs/reviewing.md", layer: 2, owns: "The review level and the rounds", enforces: "", create: true },
       format === "madr"
         ? { path: "docs/adr/*.md", layer: 3, owns: "What was chosen, and why", enforces: "", create: true }
         : { path: "docs/decisions.md", layer: 3, owns: "What was chosen, and why", enforces: "", create: true },
@@ -138,6 +147,34 @@ The repo now does the thing above.
 - **Enforced by:** nothing, yet.
 `;
 
+const ISSUE_BODY = "The list shows every hive in the apiary.\n\n"
+  + "**Context** — `docs/plans/first.md` § The issues\n\n"
+  + "### Acceptance criteria\n- [ ] the list shows only queenless hives\n";
+
+/**
+ * `seam-github` § Issues: the body is written to a file and passed with `--body-file`, because an
+ * inline body mangles on shell quoting. **Where** it goes is the part that carries weight: it is
+ * a scratch file and not a document, so it goes outside the tree.
+ *
+ * The first version of this step only wrote it outside, which made the checker's result identical
+ * before and after by construction — a prescribed action that could not fail, inside the test
+ * written to close that class. So the row under `docs/` is asserted to red A10 first: that is the
+ * reason the prescription puts it somewhere else, and now it is measured rather than commented.
+ */
+function openTheIssue(dir, outside) {
+  write(dir, "docs/issue-12.md", ISSUE_BODY);
+  for (const language of ["python", "node"]) {
+    const r = checkerRun(dir, language);
+    assert.equal(r.status, 1,
+      `${language}: an issue body written under docs/ left the checker green, so nothing holds a`
+      + ` document there to having a row:\n${r.out}`);
+    assert.match(r.out, /A10/, r.out);
+    assert.match(r.out, /docs\/issue-12\.md/, r.out);
+  }
+  rmSync(join(dir, "docs", "issue-12.md"));
+  write(outside, "issue-12.md", ISSUE_BODY);
+}
+
 /** The actions, per format, each performed the way the templates and the skills instruct. */
 const PRESCRIBED = {
   madr: [
@@ -164,16 +201,7 @@ const PRESCRIBED = {
       appendFileSync(join(dir, "docs/findings-ledger.md"),
         `| ${TODAY} | \`hives\` | CI installs dependencies twice, about forty seconds a run. |\n`);
     }],
-    ["open the issue a disposition calls for", (dir, outside) => {
-      // `seam-github` § Issues: the body is written to a file and passed with `--body-file`,
-      // because an inline body mangles on shell quoting. The file is a scratch file and not a
-      // document, so it goes outside the tree — written under `docs/` it would red A10, which
-      // has no row for it and no layer to give it.
-      write(outside, "issue-12.md",
-        "The list shows every hive in the apiary.\n\n"
-        + "**Context** — `docs/plans/first.md` § The issues\n\n"
-        + "### Acceptance criteria\n- [ ] the list shows only queenless hives\n");
-    }],
+    ["open the issue a disposition calls for", openTheIssue],
   ],
   single: [
     ["write a ruling", (dir) => {
@@ -216,12 +244,7 @@ R-001 held while the queue had one consumer. It has three now.
       appendFileSync(join(dir, "docs/findings-ledger.md"),
         `| ${TODAY} | \`hives\` | CI installs dependencies twice, about forty seconds a run. |\n`);
     }],
-    ["open the issue a disposition calls for", (dir, outside) => {
-      write(outside, "issue-12.md",
-        "The list shows every hive in the apiary.\n\n"
-        + "**Context** — `docs/plans/first.md` § The issues\n\n"
-        + "### Acceptance criteria\n- [ ] the list shows only queenless hives\n");
-    }],
+    ["open the issue a disposition calls for", openTheIssue],
   ],
 };
 
