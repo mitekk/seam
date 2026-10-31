@@ -365,8 +365,9 @@ be early, so the walk goes on past it only to follow a file still outstanding th
 A path matching both lists is a test. Only an added file counts: a modification of an
 implementation file is not an arrival, and neither is a rename or a copy, so moving code does not
 make it new. A rename is not a delete either: a file added with no test and then renamed is
-reported under its new name, as long as the new name still matches `impl_globs` (a file renamed out
-of the implementation paths is no longer an implementation file). A file added with no test,
+reported under its new name, as long as the new name still matches `impl_globs` and not `test_globs`
+(a file renamed out of the implementation paths, or into a path that matches both lists, is no
+longer an implementation file). A file added with no test,
 removed, and added again is reported once. Renames are detected with `-M -l32767`, so a repo's
 `diff.renameLimit` cannot turn a batch of renames back into new files.
 

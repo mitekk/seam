@@ -1321,12 +1321,13 @@ def main() -> int:
                         added.append(toks[i + 1])
                     i += 2
                 # A rename is not a delete: an outstanding file is still in the tree under its
-                # new name, as long as that name is still an implementation path.
+                # new name, as long as that name is still an implementation path, and not a test
+                # one: a path matching both lists is a test, as it is where a file is added.
                 for old, new in moved:
                     if old not in late:
                         continue
                     late.remove(old)
-                    if is_impl(new) and new not in late:
+                    if is_impl(new) and not is_test(new) and new not in late:
                         late.append(new)
                 if seen_test:
                     continue

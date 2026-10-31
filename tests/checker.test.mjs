@@ -1346,6 +1346,29 @@ test("A15 follows an untested implementation file through a rename", () => {
   assert.equal(o.status, 0, o.py.stdout + o.py.stderr);
   assert.deepEqual(o.findings, []);
   rm(out.dir);
+
+  // Nor is one renamed into a path that matches both lists: a path matching both is a test, the
+  // same rule the add path follows.
+  const overlap = { impl_globs: ["src/**/*.ts"], test_globs: ["src/**/*.test.ts"] };
+  const both_ = a15Repo([{ "src/a.ts": body }, rename("src/a.ts", "src/a.test.ts")], { a15: overlap });
+  const b = both(both_.dir);
+  assert.equal(b.status, 0, b.py.stdout + b.py.stderr);
+  assert.deepEqual(b.findings, []);
+  rm(both_.dir);
+});
+
+test("A15 does not flag a file that arrives after a test, however long the walk goes on", () => {
+  // The walk continues past the first test while an earlier file is outstanding, so that it can
+  // follow it through a rename. What arrives after the test must not be read as early.
+  const { dir } = a15Repo([
+    { "src/early.ts": IMPL },
+    { "tests/a.test.ts": TEST },
+    { "src/later.ts": IMPL },
+  ]);
+  const r = both(dir);
+  assert.equal(r.status, 1, r.py.stdout + r.py.stderr);
+  assert.deepEqual(r.findings.map((l) => l.split(" ")[0]), ["src/early.ts:1:"], r.findings.join("\n"));
+  rm(dir);
 });
 
 test("A15 reads a commit's modify, rename and add entries without losing its place", () => {

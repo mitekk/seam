@@ -1285,12 +1285,13 @@ async function main() {
           i += 2;
         }
         // A rename is not a delete: an outstanding file is still in the tree under its new name,
-        // as long as that name is still an implementation path.
+        // as long as that name is still an implementation path, and not a test one: a path
+        // matching both lists is a test, as it is where a file is added.
         for (const [from, to] of moved) {
           const k = late.indexOf(from);
           if (k < 0) continue;
           late.splice(k, 1);
-          if (isImpl(to) && !late.includes(to)) late.push(to);
+          if (isImpl(to) && !isTest(to) && !late.includes(to)) late.push(to);
         }
         if (seenTest) continue;
         // Tests are checked before implementations, so a file matching both lists is a test:
