@@ -664,7 +664,12 @@ def main() -> int:
     # A glob is not a citation of a file and is skipped.
     if on("A1"):
         ran += 1
-        allowed = {e["path"] for e in opt("A1", "allow", [])}
+        allow_list = opt("A1", "allow", [])
+        allowed = {e["path"] for e in allow_list}
+        # Which entries actually suppressed a finding. An allow entry means "this will never be
+        # fixed", so one that stopped doing work is a decision about nothing — and worse, it goes
+        # on skipping its path, so a citation that starts dangling again is skipped with it.
+        used_allow: set[str] = set()
         # A doc that describes work NOT YET DONE cites files as intentions, not as claims about
         # the tree: an implementation plan names what it is about to create. Those citations are
         # neither debt (a baseline means "not yet" and they evaporate on landing) nor approvals
@@ -674,13 +679,38 @@ def main() -> int:
             if any(rx.match(d) for rx in intent):
                 continue
             for cited, at in md_citations(ROOT, d, text_of[d]):
-                if "*" in cited or cited in allowed:
+                if "*" in cited:
+                    continue
+                if cited in allowed:
+                    # Only a citation that WOULD have been reported earns the entry its place: one
+                    # that resolves needs no exemption.
+                    if resolve_md(ROOT, d, cited) is None:
+                        used_allow.add(cited)
                     continue
                 if resolve_md(ROOT, d, cited) is None:
                     findings.append(finding(
                         "A1", d, line_of(text_of[d], at), cited,
                         f"cites `{cited}`, which is not in the repo — fix or drop the citation, "
                         f"or add it to assertions.A1.allow with a reason"))
+        # An empty allow-list is not a finding: nothing is exempted, so nothing stopped doing
+        # work.
+        for e in allow_list:
+            path = str(e.get("path", ""))
+            if path in used_allow:
+                continue
+            if "*" in path:
+                why = ("a glob, which A1 never consults — a cited path containing `*` names a "
+                       "form and is skipped before the allow-list is read, so this entry can "
+                       "exempt nothing")
+            elif (ROOT / path).exists():
+                why = "now in the repo, so every citation of it resolves and needs no exemption"
+            else:
+                why = "cited nowhere A1 reads, or cited only where every citation of it resolves"
+            findings.append(finding("A1", CONFIG_PATH, 1, path,
+                f"assertions.A1.allow exempts `{path}`, which is {why}. The entry suppressed "
+                f"nothing on this run, and an allow entry means \"this will never be fixed\" — so "
+                f"it is a decision about nothing, and it will go on skipping that path if it "
+                f"starts dangling again. Delete it and let A1 answer for the path"))
 
     # ── A2. Every `§ Section` citation names a heading that exists. ──────────
     #

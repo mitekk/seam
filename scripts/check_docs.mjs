@@ -597,7 +597,12 @@ async function main() {
   // ── A1. Every `*.md` path cited in backticks resolves. ───────────────────
   if (on("A1")) {
     ran += 1;
-    const allowed = new Set((opt("A1", "allow", [])).map((e) => e.path));
+    const allowList = opt("A1", "allow", []);
+    const allowed = new Set(allowList.map((e) => e.path));
+    // Which entries actually suppressed a finding. An allow entry means "this will never be
+    // fixed", so one that stopped doing work is a decision about nothing — and worse, it goes on
+    // skipping its path, so a citation that starts dangling again is skipped with it.
+    const usedAllow = new Set();
     // A doc that describes work NOT YET DONE cites files as intentions, not as claims about the
     // tree: an implementation plan names what it is about to create. Those citations are neither
     // debt (a baseline means "not yet" and they evaporate on landing) nor approvals (an
@@ -606,13 +611,35 @@ async function main() {
     for (const d of docs) {
       if (intent.some((rx) => rx.test(d))) continue;
       for (const [cited, at] of mdCitations(ROOT, d, textOf[d])) {
-        if (cited.includes("*") || allowed.has(cited)) continue;
+        if (cited.includes("*")) continue;
+        if (allowed.has(cited)) {
+          // Only a citation that WOULD have been reported earns the entry its place: one that
+          // resolves needs no exemption.
+          if (resolveMd(ROOT, d, cited) === null) usedAllow.add(cited);
+          continue;
+        }
         if (resolveMd(ROOT, d, cited) === null) {
           findings.push(finding("A1", d, lineOf(textOf[d], at), cited,
             `cites \`${cited}\`, which is not in the repo — fix or drop the citation, or add it `
             + `to assertions.A1.allow with a reason`));
         }
       }
+    }
+    // An empty allow-list is not a finding: nothing is exempted, so nothing stopped doing work.
+    for (const e of allowList) {
+      const p = String(e?.path ?? "");
+      if (usedAllow.has(p)) continue;
+      const why = p.includes("*")
+        ? "a glob, which A1 never consults — a cited path containing `*` names a form and is "
+          + "skipped before the allow-list is read, so this entry can exempt nothing"
+        : existsSync(join(ROOT, p))
+          ? "now in the repo, so every citation of it resolves and needs no exemption"
+          : "cited nowhere A1 reads, or cited only where every citation of it resolves";
+      findings.push(finding("A1", CONFIG_PATH, 1, p,
+        `assertions.A1.allow exempts \`${p}\`, which is ${why}. The entry suppressed nothing on `
+        + `this run, and an allow entry means "this will never be fixed" — so it is a decision `
+        + `about nothing, and it will go on skipping that path if it starts dangling again. `
+        + `Delete it and let A1 answer for the path`));
     }
   }
 

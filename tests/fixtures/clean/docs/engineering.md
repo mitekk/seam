@@ -27,3 +27,8 @@ thriving
 ## Queue
 
 A plain table. The rationale is in `docs/adr/*.md` — this file cites it rather than restating it.
+
+## Generated files
+
+`AGENTS.md` is written by the build and is not in the tree, which is why `.seam/config.json`
+exempts it from A1 with a reason rather than carrying it as a baseline entry.

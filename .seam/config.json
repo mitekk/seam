@@ -98,10 +98,6 @@
           "reason": "a filename form: skills/<name>/SKILL.md. Every real one is cited with its directory and resolves"
         },
         {
-          "path": "docs/building.md",
-          "reason": "a doc an ADOPTING repo has, named in prose about what the templates produce — not a file in this repo. Same class as CLAUDE.md above"
-        },
-        {
           "path": "docs/routing.md",
           "reason": "a doc an ADOPTING repo has, named in prose about what the templates produce — not a file in this repo. Same class as CLAUDE.md above"
         },

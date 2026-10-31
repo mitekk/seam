@@ -39,6 +39,27 @@ beside the citing file.
 Needs: `assertions.A1.allow`, a list of `{path, reason}`. A reason is required: an entry means
 "this file is absent on purpose and the sentence is about its absence".
 
+**An allow entry that suppressed nothing on the run is a finding**, at `.seam/config.json:1` with
+the entry's path as its text. The checker already refused an entry with no reason; nothing checked
+that the entry was still *needed*, so the exemption machinery — the one mechanism whose whole job
+is to be the narrow, reasoned exception — passed without making its comparison. Three ways an
+entry stops doing work, and the finding says which:
+
+- **the path is now in the repo**, so every citation of it resolves and needs no exemption;
+- **nothing A1 reads cites it any more** — the citation was deleted or renamed, or it is cited only
+  from files A1 does not scan (`skills/`, `evals/`) or only from a doc an `intent_glob` exempts;
+- **the path is a glob**, which A1 never consults at all: a cited path containing `*` names a form
+  and is skipped before the allow-list is read, so such an entry can exempt nothing by
+  construction.
+
+Why "suppressed nothing" rather than "the path resolves": it subsumes it, and it gives the
+allow-list the property the baseline already has, where an entry whose line no longer matches drops
+out by itself. Without it an obsolete entry **goes on skipping its path**, so a citation that starts
+dangling again is skipped with it and A1 stays green over a real defect.
+
+An **empty** allow-list is not a finding. Nothing is exempted, so nothing stopped doing work, and a
+repo with no exemptions is the normal case — this is not the "off is not passing" shape.
+
 Does not reach:
 
 - **Any path that is not markdown.** Widening it to every backticked path turns every shell
@@ -536,6 +557,9 @@ Both are exit 2, and both exist because the alternative is a check that looks li
 - **An allow-list entry with no reason.** An entry means "this will never be fixed", and the
   method says it requires a written reason. Nothing read the field until this refusal existed,
   which made the requirement a sentence.
+
+An entry that is no longer *needed* is not a refusal: it is an ordinary A1 finding, because it is
+about the tree rather than about the config being readable. See § A1.
 
 ## Repo-invented assertions
 
