@@ -7,7 +7,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { join } from "node:path";
-import { scratch, rm, write, read, has, run, answers } from "./helpers.mjs";
+import { readFileSync } from "node:fs";
+import { scratch, rm, write, read, has, run, answers, REPO } from "./helpers.mjs";
 
 /** Write an answers file into a fresh scratch repo and run the wizard against it. */
 function init(ans, extraArgs = [], seed = () => {}) {
@@ -348,6 +349,53 @@ test("a layer-2 row named routing.md gets the routing template", () => {
   assert.match(t, /This table is the only copy/);
   assert.match(t, /review depth, not model effort/i);
   rm(dir);
+});
+
+test("a layer-2 row named building.md gets the build template", () => {
+  const ans = answers();
+  ans.docs.push({
+    path: "docs/building.md",
+    layer: 2,
+    owns: "How a unit of work is started, finished and proved",
+    enforces: "",
+    create: true,
+  });
+  const { dir, r } = init(ans);
+  assert.equal(r.status, 0, r.stderr);
+  const t = read(dir, "docs/building.md");
+  // The doc is hard-wrapped, so a phrase can break across a line; match on the flattened text.
+  const flat = t.replace(/\s+/g, " ");
+  assert.match(t, /Layer 2/);
+  assert.match(t, /amend in place/i);
+  // The two contracts, by name, and the one principle they serve.
+  assert.match(flat, /start contract/i);
+  assert.match(flat, /finish contract/i);
+  assert.match(flat, /The written unit comes before the work, and nothing stops for permission/);
+  // The finish contract's four clauses: the named test, the expectations, the rulings, Done when.
+  assert.match(flat, /named test ran and its output was read/i);
+  assert.match(flat, /every stated expectation was compared against real output/i);
+  assert.match(flat, /every deviation has a written ruling/i);
+  assert.match(t, /`Done when`/);
+  // TDD is how a unit becomes code, and a model call is the one exemption: what is written first
+  // there is the deterministic contract around it.
+  assert.match(flat, /no failing test for/i);
+  assert.match(flat, /deterministic contract/i);
+  // Ceremony scales: a Small change inside an existing unit pays nothing.
+  assert.match(flat, /no new unit, no DoD and no ruling/i);
+  // A review finding is about the unit under review's output, so that unit already owns the fix.
+  assert.match(flat, /unit under review/i);
+  // The checker's path reached it from the config rather than being hardcoded.
+  assert.ok(t.includes("scripts/check_docs.py"), "the checker path did not substitute");
+  assert.ok(!/\{\{[\w.]+\}\}/.test(t), "an unrendered placeholder is left in the doc");
+  rm(dir);
+});
+
+test("the interview proposes building.md, and § Defaults records it as proposed by default", () => {
+  const md = readFileSync(join(REPO, "skills/seam-docs/references/interview.md"), "utf8");
+  assert.ok(md.includes("docs/building.md"), "no interview question names docs/building.md");
+  const defaults = md.slice(md.indexOf("### Defaults the program fills"));
+  assert.match(defaults, /\|[^|\n]*building\.md[^|\n]*\|[^|\n]*proposed[^|\n]*\|/i,
+    "§ Defaults has no row recording that building.md is proposed by default");
 });
 
 test("a glob row with matching files is not reported missing; one with none is", () => {
