@@ -18,11 +18,12 @@ anyway.
 | `wizard-interview` | the **questions asked**, and that nothing was written before the interview finished |
 | `wizard-adopt` | the **layer classification**, the overlap, the layer violation, and that it stayed a proposal |
 | `github-issue-shape` | domain, priority, milestone, the Context citation, externally checkable criteria, `--body-file` |
-| `github-pr-shape` | the five dispositions, on a case built so that size and the qualifier give different answers |
+| `github-pr-shape` | five follow-up items, on a case built so that size and the qualifier give different answers |
 | `github-size-citation` | the repo's **own** `docs/building.md` winning as the size vocabulary — `Migration`, a size no template has |
 | `github-gate` | the refusal: push and merge gated, the commit's review precondition, and the two kept apart |
 | `github-merge` | the sequence: squash by default, an OK that has seen the method and what it closes, teardown as a step |
 | `github-merge-no-command` | the same with `teardown_command` empty: the remaining steps are the whole of it, and none is invented |
+| `github-merge-gate` | the gate alone, on a prompt that asks for no plan: no merge command is run, and the OK's contents are shown first |
 | `review-level` | the level for seven diffs, against the condition table |
 | `review-rounds` | the bound, the named third-round trigger, and that a third round is recommended rather than run |
 | `build-start-contract` | no unit owns the work: the row written, written *before* the source changes, and nothing stopping to ask |
@@ -73,6 +74,34 @@ so the only finish contract is the plan's 'Done when' column."* That is the same
 fixed for the size vocabulary, in the other skill, so the fixture keeps its `docs/building.md` and
 the finding is written up rather than papered over.
 
+### Which cases the plugin actually changes
+
+`--ablation with-without` is the number worth reading, and measured over the runs stated it sorts
+this suite into cases that earn their keep and cases that are regression guards:
+
+| Case | with | without | Δ | runs |
+|---|---|---|---|---|
+| `github-merge` | 1.00 | 0.00 | **+1.00** | 2 |
+| `build-start-contract` | 1.00 | 0.33 | **+0.67** | 2 |
+| `context-level` | 1.00 | 0.56 | **+0.44** | 6 |
+| `github-merge-no-command` | 1.00 | 1.00 | 0.00 | 2 |
+| `build-finish-contract` | 0.52 | 0.68 | −0.16 | 10 |
+
+**What separates them is whether the prompt quotes the doc that answers the question.** A fixture
+has to be inline here, and a quoted doc is in the model's context before any skill loads — so a
+case whose answer is in its own fixture cannot show a delta, however good the grader.
+`github-merge`, whose method is only in `SKILL.md`, carries the largest one.
+
+**The way out, where there is one, is to ask something the fixture cannot answer.**
+`context-level` went from Δ 0.00 to Δ +0.44 on one added clause: its fixture `docs/context.md`
+says nothing about *when* to read the level again, so the four moments — before a dispatch, when a
+verbose result lands, at a phase boundary, and when a tool result is not what was expected — are
+the skill's or they are a guess. The same technique applied to `build-finish-contract` did **not**
+move its delta, which is why that case is documented as a guard and its cause routed rather than
+patched. A Δ at or below zero is a case to re-read, not a case to delete: `build-finish-contract`
+reds when a response reaches "not done" through the plan's `Done when` alone, and that is worth
+catching whether or not the base model would have managed the rest.
+
 **What the inline fixture costs, and it is not nothing.** A fixture the prompt quotes is in the
 model's context before a single file is read, so **no grader here can prove a file was read rather
 than remembered**. `tool_used` with `input_match` would prove it, but a run that answers from the
@@ -96,7 +125,8 @@ validating anything**, so a grader with an invalid `type:` passes it. Cases are 
 `--case` filter, so the cheap check is a filtered run with a cost ceiling:
 
 ```bash
-claude plugin eval . --case '*' --trust-plugin --no-publish --ablation none --max-cost-usd 0.0001
+claude plugin eval . --case '*' --trust-plugin --no-publish --ablation none \
+  --max-cost-usd 0.0001 --allow-tools Write Edit Bash
 ```
 
 Every matched case is loaded and pre-flighted before the first run launches, the ceiling stops it

@@ -34,6 +34,11 @@ work went on**; here the work stops and the defect gets fixed, so no deviation i
 and no ruling is owed. A response that says clause 3 needs nothing has read it correctly, and one
 that writes a ruling anyway is ceremony above the size — neither is a miss.
 
+5. **The count bug is not a follow-up to file.** It is a defect in **unit 2's own output**, so
+   unit 2 owns the fix: no new plan row, no issue, no ledger row. Work the branch is doing does
+   not go to the board. This repo's `docs/building.md` carries only § The finish contract, so
+   nothing in the prompt answers this — it is the method's own rule or it is a guess.
+
 Going on to fix the implementation, re-run the test green, and *then* say unit 2 is done is
 **correct and not a miss** — all four clauses hold at that point.
 
@@ -44,4 +49,5 @@ is `docs/building.md`'s, and one invented per session is what that doc exists to
 FAIL if it ticks unit 2 off on the message alone. FAIL if it calls the unit done after fixing the
 implementation without re-running the test. FAIL if it asks whether to run the test instead of
 running it — nothing in this method waits for permission to read an output. FAIL if it treats the
-implementation's brevity as satisfying any clause.
+implementation's brevity as satisfying any clause. FAIL if it files the count bug, or opens a
+ledger row for it, rather than fixing it under the unit that produced it.

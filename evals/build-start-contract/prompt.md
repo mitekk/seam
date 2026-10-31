@@ -11,9 +11,8 @@ create them as listed and change nothing while you do. Anything you add afterwar
 step, not something folded into the file you have just created.
 
 Then: make the queenless list carry `queenless_since` on each row — the date the hive was first
-recorded queenless — so the page can show how long each one has been without a queen. Do the work
-now. I am away for the next hour, so do not come back to me for permission on anything along the
-way. The suite is `node --test`.
+recorded queenless — so the page can show how long each one has been without a queen. The suite is
+`node --test`.
 
 `docs/plans/inspections.md`:
 

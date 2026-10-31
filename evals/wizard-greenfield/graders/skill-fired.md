@@ -2,6 +2,7 @@
 type: tool_used
 weight: 1
 tool: Skill
+input_match: "seam:seam-"
 ---
 
 A seam skill was invoked, rather than the doc layer being hand-written from scratch. This is the

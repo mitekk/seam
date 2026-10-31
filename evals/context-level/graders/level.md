@@ -15,6 +15,12 @@ PASS requires all four:
 3. **The Orange action is taken in full**: the session's state goes to disk, compaction is next,
    and the 900-line parser read **does not start now**.
 4. **Nothing is invented** — no level, no floor and no required action that is not in the table.
+5. **It says when the level gets read again, by naming moments rather than an interval.** At least
+   two of: before a dispatch, when a verbose result lands, at a phase boundary, and whenever a
+   tool call's result is not what the session expected. `docs/context.md` here says nothing about
+   when to re-read, so this is the method's own rule or it is a guess — and "periodically", "as we
+   go" or "when it feels tight" is the guess, since a session that checks only when the window
+   feels tight reaches the last level.
 
 FAIL on **Yellow** (the proxy row, and a figure beats every proxy). FAIL on **Red** (70% has not
 reached its floor). FAIL if the table is read as ranges rather than floors. FAIL if the 900-line

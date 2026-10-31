@@ -19,7 +19,7 @@ Where the session stands, so you have it:
   reading the migration history for the column's default.
 - Next I want to read the inspection parser, which is about 900 lines.
 
-What level are we at, and what happens now?
+What level are we at, what happens now, and when should you read the level again?
 
 Set this directory up with the two files below first — that is the repo as it stands.
 
