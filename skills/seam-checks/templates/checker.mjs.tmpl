@@ -329,17 +329,24 @@ const frozenRecord = (path) => !NOT_A_RECORD.has(basename(path));
 // for a reversal is that the OLD record gains `superseded by NNNN`, and A13 requires that a
 // superseded record names a successor that exists — both asked of the same bytes, so byte-equality
 // alone made them unsatisfiable the first time a repo reversed a decision. Its substance stays
-// frozen; its status is metadata about supersession. Nothing wider than this one line.
+// frozen; its status is metadata about supersession. Nothing wider than this one line, and not
+// arbitrary content on it either: the new line is a short run of plain characters. No \r inside
+// it, because a markdown renderer shows a lone CR as a line break, so one could smuggle in new
+// paragraphs while the \n line count stayed equal; the single \r that ends a CRLF line is the
+// terminator and is allowed. What a status may SAY is A13's question, so this is one bound and
+// not a vocabulary.
 const STATUS_LINE = /^\*\*Status:\*\*/;
+const STATUS_VALUE = /^\*\*Status:\*\*[A-Za-z0-9_ \t.,;:()'\/#-]{0,120}\r?$/;
 
 /** True when `was` and `now` have the same number of lines and differ only on lines that open
- *  `**Status:**` in BOTH. Compared as bytes (latin1 maps one byte to one char), never as decoded
- *  text, so it cannot read invalid UTF-8 differently from the Python checker. */
+ *  `**Status:**` in `was` and are a short plain `**Status:**` line in `now`. Compared as bytes
+ *  (latin1 maps one byte to one char), never as decoded text, so it cannot read invalid UTF-8
+ *  differently from the Python checker. */
 function differsOnlyInStatusLines(was, now) {
   const a = was.toString("latin1").split("\n");
   const b = now.toString("latin1").split("\n");
   if (a.length !== b.length) return false;
-  return a.every((line, i) => line === b[i] || (STATUS_LINE.test(line) && STATUS_LINE.test(b[i])));
+  return a.every((line, i) => line === b[i] || (STATUS_LINE.test(line) && STATUS_VALUE.test(b[i])));
 }
 
 /** Every `*.md` path this file claims exists, with its offset.
@@ -998,21 +1005,30 @@ async function main() {
     // The same directory and the same test for "a MADR record" that A13 uses.
     const madrDir = adrCfg.format === "madr" ? (adrCfg.dir ?? "docs/adr") : null;
     const frozen = table.filter((r) => r.layer === 3 || r.layer === 4).map((r) => globRe(r.doc));
-    let haveBranch = true;
-    try {
-      execFileSync("git", ["rev-parse", "--verify", branch],
-        { cwd: ROOT, stdio: ["ignore", "ignore", "ignore"] });
-    } catch { haveBranch = false; }
-    if (!haveBranch) {
+    // A local ref first, then the remote-tracking one: a pull request's CI checkout is a detached
+    // HEAD whose only copy of the default branch is `origin/<branch>`, and a checker that needs a
+    // local branch to exist would red every adopting repo on its first pull request.
+    let ref = null;
+    for (const cand of [branch, `origin/${branch}`]) {
+      try {
+        execFileSync("git", ["rev-parse", "--verify", cand],
+          { cwd: ROOT, stdio: ["ignore", "ignore", "ignore"] });
+        ref = cand;
+        break;
+      } catch { /* try the next form */ }
+    }
+    if (ref === null) {
       findings.push(finding("A12", CONFIG_PATH, 1, branch,
-        `no branch called \`${branch}\` — the byte-freeze comparison was not made. Set `
-        + `assertions.A12.default_branch, or switch A12 off; off is distinct from passing`));
+        `no branch called \`${branch}\` and no \`origin/${branch}\` — the byte-freeze comparison `
+        + `was not made. Fetch the branch (in CI, \`fetch-depth: 0\` and the default branch `
+        + `fetched), set assertions.A12.default_branch, or switch A12 off; off is distinct from `
+        + `passing`));
     } else {
       for (const d of docs) {
         if (!frozen.some((rx) => rx.test(d)) || !frozenRecord(d)) continue;
         let was;
         try {
-          was = execFileSync("git", ["show", `${branch}:${d}`],
+          was = execFileSync("git", ["show", `${ref}:${d}`],
             { cwd: ROOT, stdio: ["ignore", "pipe", "ignore"] });
         } catch { continue; }       // not on the branch yet: a new record, which is the point
         const now = readFileSync(join(ROOT, d));
@@ -1021,7 +1037,7 @@ async function main() {
           if (now.length < was.length || !now.subarray(0, was.length).equals(was)) {
             findings.push(finding("A12", d, 1, d,
               `is layer ${layer} (${LAYER_NAMES[layer]}), append-only, and already on `
-              + `\`${branch}\`: what is there must stay, byte for byte, at the top of this file. `
+              + `\`${ref}\`: what is there must stay, byte for byte, at the top of this file. `
               + `An entry was edited, not appended. A reversal is a new dated entry; a correction `
               + `is not available here`));
           }
@@ -1029,7 +1045,7 @@ async function main() {
           const madr = madrDir !== null && d.startsWith(madrDir + "/");
           if (madr && differsOnlyInStatusLines(was, now)) continue;
           findings.push(finding("A12", d, 1, d,
-            `is layer ${layer} (${LAYER_NAMES[layer]}) and already on \`${branch}\`, so its `
+            `is layer ${layer} (${LAYER_NAMES[layer]}) and already on \`${ref}\`, so its `
             + `bytes are final. A reversal is a new entry; a correction is not available here`
             + (madr ? ". Only its **Status:** line may change, to name what superseded it" : "")));
         }

@@ -10,6 +10,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # A12 compares layer 3 against the default branch, which a depth-1 checkout of a pull
+          # request or a feature branch does not have in either form (`master`, `origin/master`).
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22

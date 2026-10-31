@@ -156,7 +156,11 @@ it exempts, in `.seam/config.json`. Two places, two rules, and the difference is
   already exists, `init` prints the job and changes nothing — **so you add it yourself**, or
   assertion A3 reds on the first run with "documented as a check but no CI step runs it". That
   failure is unfinished setup, not baseline material. The byte-freeze also needs the default
-  branch's history, so the checkout step wants `fetch-depth: 0`.
+  branch's history, so the checkout step wants `fetch-depth: 0` — necessary, because a shallow
+  clone has nothing to compare against, but not sufficient by itself: a pull request is checked out
+  as a detached HEAD, where the default branch exists only as `origin/<branch>`. The checker tries
+  `<branch>` and then `origin/<branch>`, so a checkout that fetched the branch in either form
+  works; one that fetched neither reports the comparison as not made, and says so.
 
 On a repo that already has docs it **never rewrites an existing doc's body.** It proposes what each
 file currently owns and which layer it is; reshaping a file is a separate, opt-in step.

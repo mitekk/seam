@@ -467,6 +467,14 @@ for (const [what, extra] of [
   // rewritten to look like one.
   ["a body line rewritten to open with **Status:**",
     ({ edit }) => edit(OLD_RECORD, "The queue is a plain table.", "**Status:** the queue is a plain table.")],
+  // A line that IS a status line may still not carry arbitrary content. A lone CR is a line break
+  // to a markdown renderer, so this reads as new paragraphs while the `\n` line count is equal.
+  ["a carriage return injected into the Status line, which a renderer shows as new paragraphs",
+    ({ edit }) => edit(OLD_RECORD, "**Status:** superseded by 0002",
+      "**Status:** superseded by 0002\r\r## Context\r\rWe changed our minds.")],
+  ["an absurdly long Status value",
+    ({ edit }) => edit(OLD_RECORD, "**Status:** superseded by 0002",
+      `**Status:** superseded by 0002 ${"a".repeat(5000)}`)],
 ]) {
   test(`A12 still fires on ${what}, even beside a legitimate Status flip in the same record`, () => {
     const { dir } = fixture({ mutate: (m) => { supersede(m); extra(m); } });
@@ -479,6 +487,64 @@ for (const [what, extra] of [
   });
 }
 
+// The bound on a Status value is one number, not a vocabulary: A13 already owns what a status may
+// say. Pinned on both sides so it cannot drift, and with punctuation a real status carries.
+/** A Status value (everything after `**Status:**`) of exactly `n` characters, still naming 0002. */
+const statusValue = (n) => " superseded by 0002".padEnd(n, ".");
+
+for (const [n, fires] of [[120, false], [121, true]]) {
+  test(`A12 ${fires ? "fires on" : "allows"} a Status value of ${n} characters`, () => {
+    const { dir } = fixture({
+      mutate: (m) => {
+        supersede(m);
+        m.edit(OLD_RECORD, "**Status:** superseded by 0002", `**Status:**${statusValue(n)}`);
+      },
+    });
+    const r = both(dir);
+    if (fires) {
+      assert.equal(r.status, 1, r.py.stdout + r.py.stderr);
+      assert.deepEqual(ids(r.findings), ["A12"], r.findings.join("\n"));
+    } else {
+      assert.equal(r.status, 0, r.py.stdout + r.py.stderr);
+      assert.deepEqual(r.findings, []);
+    }
+    rm(dir);
+  });
+}
+
+test("A12 allows a Status value with light punctuation", () => {
+  const { dir } = fixture({
+    mutate: (m) => {
+      supersede(m);
+      m.edit(OLD_RECORD, "**Status:** superseded by 0002",
+        "**Status:** superseded by 0002 (see 0002-adopt-a-queue-library.md; 2026-02-01)");
+    },
+  });
+  const r = both(dir);
+  assert.equal(r.status, 0, r.py.stdout + r.py.stderr);
+  assert.deepEqual(r.findings, []);
+  rm(dir);
+});
+
+test("A12 allows the prescribed reversal in a record committed with CRLF line endings", () => {
+  // The \r ban is on a CR INSIDE the line. The one before the \n is the line terminator, and a
+  // repo that commits CRLF would otherwise be refused the reversal the method prescribes.
+  const { dir } = fixture({
+    mutate: (m) => {
+      const p = join(m.dir, OLD_RECORD);
+      writeFileSync(p, readFileSync(p, "utf8").replace(/\n/g, "\r\n"));
+      execFileSync("git", ["commit", "-qam", "crlf"], { cwd: m.dir, stdio: "pipe" });
+      supersede(m);
+      const q = join(m.dir, OLD_RECORD);
+      assert.match(readFileSync(q, "utf8"), /\*\*Status:\*\* superseded by 0002\r\n/);
+    },
+  });
+  const r = both(dir);
+  assert.equal(r.status, 0, r.py.stdout + r.py.stderr);
+  assert.deepEqual(r.findings, []);
+  rm(dir);
+});
+
 test("A12 fires on a change to any line but Status, with no Status flip at all", () => {
   const { dir } = fixture({
     mutate: ({ edit }) => edit(OLD_RECORD, "**Date:** 2026-01-01", "**Date:** 2026-01-02"),
@@ -486,6 +552,70 @@ test("A12 fires on a change to any line but Status, with no Status flip at all",
   const r = both(dir);
   assert.equal(r.status, 1, r.py.stdout);
   assert.deepEqual(ids(r.findings), ["A12"], r.findings.join("\n"));
+  rm(dir);
+});
+
+// ── A12 and a checkout that has no local branch ──────────────────────────────────────────────
+//
+// A pull request's CI checkout is a detached HEAD, and what it fetched of the default branch is
+// `origin/<branch>`: `git rev-parse --verify main` is fatal there while `origin/main` resolves.
+// A checker that needs a local ref to exist reds every adopting repo on its first pull request, so
+// A12 tries `<branch>`, then `origin/<branch>`, and only when neither resolves says it did not
+// compare.
+
+/** Make the fixture look like a CI pull-request checkout: detached HEAD, and the default branch
+ *  present only as the remote-tracking ref `origin/main`. */
+function asCiCheckout(git, { keepOrigin = true } = {}) {
+  if (keepOrigin) git("update-ref", "refs/remotes/origin/main", "HEAD");
+  git("checkout", "--detach");
+  git("branch", "-D", "main");
+}
+
+test("A12 compares against origin/<branch> when the CI checkout has no local branch", () => {
+  const { dir, git } = fixture();
+  asCiCheckout(git);
+  const clean = both(dir);
+  assert.equal(clean.status, 0, `a detached HEAD with origin/main is the standard CI shape:\n${clean.py.stdout}${clean.py.stderr}`);
+  assert.deepEqual(clean.findings, []);
+  rm(dir);
+});
+
+test("A12 still catches an edit to a record when the only default branch is origin/<branch>", () => {
+  // Resolving the ref must mean the comparison is MADE, not merely that the "no branch" finding
+  // went away: an edit has to be flagged against `origin/main`.
+  const { dir, git } = fixture({ mutate: ({ edit }) => edit(OLD_RECORD, "retries are hand-written", "retries are automatic") });
+  asCiCheckout(git);
+  const r = both(dir);
+  assert.equal(r.status, 1, r.py.stdout + r.py.stderr);
+  assert.deepEqual(ids(r.findings), ["A12"], r.findings.join("\n"));
+  assert.ok(r.findings.some((l) => l.startsWith(`${OLD_RECORD}:1: A12 `) && l.includes("`origin/main`")),
+    r.findings.join("\n"));
+  rm(dir);
+});
+
+test("A12 prefers the local branch over origin/<branch> when both exist", () => {
+  // The local ref is committed WITH the edit, so it agrees with the working copy; origin/main is
+  // the commit before it, which would not. No finding means the local ref was the one read.
+  const { dir, git } = fixture({
+    mutate: ({ edit }) => edit(OLD_RECORD, "retries are hand-written", "retries are automatic"),
+    commitAfter: true,
+  });
+  git("update-ref", "refs/remotes/origin/main", "HEAD~1");
+  const r = both(dir);
+  assert.equal(r.status, 0, r.py.stdout + r.py.stderr);
+  assert.deepEqual(r.findings, []);
+  rm(dir);
+});
+
+test("A12 with neither <branch> nor origin/<branch> says the comparison was not made, naming both", () => {
+  const { dir, git } = fixture();
+  asCiCheckout(git, { keepOrigin: false });
+  const r = both(dir);
+  assert.equal(r.status, 1, r.py.stdout + r.py.stderr);
+  assert.deepEqual(ids(r.findings), ["A12"], r.findings.join("\n"));
+  assert.equal(r.findings.length, 1, r.findings.join("\n"));
+  assert.match(r.findings[0], /^\.seam\/config\.json:1: A12 .*`main`.*`origin\/main`.*comparison was not made/,
+    r.findings[0]);
   rm(dir);
 });
 

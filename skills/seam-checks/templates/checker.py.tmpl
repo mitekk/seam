@@ -383,17 +383,23 @@ def frozen_record(path: str) -> bool:
 # for a reversal is that the OLD record gains `superseded by NNNN`, and A13 requires that a
 # superseded record names a successor that exists — both asked of the same bytes, so byte-equality
 # alone made them unsatisfiable the first time a repo reversed a decision. Its substance stays
-# frozen; its status is metadata about supersession. Nothing wider than this one line.
+# frozen; its status is metadata about supersession. Nothing wider than this one line, and not
+# arbitrary content on it either: the new line is a short run of plain characters. No \r inside
+# it, because a markdown renderer shows a lone CR as a line break, so one could smuggle in new
+# paragraphs while the \n line count stayed equal; the single \r that ends a CRLF line is the
+# terminator and is allowed. What a status may SAY is A13's question, so this is one bound and
+# not a vocabulary.
 STATUS_LINE = re.compile(rb"^\*\*Status:\*\*")
+STATUS_VALUE = re.compile(rb"\*\*Status:\*\*[A-Za-z0-9_ \t.,;:()'/#-]{0,120}\r?")
 
 
 def differs_only_in_status_lines(was: bytes, now: bytes) -> bool:
     """True when `was` and `now` have the same number of lines and differ only on lines that open
-    `**Status:**` in BOTH. Compared as bytes, never as decoded text, so it cannot read invalid
-    UTF-8 differently from the Node checker."""
+    `**Status:**` in `was` and are a short plain `**Status:**` line in `now`. Compared as bytes,
+    never as decoded text, so it cannot read invalid UTF-8 differently from the Node checker."""
     a, b = was.split(b"\n"), now.split(b"\n")
     return len(a) == len(b) and all(
-        x == y or (STATUS_LINE.match(x) is not None and STATUS_LINE.match(y) is not None)
+        x == y or (STATUS_LINE.match(x) is not None and STATUS_VALUE.fullmatch(y) is not None)
         for x, y in zip(a, b))
 
 
@@ -1030,22 +1036,30 @@ def main() -> int:
         # The same directory and the same test for "a MADR record" that A13 uses.
         madr_dir = adr_cfg.get("dir", "docs/adr") if adr_cfg.get("format") == "madr" else None
         frozen = [glob_re(r["doc"]) for r in table if r["layer"] in (3, 4)]
-        try:
-            subprocess.run(["git", "rev-parse", "--verify", branch], cwd=ROOT, check=True,
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            have_branch = True
-        except Exception:
-            have_branch = False
-        if not have_branch:
+        # A local ref first, then the remote-tracking one: a pull request's CI checkout is a
+        # detached HEAD whose only copy of the default branch is `origin/<branch>`, and a checker
+        # that needs a local branch to exist would red every adopting repo on its first pull request.
+        ref = None
+        for cand in (branch, f"origin/{branch}"):
+            try:
+                subprocess.run(["git", "rev-parse", "--verify", cand], cwd=ROOT, check=True,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                ref = cand
+                break
+            except Exception:
+                pass
+        if ref is None:
             findings.append(finding("A12", CONFIG_PATH, 1, branch,
-                f"no branch called `{branch}` — the byte-freeze comparison was not made. Set "
-                f"assertions.A12.default_branch, or switch A12 off; off is distinct from passing"))
+                f"no branch called `{branch}` and no `origin/{branch}` — the byte-freeze comparison "
+                f"was not made. Fetch the branch (in CI, `fetch-depth: 0` and the default branch "
+                f"fetched), set assertions.A12.default_branch, or switch A12 off; off is distinct "
+                f"from passing"))
         else:
             for d in docs:
                 if not any(rx.match(d) for rx in frozen) or not frozen_record(d):
                     continue
                 try:
-                    was = subprocess.run(["git", "show", f"{branch}:{d}"], cwd=ROOT, check=True,
+                    was = subprocess.run(["git", "show", f"{ref}:{d}"], cwd=ROOT, check=True,
                                          stdout=subprocess.PIPE, stderr=subprocess.DEVNULL).stdout
                 except Exception:
                     continue          # not on the branch yet: a new record, which is the point
@@ -1056,7 +1070,7 @@ def main() -> int:
                     if not now.startswith(was):
                         findings.append(finding("A12", d, 1, d,
                             f"is layer {layer} ({LAYER_NAMES[layer]}), append-only, and already on "
-                            f"`{branch}`: what is there must stay, byte for byte, at the top of "
+                            f"`{ref}`: what is there must stay, byte for byte, at the top of "
                             f"this file. An entry was edited, not appended. A reversal is a new "
                             f"dated entry; a correction is not available here"))
                 elif was != now:
@@ -1064,7 +1078,7 @@ def main() -> int:
                     if madr and differs_only_in_status_lines(was, now):
                         continue
                     findings.append(finding("A12", d, 1, d,
-                        f"is layer {layer} ({LAYER_NAMES[layer]}) and already on `{branch}`, so "
+                        f"is layer {layer} ({LAYER_NAMES[layer]}) and already on `{ref}`, so "
                         f"its bytes are final. A reversal is a new entry; a correction is not "
                         f"available here"
                         + (". Only its **Status:** line may change, to name what superseded it"

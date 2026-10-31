@@ -245,9 +245,19 @@ per repo and not three.
 
 ## A12 — the append-only layers are byte-frozen
 
-Reads: `git show <branch>:<path>` for every layer-3 and layer-4 file, against the bytes on disk.
+Reads: `git show <ref>:<path>` for every layer-3 and layer-4 file, against the bytes on disk, where
+`<ref>` is `<branch>` if that resolves and `origin/<branch>` if it does not.
 
-Needs: `default_branch`.
+Needs: `default_branch`, and a checkout that has the branch's history.
+
+**Which ref, and what the checkout must have.** A local branch ref is not a given. A pull request's
+CI checkout is a **detached HEAD**, and the only copy it has of the default branch is the
+remote-tracking `origin/<branch>`: `git rev-parse --verify main` is fatal there while
+`origin/main` resolves. So A12 tries the local branch first and `origin/<branch>` second, and only
+if neither resolves does it report the comparison as not made. `fetch-depth: 0` is **still
+needed** — a shallow clone has no history to compare against — but it is not the whole of it: what
+the checkout must have is the default branch itself, as either form. Fetching only the pull
+request's own ref leaves neither.
 
 **Layers 3 and 4 only**, and only because their edit rule says a file already on the branch is
 final: a record is never wrong, and an intent version is superseded rather than corrected. A
@@ -273,8 +283,15 @@ fixed in place.
   repo reversed a decision. The record's substance stays frozen — a Status flip beside any other
   edit to the record still fails — and the exemption is **not** a way to correct a record: it is
   one line, and it does not reach a PRD version, or a MADR record in a repo whose format is
-  `single`. Compared as bytes, in both checkers.
-- **No such branch fails**, saying the comparison was not made. Off is distinct from passing.
+  `single`. **The line itself is bounded too:** its new value is at most 120 characters of letters,
+  digits, spaces and light punctuation (`. , ; : ( ) ' / # -`), with no carriage return inside it
+  — a markdown renderer shows a lone CR as a line break, so one could otherwise write new
+  paragraphs into a "Status" line while the line count stayed equal. The one CR before the `\n`
+  of a CRLF line is the terminator and is allowed. That is one bound, not a vocabulary: what a
+  status may say is A13's question, so `superseded by 0002` going back to `accepted` is not
+  something A12 reads. Compared as bytes, in both checkers.
+- **Neither `<branch>` nor `origin/<branch>` fails**, naming both forms it tried and saying the
+  comparison was not made. Off is distinct from passing.
 - **An index is not a record.** `README.md`, `index.md`, `template.md` and `PRD-current.md` inside
   a frozen track are exempt: an index grows by design — adding a version means appending a row —
   and a "current" file is replaced wholesale when a new version lands. Freezing either makes the
