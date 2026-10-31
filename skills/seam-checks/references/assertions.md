@@ -391,7 +391,10 @@ passes — only that it exists and that it asserts something.
 ## A15 — a test arrives before the implementation it proves
 
 Reads: the commits on this branch that the default branch does not have, oldest first
-(`git rev-list --reverse --topo-order --no-merges <default_branch>..HEAD`), and for each the paths it
+(`git rev-list --reverse --topo-order --no-merges <ref>..HEAD`, where `<ref>` is `<default_branch>`
+if that resolves to a commit and `origin/<default_branch>` if it does not — the same resolution A12
+uses, because a pull request's CI checkout is a detached HEAD with only the remote-tracking ref),
+and for each the paths it
 **added** (`git diff-tree`). A path matching `test_globs` is a test; one matching `impl_globs` is an
 implementation. Walking forward, every implementation file added in a commit before the first one
 that adds a test, and still in the tree at HEAD, is a finding. An implementation added in the
@@ -421,7 +424,7 @@ commit. A sha is fresh on every branch, and a finding keyed on one could not be 
 **Not applicable is not passing.** After a squash merge a test and its implementation are always in
 one commit, so on the default branch this check has nothing to compare, and a silent pass would be
 a check with no teeth pretending otherwise. When the range is empty the checker prints one line to
-stdout, `A15: not applicable on <branch> — a squash merge puts test and implementation in one
+stdout, `A15: not applicable on <ref> — a squash merge puts test and implementation in one
 commit`, and reports no finding. A15 is still **counted** among the assertions that ran: it reached
 a verdict, and the same config must print the same total on every branch.
 
@@ -432,16 +435,18 @@ five cases:
   reported on every branch, the default one included;
 - a `default_branch` that is not a non-empty string. The finding names the key and not the value,
   because its text is part of its baseline key and the two checkers print `true` and `True` apart;
-- a `default_branch` git cannot resolve to a commit, which is also what no `git` binary or no
-  repository looks like. In CI the usual cause is a checkout holding only `origin/main`: set
-  `default_branch` to that;
+- a `default_branch` that neither `<default_branch>` nor `origin/<default_branch>` resolves to a
+  commit, which is also what no `git` binary or no repository looks like. The finding names both
+  forms it tried. `origin/<default_branch>` is tried for you, so a standard CI checkout needs no
+  configuration for it: the usual cause is a checkout that fetched neither form, and the fix is to
+  fetch the branch (`fetch-depth: 0` in CI), not to point `default_branch` at `origin/main`;
 - **a shallow clone** whose history was cut before the branch point. Git then shows every file in
   the oldest commit it has as added by it, so the range would look like one enormous first commit
   and the comparison would be against nothing. A15 asks `git merge-base`, and when it finds none it
   says so and names `fetch-depth: 0`;
 - `git rev-list` or `git diff-tree` failing partway through.
 
-A detached HEAD is not a failure: the range is `<default_branch>..HEAD` either way.
+A detached HEAD is not a failure: the range is `<ref>..HEAD` either way.
 
 Does not reach: **an implementation file that is no longer there.** A file the branch added and
 later removed is not in the tree at HEAD, so there is nothing to open and nothing to fix, and the

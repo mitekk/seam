@@ -379,6 +379,23 @@ def frozen_record(path: str) -> bool:
     return os.path.basename(path) not in NOT_A_RECORD
 
 
+def resolve_default_branch(branch: str) -> str | None:
+    """The default branch as this checkout has it: `<branch>` if that resolves to a commit, else
+    `origin/<branch>`, else None. A local branch ref is not a given: a pull request's CI checkout
+    is a detached HEAD whose only copy of the default branch is `origin/<branch>`, so a check that
+    needs a local ref to exist would red every adopting repo on its first pull request. A12 and
+    A15 both read the default branch, so both resolve it here and nowhere else."""
+    for cand in (branch, f"origin/{branch}"):
+        try:
+            subprocess.run(["git", "rev-parse", "--verify", "--quiet", f"{cand}^{{commit}}"],
+                           cwd=ROOT, check=True, stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL)
+            return cand
+        except Exception:
+            pass
+    return None
+
+
 # The one field a MADR record may change after it is on the default branch. The method's own rule
 # for a reversal is that the OLD record gains `superseded by NNNN`, and A13 requires that a
 # superseded record names a successor that exists — both asked of the same bytes, so byte-equality
@@ -1036,18 +1053,7 @@ def main() -> int:
         # The same directory and the same test for "a MADR record" that A13 uses.
         madr_dir = adr_cfg.get("dir", "docs/adr") if adr_cfg.get("format") == "madr" else None
         frozen = [glob_re(r["doc"]) for r in table if r["layer"] in (3, 4)]
-        # A local ref first, then the remote-tracking one: a pull request's CI checkout is a
-        # detached HEAD whose only copy of the default branch is `origin/<branch>`, and a checker
-        # that needs a local branch to exist would red every adopting repo on its first pull request.
-        ref = None
-        for cand in (branch, f"origin/{branch}"):
-            try:
-                subprocess.run(["git", "rev-parse", "--verify", cand], cwd=ROOT, check=True,
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                ref = cand
-                break
-            except Exception:
-                pass
+        ref = resolve_default_branch(branch)
         if ref is None:
             findings.append(finding("A12", CONFIG_PATH, 1, branch,
                 f"no branch called `{branch}` and no `origin/{branch}` — the byte-freeze comparison "
@@ -1297,8 +1303,12 @@ def main() -> int:
             except Exception:
                 return None
 
+        # The local branch, else `origin/<branch>`: see resolve_default_branch. `branch` stays the
+        # finding's text, so a baseline entry is keyed on the configured name whichever form
+        # resolved.
+        ref = resolve_default_branch(branch) if valid_branch else None
         unreadable = (branch,
-            f"git could not read the commits in `{branch}..HEAD` — the test-first comparison was "
+            f"git could not read the commits in `{ref}..HEAD` — the test-first comparison was "
             f"not made. Switch A15 off if this checkout cannot be given its history; off is "
             f"distinct from passing")
         not_made = None      # (text, message) when the comparison cannot be made
@@ -1317,16 +1327,17 @@ def main() -> int:
                 "assertions.A15.default_branch is not a branch name — the test-first comparison "
                 "was not made. Set it to a string naming the default branch, or switch A15 off; "
                 "off is distinct from passing")
-        elif git("rev-parse", "--verify", "--quiet", f"{branch}^{{commit}}") is None:
+        elif ref is None:
             not_made = (branch,
-                f"git cannot resolve `{branch}` to a commit — the test-first comparison was not "
-                f"made. Set assertions.A15.default_branch to a branch this checkout has (CI often "
-                f"has only `origin/<branch>`), or switch A15 off; off is distinct from passing")
-        elif git("merge-base", branch, "HEAD") is None:
+                f"git cannot resolve `{branch}` or `origin/{branch}` to a commit — the test-first "
+                f"comparison was not made. Fetch the branch (in CI, `fetch-depth: 0` and the "
+                f"default branch fetched), set assertions.A15.default_branch, or switch A15 off; "
+                f"off is distinct from passing")
+        elif git("merge-base", ref, "HEAD") is None:
             # A shallow clone cuts the history off, so git shows every file in the oldest commit
             # it has as added by it. Comparing that would be comparing nothing.
             not_made = (branch,
-                f"HEAD and `{branch}` share no history git can see (a shallow clone is the usual "
+                f"HEAD and `{ref}` share no history git can see (a shallow clone is the usual "
                 f"cause), so which commits are this branch's is unknown and the test-first "
                 f"comparison was not made. Fetch the full history (in CI, `fetch-depth: 0`), or "
                 f"switch A15 off; off is distinct from passing")
@@ -1334,7 +1345,7 @@ def main() -> int:
             # Merges are skipped: what a merge brings in is either on the default branch already,
             # and so outside the range, or another branch's commits, which the range lists in
             # their own right.
-            listed = git("rev-list", "--reverse", "--topo-order", "--no-merges", f"{branch}..HEAD")
+            listed = git("rev-list", "--reverse", "--topo-order", "--no-merges", f"{ref}..HEAD")
             if listed is None:
                 not_made = unreadable
             shas = [x for x in (listed or "").split("\n") if x != ""]
@@ -1404,7 +1415,7 @@ def main() -> int:
             # total that differed between branches for one config would say nothing about the
             # config.
             ran += 1
-            print(f"A15: not applicable on {branch} — a squash merge puts test and "
+            print(f"A15: not applicable on {ref} — a squash merge puts test and "
                   f"implementation in one commit")
         else:
             ran += 1
@@ -1414,7 +1425,7 @@ def main() -> int:
             for p in [q for q in late if git("cat-file", "-e", f"HEAD:./{q}") is not None]:
                 findings.append(finding("A15", p, 1, p,
                     f"is an implementation file (`assertions.A15.impl_globs`) added in "
-                    f"`{branch}..HEAD` with no test (`assertions.A15.test_globs`) before it or in "
+                    f"`{ref}..HEAD` with no test (`assertions.A15.test_globs`) before it or in "
                     f"the same commit — a test arrives before, or with, the implementation it "
                     f"proves. Reorder the commits so a test comes first, or put one in the commit "
                     f"that adds this file"))

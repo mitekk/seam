@@ -325,6 +325,22 @@ const NOT_A_RECORD = new Set(["README.md", "template.md", "PRD-current.md", "ind
 
 const frozenRecord = (path) => !NOT_A_RECORD.has(basename(path));
 
+/** The default branch as this checkout has it: `<branch>` if that resolves to a commit, else
+ *  `origin/<branch>`, else null. A local branch ref is not a given: a pull request's CI checkout
+ *  is a detached HEAD whose only copy of the default branch is `origin/<branch>`, so a check that
+ *  needs a local ref to exist would red every adopting repo on its first pull request. A12 and
+ *  A15 both read the default branch, so both resolve it here and nowhere else. */
+function resolveDefaultBranch(branch) {
+  for (const cand of [branch, `origin/${branch}`]) {
+    try {
+      execFileSync("git", ["rev-parse", "--verify", "--quiet", `${cand}^{commit}`],
+        { cwd: ROOT, stdio: ["ignore", "ignore", "ignore"] });
+      return cand;
+    } catch { /* try the next form */ }
+  }
+  return null;
+}
+
 // The one field a MADR record may change after it is on the default branch. The method's own rule
 // for a reversal is that the OLD record gains `superseded by NNNN`, and A13 requires that a
 // superseded record names a successor that exists — both asked of the same bytes, so byte-equality
@@ -1005,18 +1021,7 @@ async function main() {
     // The same directory and the same test for "a MADR record" that A13 uses.
     const madrDir = adrCfg.format === "madr" ? (adrCfg.dir ?? "docs/adr") : null;
     const frozen = table.filter((r) => r.layer === 3 || r.layer === 4).map((r) => globRe(r.doc));
-    // A local ref first, then the remote-tracking one: a pull request's CI checkout is a detached
-    // HEAD whose only copy of the default branch is `origin/<branch>`, and a checker that needs a
-    // local branch to exist would red every adopting repo on its first pull request.
-    let ref = null;
-    for (const cand of [branch, `origin/${branch}`]) {
-      try {
-        execFileSync("git", ["rev-parse", "--verify", cand],
-          { cwd: ROOT, stdio: ["ignore", "ignore", "ignore"] });
-        ref = cand;
-        break;
-      } catch { /* try the next form */ }
-    }
+    const ref = resolveDefaultBranch(branch);
     if (ref === null) {
       findings.push(finding("A12", CONFIG_PATH, 1, branch,
         `no branch called \`${branch}\` and no \`origin/${branch}\` — the byte-freeze comparison `
@@ -1266,8 +1271,11 @@ async function main() {
           stdio: ["ignore", "pipe", "ignore"] });
       } catch { return null; }
     };
+    // The local branch, else `origin/<branch>`: see resolveDefaultBranch. `branch` stays the
+    // finding's text, so a baseline entry is keyed on the configured name whichever form resolved.
+    const ref = validBranch ? resolveDefaultBranch(branch) : null;
     const unreadable = [branch,
-      `git could not read the commits in \`${branch}..HEAD\` — the test-first comparison was `
+      `git could not read the commits in \`${ref}..HEAD\` — the test-first comparison was `
       + `not made. Switch A15 off if this checkout cannot be given its history; off is distinct `
       + `from passing`];
     let notMade = null;      // [text, message] when the comparison cannot be made
@@ -1286,23 +1294,24 @@ async function main() {
         `assertions.A15.default_branch is not a branch name — the test-first comparison was not `
         + `made. Set it to a string naming the default branch, or switch A15 off; off is distinct `
         + `from passing`];
-    } else if (git("rev-parse", "--verify", "--quiet", `${branch}^{commit}`) === null) {
+    } else if (ref === null) {
       notMade = [branch,
-        `git cannot resolve \`${branch}\` to a commit — the test-first comparison was not made. Set `
-        + `assertions.A15.default_branch to a branch this checkout has (CI often has only `
-        + `\`origin/<branch>\`), or switch A15 off; off is distinct from passing`];
-    } else if (git("merge-base", branch, "HEAD") === null) {
+        `git cannot resolve \`${branch}\` or \`origin/${branch}\` to a commit — the test-first `
+        + `comparison was not made. Fetch the branch (in CI, \`fetch-depth: 0\` and the default `
+        + `branch fetched), set assertions.A15.default_branch, or switch A15 off; off is distinct `
+        + `from passing`];
+    } else if (git("merge-base", ref, "HEAD") === null) {
       // A shallow clone cuts the history off, so git shows every file in the oldest commit it has
       // as added by it. Comparing that would be comparing nothing.
       notMade = [branch,
-        `HEAD and \`${branch}\` share no history git can see (a shallow clone is the usual cause), `
+        `HEAD and \`${ref}\` share no history git can see (a shallow clone is the usual cause), `
         + `so which commits are this branch's is unknown and the test-first comparison was not `
         + `made. Fetch the full history (in CI, \`fetch-depth: 0\`), or switch A15 off; off is `
         + `distinct from passing`];
     } else {
       // Merges are skipped: what a merge brings in is either on the default branch already, and so
       // outside the range, or another branch's commits, which the range lists in their own right.
-      const listed = git("rev-list", "--reverse", "--topo-order", "--no-merges", `${branch}..HEAD`);
+      const listed = git("rev-list", "--reverse", "--topo-order", "--no-merges", `${ref}..HEAD`);
       if (listed === null) notMade = unreadable;
       const shas = (listed ?? "").split("\n").filter((x) => x !== "");
       walked = shas.length > 0;
@@ -1363,7 +1372,7 @@ async function main() {
       // would read as a pass. It is counted: A15 ran and reached a verdict, and a total that
       // differed between branches for one config would say nothing about the config.
       ran += 1;
-      process.stdout.write(`A15: not applicable on ${branch} — a squash merge puts test and `
+      process.stdout.write(`A15: not applicable on ${ref} — a squash merge puts test and `
         + `implementation in one commit\n`);
     } else {
       ran += 1;
@@ -1372,7 +1381,7 @@ async function main() {
       // runs, like the paths above.
       for (const p of late.filter((q) => git("cat-file", "-e", `HEAD:./${q}`) !== null)) {
         findings.push(finding("A15", p, 1, p,
-          `is an implementation file (\`assertions.A15.impl_globs\`) added in \`${branch}..HEAD\` `
+          `is an implementation file (\`assertions.A15.impl_globs\`) added in \`${ref}..HEAD\` `
           + `with no test (\`assertions.A15.test_globs\`) before it or in the same commit — a test `
           + `arrives before, or with, the implementation it proves. Reorder the commits so a test `
           + `comes first, or put one in the commit that adds this file`));

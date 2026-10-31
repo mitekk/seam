@@ -1382,8 +1382,38 @@ test("A15 with a default branch git cannot find says the comparison was not made
   assert.equal(r.findings.length, 1, r.findings.join("\n"));
   assert.match(r.findings[0], /^\.seam\/config\.json:1: A15 .*nonesuch.*comparison was not made/,
     r.findings[0]);
+  // It names both forms it tried, and no longer tells the user to work around the checker by
+  // hand-configuring `origin/<branch>`: resolving that is the checker's job.
+  assert.match(r.findings[0], /`nonesuch` or `origin\/nonesuch`/, r.findings[0]);
+  assert.doesNotMatch(r.findings[0], /CI often has only/, r.findings[0]);
   rm(dir);
 });
+
+// The same shape A12 is tested in below it: a pull request's CI checkout is a detached HEAD, and
+// the only copy of the default branch it has is `origin/<branch>`.
+for (const [what, commits, flagged] of [
+  ["flags a late implementation", [{ "src/hive.ts": IMPL }], true],
+  ["passes a test-first branch", [{ "tests/hive.test.ts": TEST }, { "src/hive.ts": IMPL }], false],
+]) {
+  test(`A15 ${what} when the only default branch is origin/<branch>`, () => {
+    const { dir, git } = a15Repo(commits);
+    git("update-ref", "refs/remotes/origin/main", "main");
+    git("checkout", "--detach");
+    git("branch", "-D", "main");
+    const r = both(dir);
+    if (flagged) {
+      assert.equal(r.status, 1, r.py.stdout + r.py.stderr);
+      assert.deepEqual(ids(r.findings), ["A15"], r.findings.join("\n"));
+      assert.equal(r.findings.length, 1, r.findings.join("\n"));
+      // The comparison was made, against the ref that exists, and the finding says which.
+      assert.match(r.findings[0], /^src\/hive\.ts:1: A15 .*`origin\/main\.\.HEAD`/, r.findings[0]);
+    } else {
+      assert.equal(r.status, 0, r.py.stdout + r.py.stderr);
+      assert.deepEqual(r.findings, []);
+    }
+    rm(dir);
+  });
+}
 
 test("A15 on a shallow clone says the comparison was not made, not that the history is short", () => {
   // In a depth-1 clone the tip commit has no parent, so git shows every file in it as added and
