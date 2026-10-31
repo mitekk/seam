@@ -181,7 +181,19 @@ What that shows:
 
 ## A merge, in a session
 
-The example repo's `.seam/config.json` names one teardown command, `scripts/rm-worktree.sh <n>`.
+The example repo's `.seam/config.json` names one teardown command, `scripts/rm-worktree.sh <n>`,
+and its `repo.default_branch` is `main`.
+
+```bash
+gh pr merge 12 -R mitekk/apiary --squash --delete-branch   # gated — needs the OK
+gh issue view 12 -R mitekk/apiary                          # did Closes fire?
+scripts/rm-worktree.sh 12                                  # the repo's own teardown
+git switch main                                            # -d and -D refuse a checked-out branch
+git branch -D 12-queenless-filter                          # if the teardown command left it
+git pull --ff-only                                         # the base the next branch is cut from
+```
+
+How the first of those is offered:
 
 ```
 > #12 is approved — merge it
@@ -192,18 +204,23 @@ Here is what the merge would do:
   title:   feat(hives): filter the queenless list on hive state
   closes:  #12
 
-That one needs your OK. Three local steps follow it and do not: check that #12 actually closed,
-tear the branch down — `git branch -d 12-queenless-filter`, then `scripts/rm-worktree.sh 12` —
-and `git pull --ff-only`, so the next branch is cut from the merge rather than from the commit
-before it.
+That one needs your OK. The rest follows it and does not: check that #12 actually closed, then
+`scripts/rm-worktree.sh 12`, which takes the worktree, the per-branch database and the local
+branch with it — so the `git branch -D` after it is usually a no-op — and `git pull --ff-only`,
+so the next branch is cut from the merge rather than from the commit before it.
 ```
 
 What that shows:
 
 - the OK sees the **method** and **what it closes**, which is what the merge adds to what the PR
   body already said;
-- the three local steps are named **in the same breath**, because they are the rest of the
-  sequence rather than cleanup to come back to;
-- the teardown is two steps here, and the second exists only because this repo's config names a
-  command. A repo whose `teardown_command` is empty stops after `git branch -d`, and that is the
-  common case rather than a gap.
+- the local steps are named **in the same breath**, because they are the rest of the sequence
+  rather than cleanup to come back to;
+- `--delete-branch` has already taken the local branch, and `rm-worktree.sh` takes it again, so
+  both are **skipped if already done** — which is why the `git branch -D` sits behind an "if it is
+  still there" rather than behind a check;
+- **`-D`, not `-d`**: the squash leaves the branch tip no ancestor of `main`, so `-d` either
+  refuses or reports the branch merged to its *upstream*, which is a different question;
+- the first teardown step exists only because this repo's config names a command. A repo whose
+  `teardown_command` is empty switches branch and deletes it, and that is the common case rather
+  than a gap.

@@ -246,24 +246,34 @@ caused it or in a later one nobody has written.
 ## Merging, and the steps it is
 
 Merging is **squash by default**: the PR title becomes the default branch's history and the
-branch's intermediate commits do not. Their bodies are not lost — the squash body is the branch's
-commit messages concatenated, in order — so each *why* the branch wrote survives in the one commit
-that lands, which is the other reason a body that restated the diff is worth nothing. The title is
-that squash subject, and § Pull requests is where it is tied to the commit convention.
+branch's intermediate commits do not. **GitHub's default squash message is the branch's commit
+messages**, so each *why* the branch wrote survives in the commit that lands — the other reason a
+body that restated the diff is worth nothing. That is a default and not a property of squashing: a
+repo set to `PR_BODY` or `BLANK` drops those bodies, a single-commit branch takes that commit's own
+subject and body rather than the PR title, and `git merge --squash` locally composes them
+newest-first. Read what the tool filled in rather than assuming it.
+
+The title is that squash subject, and § Pull requests is where it is tied to the commit convention
+— **with four characters plus the issue number's digits spent before it is written**, because the
+tracker appends ` (#N)` to it. A 70-character title lands over the ≤ 72 chars § Branches and
+commits sets.
 
 It is a sequence rather than one command, and § Teardown below is the last step of it:
 
-1. **Squash-merge, deleting the remote branch.** This is the gated action, and **the OK has to see
-   the merge method and what the merge closes.** Neither is in the PR body, and both are what
-   cannot be walked back once it lands.
+1. **Squash-merge, deleting the branch.** This is the gated action, and **the OK has to see the
+   merge method and what the merge closes.** Neither is in the PR body, and both are what cannot
+   be walked back once it lands.
 2. **Check that the issue actually closed.** A `Closes` trailer that never matched is the exact
    failure this convention exists to prevent, and it fails quietly: the merge succeeds and the
    board is left wrong.
 3. **Tear the branch down** — § Teardown below.
-4. **Bring the local default branch up to date**, fast-forward only. The merge happens on the
-   tracker's side, so the checkout the next branch is cut from still points at the commit before
-   it, which is how that branch starts out missing the change that just shipped. A pull that
-   cannot fast-forward is a divergence to look at rather than something to put a merge commit on.
+4. **Bring the default branch up to date** — the one `repo.default_branch` names in
+   `.seam/config.json`, which is the fact this step needs and the one place it is written down, so
+   do not guess `main` — fast-forward only, and on the branch § Teardown's step 2 has already
+   switched to. The merge happens on the tracker's side, so the checkout the next branch is cut
+   from still points at the commit before it, which is how that branch starts out missing the
+   change that just shipped. A pull that cannot fast-forward is a divergence to look at rather
+   than something to put a merge commit on.
 
 Steps 2 to 4 are **not behind the gate**: they are local and touch nothing outward-facing. Not
 running them is how a wrong board and a stale branch point get left behind, so they are part of
@@ -271,12 +281,25 @@ finishing the work rather than cleanup for later.
 
 ### Teardown, the last step and not an optional tidy-up
 
-A merge deletes the **remote** branch and nothing else. The local branch survives, and so does
-whatever the repo built beside it — a worktree, a per-branch database, a container.
+A merge takes the remote side down and leaves the local one, and whatever the repo built beside the
+branch — a worktree, a per-branch database, a container — outlives both. **Some of this may already
+be done**: `gh pr merge --delete-branch` deletes the local branch as well as the remote one, and a
+command that removes a worktree takes its branch with it. **A step already done is skipped rather
+than retried** — the sequence is idempotent, and `branch not found` here is that, not a failure.
 
-1. **Delete the local branch.**
-2. **Run the repo's own teardown command, if `.seam/config.json` names one** in
-   `teardown_command`, with the issue number in place of `<n>`.
+1. **Run the repo's own teardown command, if `.seam/config.json` names one** in
+   `teardown_command`, with the issue number in place of `<n>`, from the repo root. It goes first
+   because it owns whatever the branch was given, and because it commonly deletes the branch too.
+2. **Switch to the default branch**, the one § Merging's step 4 names. This is the step that makes
+   the next one possible: **`git branch -d` and `-D` both refuse a branch that is checked out**, in
+   a worktree or in the repo root alike, and the error names the worktree rather than the flag, so
+   it reads as a tooling fault rather than as the ordinary state it is.
+3. **Delete the local branch, if it is still there, and expect `-D` rather than `-d`.** A squash
+   gives the default branch a new commit, so the branch tip is never an ancestor of it and `-d`'s
+   merged check cannot hold: while `refs/remotes/origin/<branch>` is still present it reports the
+   branch merged **to its upstream**, which is not the comparison it looks like, and after a
+   `fetch --prune` it refuses outright. `-D` loses nothing here, because the squash carries the
+   content and the PR carries the history.
 
 **Where that key is empty or absent, deleting the branch is the whole teardown.** Most repos have
 nothing else to take down, so an empty value is a complete answer rather than an unfilled one: do
@@ -296,12 +319,21 @@ blocked — and when a milestone's issues are all closed, say so rather than wai
 ### The owned-row invariant
 
 **Every open issue is either an owned row in a plan, or names the document that owns it instead.**
-Both halves are owners, and the second is the stronger one rather than an exemption: a milestone
-with no plan of its own, and a plan that looked at an issue and deliberately disclaimed it, each
-answer for it more firmly than a row would — so an invariant reading "an owned row or nothing"
-would force a plan to adopt work it had reasoned its way out of adopting. Where the repo keeps no
-plans at all, the document half is the whole invariant. An issue that is neither is on the board on
-nobody's account, which is how a board re-spreads across every milestone with every check green.
+An **owned row** is a unit in a layer-5 plan; what a unit is and what its row carries are
+`docs/building.md`'s, which § Follow-ups reads for the same terms — and where the repo has no such
+doc, read them in `$CLAUDE_PLUGIN_ROOT/skills/seam-docs/templates/current/building.md` rather than
+settling them here. **Both owners are documents.** The second is the layer-2 or layer-3 doc that
+owns the change, standing in for a row exactly as it does in § Follow-ups' first disposition, and
+it is the stronger owner rather than the weaker one: an invariant reading "an owned row or nothing"
+would force a plan to adopt work it had reasoned its way out of adopting. A plan that looked at an
+issue and disclaimed it in writing has named itself that document.
+
+**"No plan covers this milestone yet" is a state to report, and neither an owner nor a violation.**
+Some milestones planned and some not is every repo mid-adoption, and an issue in an unplanned
+milestone names nothing because there is nothing yet to name: say which milestone and how many,
+rather than counting them against the invariant. The issue the invariant is **for** is one in a
+**planned** milestone that no row owns and no document names — which is how a board re-spreads
+across every milestone with every check still green.
 
 **The active milestone is read, never inferred**: it is the one `milestones[].active` marks in
 `.seam/config.json`, which is the field § Follow-ups' qualifier reads in its third clause — that is

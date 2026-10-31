@@ -20,15 +20,16 @@ function init(ans, extraArgs = [], seed = () => {}) {
 }
 
 /**
- * The interview's two tables, each sliced to its own section. **Both ends of both slices are
- * pinned**: a doc's name appears in more than one section, so a slice running to EOF accepts a
- * row moved into any later one — § Rejections included — and a renamed heading fails loudly
- * instead of widening the region to the rest of the file.
+ * The interview's two tables and the answers schema, each sliced to its own section. **Both ends
+ * of every slice are pinned**: a doc's name appears in more than one section, so a slice running
+ * to EOF accepts a row moved into any later one — § Rejections included — and a renamed heading
+ * fails loudly instead of widening the region to the rest of the file.
  */
 function interviewTables() {
   const md = readFileSync(join(REPO, "skills/seam-docs/references/interview.md"), "utf8");
   const bounds = {
     questions: ["### What must be asked, never inferred", "### The discipline"],
+    schema: ["## Schema", "### Defaults the program fills"],
     defaults: ["### Defaults the program fills", "### Rejections"],
   };
   const out = {};
@@ -1000,31 +1001,83 @@ test("the interview asks for teardown_command, and § Defaults records what empt
     "§ Defaults has no row giving teardown_command's default");
 });
 
-test("every config key seam-github reads is one the interview fills", () => {
+test("every config key seam-github reads is one the answers file fills", () => {
   // The blind scan is the point: every top-level key of a config the wizard actually wrote,
-  // against the skill's own text, so a key added to a clause later cannot pass by being absent
-  // from a hand-written list here.
+  // against every file the skill ships, so a key added to a clause later cannot pass by being
+  // absent from a hand-written list here.
   const { dir, r } = init(answers());
   assert.equal(r.status, 0, r.stderr);
   const keys = Object.keys(JSON.parse(read(dir, ".seam/config.json")));
   rm(dir);
-  const skill = readFileSync(join(REPO, "skills/seam-github/SKILL.md"), "utf8");
-  const names = (text, k) => new RegExp("`" + k + "(`|\\[|\\.)").test(text);
-  const reads = keys.filter((k) => names(skill, k)).sort();
-  // Pinned, so a fifth key reaches this test rather than arriving quietly. `docs` is in the set
-  // because the commit-type list writes `docs` in backticks; the key is asked for anyway, so the
+  // The whole directory and not SKILL.md alone: `references/` is loaded by the skill and names
+  // config keys of its own, so a clause there reads a key exactly as a clause in SKILL.md does.
+  const sdir = join(REPO, "skills/seam-github");
+  const skill = readdirSync(sdir, { recursive: true })
+    .map(String).filter((f) => f.endsWith(".md"))
+    .map((f) => readFileSync(join(sdir, f), "utf8")).join("\n");
+  // Two ways a file names a key, because reading one out of a fenced config excerpt is the same
+  // read with the quoting changed — a scan that only knew backticks called that a non-read.
+  const backticked = (text, k) => new RegExp("`" + k + "(`|\\[|\\.)").test(text);
+  const jsonKey = (text, k) => new RegExp('"' + k + '"\\s*:').test(text);
+  const reads = keys.filter((k) => backticked(skill, k) || jsonKey(skill, k)).sort();
+  // Pinned, so a sixth key reaches this test rather than arriving quietly. `docs` is in the set
+  // because the commit-type list writes `docs` in backticks; the key is filled anyway, so the
   // collision costs nothing and a blind scan is worth more than a hand-curated one.
-  assert.deepEqual(reads, ["docs", "load_bearing", "milestones", "teardown_command"],
+  assert.deepEqual(reads, ["docs", "load_bearing", "milestones", "repo", "teardown_command"],
     "seam-github names a config key this test does not know about, or stopped naming one");
-  const { questions } = interviewTables();
+  const { questions, schema } = interviewTables();
+  // The answers file is the source, so the schema is what a read has to be in: a key absent from
+  // it is a key nothing can fill. The question table cannot be this subject, because the
+  // interview STATES some keys from the tree instead of asking — `repo.default_branch` is the
+  // live one, and an assertion demanding a row for it only makes the clause that reads it vaguer.
   for (const k of reads)
-    assert.ok(names(questions, k),
-      `seam-github reads ${k} and no interview question fills it — add the question row, or stop`
-      + ` reading the key in the skill`);
+    assert.ok(jsonKey(schema, k),
+      `seam-github reads ${k} and § Schema has no such key — add it to the answers schema, or stop`
+      + ` reading it in the skill`);
+  // Then the stricter test, for the keys the interview must **ask**: a question row each, pinned
+  // as a set. A key that arrives with no row surfaces here as the question it is — asked, or
+  // stated from the tree — rather than passing because the schema happens to carry it.
+  assert.deepEqual(reads.filter((k) => backticked(questions, k)),
+    ["docs", "load_bearing", "milestones", "teardown_command"],
+    "a key seam-github reads lost its question row, or gained one this test does not expect");
   // The teardown clause is a real conditional, and the else-branch is stated: a key most repos
   // leave empty needs one, or "if the config names one" is a requirement in conditional clothing.
   const flat = skill.replace(/\s+/g, " ");
   assert.match(flat, /if `\.seam\/config\.json` names one/);
   assert.ok(flat.includes("Where that key is empty or absent, deleting the branch is the whole"
     + " teardown"), "the teardown clause states no else-branch for a config that names no command");
+  // And the steps are in an order that runs. `git branch -d` and `-D` both refuse a branch that
+  // is checked out, and a teardown command that removes a worktree deletes the branch with it —
+  // so the repo's own command comes first and the switch comes before the delete, or the delete
+  // errors in the very repo this procedure was generalised from.
+  const md = readFileSync(join(sdir, "SKILL.md"), "utf8");
+  const sec = md.slice(md.indexOf("### Teardown,"), md.indexOf("## Status reporting"));
+  assert.ok(sec.length > 0 && md.indexOf("### Teardown,") !== -1, "§ Teardown was renamed");
+  const at = (needle) => {
+    const i = sec.indexOf(needle);
+    assert.notEqual(i, -1, `§ Teardown no longer says "${needle}"`);
+    return i;
+  };
+  assert.ok(at("teardown command") < at("Switch to the default branch")
+    && at("Switch to the default branch") < at("Delete the local branch"),
+    "§ Teardown's steps are in an order that cannot run: the delete is before the switch, or"
+    + " before the command that commonly performs it");
+  assert.match(sec, /expect `-D` rather than `-d`/,
+    "§ Teardown does not say which flag a squashed branch needs, so -d's merged check reads as a"
+    + " verification it is not");
+});
+
+test("the clean fixture carries every key the wizard projects", () => {
+  // Nothing tied the fixture to project(), so a key added to the projection left it a config no
+  // wizard run could write. A16 — the config is the projection of the answers file — is built on
+  // this fixture, so the gap would surface inside that work as A16 being broken.
+  const { dir, r } = init(answers());
+  assert.equal(r.status, 0, r.stderr);
+  const projected = Object.keys(JSON.parse(read(dir, ".seam/config.json")));
+  rm(dir);
+  const fixture = JSON.parse(
+    readFileSync(join(REPO, "tests/fixtures/clean/.seam/config.json"), "utf8"));
+  for (const k of projected)
+    assert.ok(k in fixture, `tests/fixtures/clean/.seam/config.json has no ${k} — the wizard`
+      + ` projects it, so the fixture is a config no run could write`);
 });

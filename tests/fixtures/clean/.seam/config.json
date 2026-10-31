@@ -16,6 +16,7 @@
   ],
   "load_bearing": ["db/schema.sql"],
   "low_review_paths": [],
+  "teardown_command": "",
   "domains": [{ "name": "hives" }],
   "milestones": [{ "n": 1, "title": "Queenless list", "active": true }],
   "agents": [],
