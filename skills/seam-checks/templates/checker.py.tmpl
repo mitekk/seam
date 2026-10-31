@@ -61,6 +61,60 @@ def line_of(text: str, index: int) -> int:
     return text.count("\n", 0, index) + 1
 
 
+# Every primitive below exists because the two languages' own built-in disagrees with the other's,
+# and a repo is promised that the choice of checker language does not change what is enforced.
+
+ASCII_WS = " \t\r\n\f\v"
+
+
+def strip_ws(s: str) -> str:
+    """`s` without leading or trailing ASCII whitespace.
+
+    Not `str.strip()`, and the Node emission does not use `trim()`: `strip()` takes U+0085 and
+    `trim()` does not, `trim()` takes U+FEFF and `strip()` does not. So a padded table cell, a
+    heading or a citation was read one way here and another way there.
+    """
+    return s.strip(ASCII_WS)
+
+
+def split_ws(s: str) -> list[str]:
+    """`s` split on runs of ASCII whitespace, with no empty pieces. `str.split()` splits on
+    Unicode whitespace and `/\\s+/` on a third set; this is the one both can agree on."""
+    return [w for w in re.split(r"[ \t\r\n\f\v]+", s) if w]
+
+
+ALNUM_RE = re.compile(r"[a-z0-9]", re.I)
+
+
+def alnum(ch: str) -> bool:
+    """Whether `ch` is an ASCII letter or digit — what both checkers mean by a word character.
+    `str.isalnum()` is Unicode-aware and Node's `/[a-z0-9]/i` is not, so a heading or a citation
+    ending in a non-ASCII letter was a word boundary on one side and not on the other."""
+    return ch != "" and ALNUM_RE.fullmatch(ch) is not None
+
+
+def given(value, default):
+    """`value`, or `default` when the key was absent or JSON `null`.
+
+    The Node emission reads a config value with `??`, which treats a null as unset; `.get(k, d)`
+    hands the null straight to the reader. One JSON null — `adr.file` — was the difference
+    between exit 0 and exit 1, and through `opt()` it was a crash.
+    """
+    return default if value is None else value
+
+
+def read_text(path) -> str:
+    """A repo file as text, read the way the Node emission reads one.
+
+    `errors="replace"` because `Path.read_text()` raises on a byte that is not UTF-8, which killed
+    the checker before any assertion ran while Node substituted U+FFFD and carried on — a crash is
+    not a verdict about the docs. Universal newlines is the default here and the reason the Node
+    emission strips `\r` explicitly: without that, a CRLF plan had no sections at all on that
+    side, so the choice of checker language changed what was enforced.
+    """
+    return Path(path).read_text(encoding="utf-8", errors="replace")
+
+
 def glob_re(pattern: str) -> re.Pattern:
     """A path glob as a regex. `**/` crosses directories, `*` and `?` do not."""
     out = []
@@ -78,7 +132,11 @@ def glob_re(pattern: str) -> re.Pattern:
         else:
             out.append(re.escape(pattern[i]))
             i += 1
-    return re.compile("^" + "".join(out) + "$")
+    # `\\Z` and not `$`, because `$` also matches before a trailing newline; `re.S` so `.` in the
+    # `**/` expansion is any character, which is what Node's `s` flag gives it. Node's `.`
+    # excludes `\r`, U+2028 and U+2029 as well as `\n`, so without both of these a path carrying
+    # one was inside the glob here and outside it there.
+    return re.compile("^" + "".join(out) + r"\Z", re.S)
 
 
 SKIP = {".git", "node_modules", "dist", "build", ".next", "vendor", "__pycache__",
@@ -123,10 +181,36 @@ def walk_md(root: Path) -> list[str]:
 
 # ── Markdown reading ─────────────────────────────────────────────────────────
 
+FENCE_RE = re.compile(r"[ \t]*(?:```|~~~)")
+
+
+def without_fences(text: str) -> str:
+    """`text` with every fenced block blanked, keeping the line count so offsets stay true.
+
+    A `## Heading` written INSIDE a fence is a heading being SHOWN, not declared — and it was
+    becoming a real anchor, so A2 passed a citation naming a section no human can find. The toggle
+    is the one `section_span` and `table_rows` already use: a marker at any indentation opens or
+    closes a block, and an unterminated one runs to the end of the text. That is stricter than a
+    renderer, which reads a four-space-indented marker as literal text, and it is deliberate:
+    three readers of a fence in one file that disagreed would be the drift this whole layer is
+    against.
+    """
+    out = []
+    fenced = False
+    for line in text.split("\n"):
+        if FENCE_RE.match(line):
+            fenced = not fenced
+            out.append("")
+        else:
+            out.append("" if fenced else line)
+    return "\n".join(out)
+
+
 def headings(text: str) -> list[str]:
     out = []
-    for m in re.finditer(r"^#{1,6}[ \t]+(.*)$", text, re.M):
-        h = m.group(1).replace("~~", "").replace("**", "").replace("*", "").replace("`", "").strip()
+    for m in re.finditer(r"^#{1,6}[ \t]+(.*)$", without_fences(text), re.M):
+        h = strip_ws(m.group(1).replace("~~", "").replace("**", "").replace("*", "")
+                     .replace("`", ""))
         if h:
             out.append(h)
     return out
@@ -152,12 +236,12 @@ def anchors(text: str) -> set[str]:
         # what each one does" or "Pipeline, a note on scoring" — and since a citation matches any
         # anchor it starts with on a word boundary, A2 then silently passed citations to sections
         # that do not exist. A check that stops checking is worse than one that fails.
-        clauses = [c.strip() for c in re.split(r" — |, ", h) if c.strip()]
+        clauses = [strip_ws(c) for c in re.split(r" — |, ", h) if strip_ws(c)]
         for i, c in enumerate(clauses):
             out.add(c.lower())
             if i:
                 continue
-            words = [w for w in c.lower().split() if w]
+            words = split_ws(c.lower())
             for k in range(1, len(words) + 1):
                 out.add(" ".join(words[:k]))
     return out
@@ -166,18 +250,25 @@ def anchors(text: str) -> set[str]:
 def cites_section(anchor_set: set[str], cited: str) -> bool:
     """A citation carries the prose that follows it, so a match is the longest anchor it starts
     with, ending on a word boundary: "Seams" does not satisfy "Seam 9"."""
-    low = " ".join(cited.split()).lower().rstrip(")")
+    low = " ".join(split_ws(cited)).lower().rstrip(")")
     for a in sorted(anchor_set, key=len, reverse=True):
-        if low.startswith(a) and (len(low) == len(a) or not low[len(a)].isalnum()):
+        if low.startswith(a) and (len(low) == len(a) or not alnum(low[len(a)])):
             return True
     return False
 
 
-def section_body(text: str, name: str) -> str | None:
-    """The lines under the heading called `name`, to the next heading at the same level or above.
+def section_span(text: str, name: str) -> tuple[str, int] | None:
+    """The lines under the heading called `name`, to the next heading at the same level or above,
+    with the 1-based line the first of them is on.
 
     `None` when there is no such heading — which callers report rather than treat as empty. A
     renamed heading that silently compared nothing is the exact failure this returns None for.
+
+    The line comes from the scan and not from looking the body up afterwards. `text.find(body)`
+    and `split("\n").index(first_line)` are lookups by CONTENT: a section body's first line is
+    usually blank, so `index("")` returned the first blank line in the whole file, and a plan that
+    quoted its own units table sent the search into the quotation. Every A8 finding named a line
+    about a dozen rows above the row it was about.
     """
     lines = text.split("\n")
     start = None
@@ -188,7 +279,7 @@ def section_body(text: str, name: str) -> str | None:
         # A heading inside a fenced block is a QUOTE of a section, not that section. A doc that
         # shows a template inside ```markdown had its example read as the real thing, so the
         # assertion measured the placeholder row in the example rather than the table below it.
-        if re.match(r"[ \t]*(?:```|~~~)", line):
+        if FENCE_RE.match(line):
             fenced = not fenced
             continue
         if fenced:
@@ -199,19 +290,22 @@ def section_body(text: str, name: str) -> str | None:
         m = re.match(r"^(#{2,6})[ \t]+(.*)$", line)
         if not m:
             continue
-        clean = m.group(2).replace("~~", "").replace("**", "").replace("*", "").strip().lower()
+        clean = strip_ws(m.group(2).replace("~~", "").replace("**", "").replace("*", "")).lower()
         if start is None:
             # The same rule citations use: the heading begins with the cited name, ending on a
             # word boundary — "The issues" names "The issues, in the order they can be built".
-            if clean.startswith(low) and (len(clean) == len(low) or not clean[len(low)].isalnum()):
+            if clean.startswith(low) and (len(clean) == len(low) or not alnum(clean[len(low)])):
                 start, start_level = i + 1, len(m.group(1))
             continue
         if len(m.group(1)) <= start_level:
-            return "\n".join(lines[start:i])
-    return None if start is None else "\n".join(lines[start:])
+            return "\n".join(lines[start:i]), start + 1
+    return None if start is None else ("\n".join(lines[start:]), start + 1)
 
 
-ASCII_WS = " \t\r\n\f\v"
+def section_body(text: str, name: str) -> str | None:
+    """`section_span`'s body alone, for the callers that do not report a line inside it."""
+    span = section_span(text, name)
+    return None if span is None else span[0]
 
 
 def table_cells(line: str) -> list[str] | None:
@@ -223,13 +317,13 @@ def table_cells(line: str) -> list[str] | None:
     strip has a different idea of both — Python's `strip("|")` takes every pipe, and `trim()` and
     `strip()` disagree about U+FEFF and U+0085.
     """
-    t = line.strip(ASCII_WS)
+    t = strip_ws(line)
     if not t.startswith("|"):
         return None
     t = t[1:]
     if t.endswith("|"):
         t = t[:-1]
-    return [c.strip(ASCII_WS) for c in t.split("|")]
+    return [strip_ws(c) for c in t.split("|")]
 
 
 def table_rows(body: str) -> list[tuple[int, list[str]]]:
@@ -244,7 +338,7 @@ def table_rows(body: str) -> list[tuple[int, list[str]]]:
     out: list[tuple[int, list[str]]] = []
     fenced = False
     for i, line in enumerate(body.split("\n")):
-        if re.match(r"[ \t]*(?:```|~~~)", line):
+        if FENCE_RE.match(line):
             fenced = not fenced
             continue
         if fenced:
@@ -388,12 +482,17 @@ def portable_regex(p: str) -> str | None:
     return None if depth == 0 else "a group is never closed"
 
 
-MD_CITE_RE = re.compile(r"`([\w./@-]+\.md)`")
+# `re.A` on every pattern whose classes have a Node counterpart: `\w`, `\d`, `\b` and `\s` are
+# Unicode-aware here by default and ASCII-only in Node always, so `٣` was a digit on one side and
+# not on the other. Where a `\s` is wanted it is written out as an ASCII class instead of `\s`,
+# because the three whitespace sets — Node's `\s`, Python's Unicode `\s` and `re.A`'s — are three
+# different sets, and only an explicit class is the same on both sides.
+MD_CITE_RE = re.compile(r"`([\w./@-]+\.md)`", re.A)
 # A `|` ends a section name: it is a table cell boundary and never part of a heading.
 TOKEN_RE = re.compile(r"`([^`\n]+)`|(?<![`\w./-])([\w./-]+\.md)(?![\w.-])"
-                      r"|§[ \t\n]*([A-Za-z][^.;:—(*`§|\n]*)")
-ADJACENT_RE = re.compile(r"^[\s,*]{0,4}$")
-CONNECTOR_RE = re.compile(r"^[\s,]*(?:and|or)?[\s,]*$")
+                      r"|§[ \t\n]*([A-Za-z][^.;:—(*`§|\n]*)", re.A)
+ADJACENT_RE = re.compile(r"^[ \t\r\n\f\v,*]{0,4}$")
+CONNECTOR_RE = re.compile(r"^[ \t\r\n\f\v,]*(?:and|or)?[ \t\r\n\f\v,]*$")
 
 
 def resolve_md(root: Path, frm: str, cited: str) -> str | None:
@@ -466,7 +565,7 @@ def md_citations(root: Path, frm: str, text: str) -> list[tuple[str, int]]:
     """
     out: list[tuple[str, int]] = []
     linked_spans: list[tuple[int, int]] = []
-    for m in re.finditer(r"\[([^\]\n]*)\]\(([^)\s]+)\)", text):
+    for m in re.finditer(r"\[([^\]\n]*)\]\(([^) \t\r\n\f\v]+)\)", text, re.A):
         linked_spans.append((m.start(1), m.end(1)))
         target = m.group(2).split("#")[0]
         if target.endswith(".md"):
@@ -492,13 +591,16 @@ def read_table(text: str) -> list[dict]:
     offset = start if (start != -1 and end > start) else 0
     rows = []
     for m in re.finditer(r"^\|(.*)\|[ \t]*$", body, re.M):
-        cells = [c.strip() for c in m.group(1).split("|")]
+        # The same splitter A8 and A14 read a row with. Its own split-and-strip disagreed with
+        # Node's about U+0085 and U+FEFF, so a padded first cell was a row in one checker and not
+        # in the other — and a doc with no row is A10's loudest finding.
+        cells = table_cells(m.group(0))
         doc = re.fullmatch(r"`([^`]+)`", cells[0]) if cells else None
         if not doc:
             continue
         layer = None
         if len(cells) > 1:
-            lm = re.match(r"(\d)\b", cells[1])
+            lm = re.match(r"(\d)\b", cells[1], re.A)
             if lm:
                 layer = int(lm.group(1))
         rows.append({
@@ -515,21 +617,26 @@ def read_table(text: str) -> list[dict]:
 
 def sql_tables(sql: str) -> dict[str, set[str]]:
     out = {}
-    for m in re.finditer(r"create table (?:if not exists )?(\w+)\s*\((.*?)\n\);", sql, re.S | re.I):
-        cols = set(re.findall(r"^\s{2,}(\w+)\s", m.group(2), re.M))
+    for m in re.finditer(r"create table (?:if not exists )?(\w+)[ \t\r\n\f\v]*\((.*?)\n\);",
+                         sql, re.S | re.I | re.A):
+        cols = set(re.findall(r"^[ \t\r\n\f\v]{2,}(\w+)[ \t\r\n\f\v]", m.group(2),
+                              re.M | re.A))
         out[m.group(1)] = cols
     return out
 
 
 def sql_enum(sql: str, name: str) -> set[str] | None:
-    m = re.search(r"create type\s+" + re.escape(name) + r"\s+as enum\s*\((.*?)\);", sql, re.S | re.I)
+    m = re.search(r"create type[ \t\r\n\f\v]+" + re.escape(name)
+                  + r"[ \t\r\n\f\v]+as enum[ \t\r\n\f\v]*\((.*?)\);", sql,
+                  re.S | re.I | re.A)
     return set(re.findall(r"'([^']+)'", m.group(1))) if m else None
 
 
 def ts_unions(text: str) -> dict[str, set[str]]:
     out = {}
-    for m in re.finditer(r"(?:type|enum)\s+(\w+)\s*=?\s*\{?([^;}]*)[;}]", text):
-        members = set(re.findall(r"['\"]([\w-]+)['\"]", m.group(2)))
+    for m in re.finditer(r"(?:type|enum)[ \t\r\n\f\v]+(\w+)[ \t\r\n\f\v]*=?"
+                         r"[ \t\r\n\f\v]*\{?([^;}]*)[;}]", text, re.A):
+        members = set(re.findall(r"['\"]([\w-]+)['\"]", m.group(2), re.A))
         if members:
             out[m.group(1)] = members
     return out
@@ -555,7 +662,7 @@ DEFAULT_TOKEN_RES = [
     r"scripts/[\w.\-/]+\.(?:py|sql|mjs|js|ts|sh)",
     r"(?:npm|pnpm|yarn|bun) run [\w:.\-]+",
     r"node --test",
-    r"(?:^|&&|;|\|)\s*(?:pytest|ruff|mypy|eslint|tsc|cargo|go test)\b",
+    r"(?:^|&&|;|\|)[ \t\r\n\f\v]*(?:pytest|ruff|mypy|eslint|tsc|cargo|go test)\b",
     r"check:[a-z\-]+",
     r"docker build",
     r"drop schema public cascade",
@@ -585,7 +692,7 @@ def strip_comments(text: str) -> str:
                     quote = ""
             elif ch in "'\"":
                 quote = ch
-            elif ch == "#" and (i == 0 or line[i - 1].isspace()):
+            elif ch == "#" and (i == 0 or line[i - 1] in ASCII_WS):
                 cut = i
                 break
         out.append(line if cut is None else line[:cut])
@@ -597,10 +704,10 @@ def check_tokens(text: str, extra: list[str]) -> set[str]:
     text = strip_comments(text)
     found = set()
     for rx in DEFAULT_TOKEN_RES + list(extra):
-        for m in re.finditer(rx, text, re.M):
-            found.add(m.group(0).lstrip("&|; \n\t"))
+        for m in re.finditer(rx, text, re.M | re.A):
+            found.add(m.group(0).lstrip("&|;" + ASCII_WS))
     for m in TURBO_RE.finditer(text):
-        for task in m.group(1).split():
+        for task in split_ws(m.group(1)):
             found.add("turbo:" + task)
     return found
 
@@ -630,11 +737,11 @@ def run_payloads(yaml_text: str) -> list[tuple[int, str]]:
         j = i + 1
         while j < len(lines):
             line = lines[j]
-            if line.strip() == "":
+            if strip_ws(line) == "":
                 body.append("")
                 j += 1
                 continue
-            indent = len(line) - len(line.lstrip())
+            indent = len(line) - len(line.lstrip(ASCII_WS))
             if indent <= col:
                 break
             body.append(line)
@@ -650,20 +757,104 @@ def finding(fid: str, file: str, line: int, text: str, message: str) -> dict:
     return {"id": fid, "file": file, "line": line, "text": text, "message": message}
 
 
+def config_shape_refusal(cfg: dict) -> str | None:
+    """The first config value no reader below can use, as the message to refuse with — or None.
+
+    One pass over the shapes, before anything indexes them. A value of the wrong shape was a
+    `KeyError` or an `AttributeError` here and a silent `undefined` in the Node emission, so the
+    same malformed config was a traceback on one side and a wrong answer on the other. A
+    traceback is never an acceptable ending for a malformed config: it is a refusal, with the
+    same message and the same exit in both languages.
+
+    The checks are in a fixed order and assertion ids are sorted, so a config broken in two ways
+    is refused for the same one by both.
+    """
+    is_obj = lambda v: isinstance(v, dict)
+    is_list = lambda v: isinstance(v, list)
+    is_name = lambda v: isinstance(v, str) and v != ""
+    checks: list[tuple[str, bool, str, str]] = []
+    table = given(cfg.get("table"), {})
+    checks.append(("table", is_obj(table), "an object",
+                   "it names the file that hosts the sources-of-truth table"))
+    if is_obj(table):
+        checks.append(("table.file", is_name(table.get("file")), "a path",
+                       "every doc's layer is recorded in that file, so without it there is "
+                       "nothing to hold a doc to"))
+    docs_rows = given(cfg.get("docs"), [])
+    checks.append(("docs", is_list(docs_rows), "a list",
+                   "A11 reads it row by row against the table"))
+    if is_list(docs_rows):
+        for i, d in enumerate(docs_rows):
+            checks.append((f"docs[{i}]", is_obj(d), "an object",
+                           "a docs row is a path and the layer it is on"))
+            if is_obj(d):
+                checks.append((f"docs[{i}].path", is_name(d.get("path")), "a path",
+                               "a row naming no doc says nothing about one"))
+    lb = given(cfg.get("load_bearing"), [])
+    checks.append(("load_bearing", is_list(lb), "a list", "A11 reads it as path globs"))
+    if is_list(lb):
+        for i, g in enumerate(lb):
+            checks.append((f"load_bearing[{i}]", isinstance(g, str), "a string",
+                           "each entry is a path glob"))
+    A = given(cfg.get("assertions"), {})
+    checks.append(("assertions", is_obj(A), "an object",
+                   "every assertion's settings live under its id there"))
+    if is_obj(A):
+        for aid in sorted(A):
+            checks.append((f"assertions.{aid}", is_obj(A[aid]), "an object",
+                           "an assertion's settings are an object with an `enabled` switch"))
+            if is_obj(A[aid]) and A[aid].get("allow") is not None:
+                allow = A[aid]["allow"]
+                checks.append((f"assertions.{aid}.allow", is_list(allow), "a list",
+                               "an allow-list is a list of entries, each naming one path and the "
+                               "reason it will never be fixed"))
+                if is_list(allow):
+                    for i, e in enumerate(allow):
+                        checks.append((f"assertions.{aid}.allow[{i}]", is_obj(e), "an entry",
+                                       "an allow-list entry is an object with a `path` and a "
+                                       "`reason`"))
+    for where, ok, want, why in checks:
+        if ok:
+            continue
+        return (f"seam: {CONFIG_PATH} {where} is not {want} — {why}. The answers file is the "
+                f"source and this file is its projection, so write it there and regenerate "
+                f"(`seam-init --answers <file> --repo .`).")
+    return None
+
+
 def main() -> int:
     cfg_file = ROOT / CONFIG_PATH
     if not cfg_file.exists():
         print(f"seam: no {CONFIG_PATH} found above {Path(__file__).resolve().parent}",
               file=sys.stderr)
         return 2
-    cfg = json.loads(cfg_file.read_text())
-    A = cfg.get("assertions", {})
-    on = lambda k: bool(A.get(k, {}).get("enabled"))
-    opt = lambda k, name, default=None: A.get(k, {}).get(name, default)
+    try:
+        cfg = json.loads(read_text(cfg_file))
+    except ValueError as e:
+        print(f"seam: {CONFIG_PATH} is not readable JSON ({e}). Regenerate it with the wizard "
+              f"(`seam-init --answers <file> --repo .`), which writes it from the answers file.",
+              file=sys.stderr)
+        return 2
+    if not isinstance(cfg, dict):
+        print(f"seam: {CONFIG_PATH} is not an object. The config is what every knob is read "
+              f"from, so there is nothing to run — regenerate it with the wizard "
+              f"(`seam-init --answers <file> --repo .`).", file=sys.stderr)
+        return 2
+    shape = config_shape_refusal(cfg)
+    if shape is not None:
+        print(shape, file=sys.stderr)
+        return 2
+    A = given(cfg.get("assertions"), {})
+    # `given`, not `.get(k, default)`: a JSON null means the key is unset, which is how the Node
+    # emission's `??` reads it. A null reaching a reader was a crash on one side and a default on
+    # the other.
+    conf = lambda k: given(A.get(k), {})
+    on = lambda k: bool(conf(k).get("enabled"))
+    opt = lambda k, name, default=None: given(conf(k).get(name), default)
 
     # A checker that measures nothing cannot be told from one that passed, which is the thing
     # this whole layer exists to prevent. Refuse rather than exit 0.
-    enabled = [k for k in A if A[k].get("enabled")]
+    enabled = [k for k in A if conf(k).get("enabled")]
     if not enabled and not (ROOT / ".seam" / "assertions").is_dir():
         print(f"seam: no assertions are enabled in {CONFIG_PATH}, and there are none in "
               f".seam/assertions/ — this checker would measure nothing and exit 0, which cannot "
@@ -721,24 +912,29 @@ def main() -> int:
     # three readers of that field disagreed about what a missing one was — a Python `KeyError`, a
     # Node `undefined`, and `"None"` against `""` in the obsolescence message, whose text is part
     # of a finding's baseline key — so it is refused here, once, before anything reads it.
-    for aid, conf in sorted(A.items()):
-        for i, e in enumerate(conf.get("allow", []) or []):
+    # The shape of `allow` and of each entry is settled by `config_shape_refusal` above, so what
+    # is left here is what the entry SAYS.
+    for aid in sorted(A):
+        for i, e in enumerate(given(conf(aid).get("allow"), [])):
             if not isinstance(e.get("path"), str) or e["path"] == "":
                 print(f"seam: {CONFIG_PATH} assertions.{aid}.allow[{i}].path is not a path. An "
                       f"allow-list entry exempts one path from one assertion, so an entry naming "
                       f"none exempts nothing — write the path, or delete the entry.",
                       file=sys.stderr)
                 return 2
-            if not str(e.get("reason", "")).strip():
+            if not strip_ws(str(given(e.get("reason"), ""))):
+                # Quoted by hand and not with `!r`: Python's repr switches to double quotes for
+                # a string containing an apostrophe and the Node emission does not.
                 print(f"seam: {CONFIG_PATH} assertions.{aid}.allow[{i}] exempts "
-                      f"{e.get('path', '<no path>')!r} with no reason. An allow-list entry means "
+                      f"'{given(e.get('path'), '<no path>')}' with no reason. An allow-list entry "
+                      f"means "
                       f"\"this will never be fixed\" — write why, or use the baseline, which "
                       f"means \"not yet\".", file=sys.stderr)
                 return 2
 
     host = cfg["table"]["file"]
     docs = walk_md(ROOT)
-    text_of = {d: (ROOT / d).read_text() for d in docs if (ROOT / d).exists()}
+    text_of = {d: read_text(ROOT / d) for d in docs if (ROOT / d).exists()}
     anchors_of = {d: anchors(t) for d, t in text_of.items()}
     table = read_table(text_of.get(host, ""))
     findings: list[dict] = []
@@ -822,11 +1018,11 @@ def main() -> int:
                     backticked, bare, name = m.group(1), m.group(2), m.group(3)
                     if backticked is not None or bare is not None:
                         tok = (backticked if backticked is not None else bare).strip()
-                        if re.fullmatch(r"[\w./@-]+\.md", tok) and "*" not in tok:
+                        if re.fullmatch(r"[\w./@-]+\.md", tok, re.A) and "*" not in tok:
                             target = resolve_md(ROOT, d, tok) or tok
                             target_end = m.end()
                             shadow = None
-                        elif backticked is not None and re.fullmatch(r"[\w./@-]+", tok):
+                        elif backticked is not None and re.fullmatch(r"[\w./@-]+", tok, re.A):
                             # `some-skill` § The one gate names something that is not a file.
                             # Unresolvable is not a defect; a check that reds on a citation it
                             # cannot evaluate is a check that gets switched off.
@@ -854,7 +1050,7 @@ def main() -> int:
                     if aset is None:
                         if not (ROOT / file).exists():
                             continue       # A1 owns a path that does not resolve
-                        aset = anchors((ROOT / file).read_text())
+                        aset = anchors(read_text(ROOT / file))
                         anchors_of[file] = aset
                     if not cites_section(aset, cited):
                         findings.append(finding(
@@ -913,7 +1109,7 @@ def main() -> int:
             else:
                 in_ci: dict[str, tuple[str, int]] = {}
                 for rel in workflows:
-                    for line_no, payload in run_payloads((ROOT / rel).read_text()):
+                    for line_no, payload in run_payloads(read_text(ROOT / rel)):
                         for tok in check_tokens(payload, extra):
                             in_ci.setdefault(tok, (rel, line_no))
                 for tok, (f, ln) in sorted(documented.items()):
@@ -947,12 +1143,12 @@ def main() -> int:
                     "resolved against it"))
                 continue
             if art.get("parser") == "sql":
-                tables.update(sql_tables(p.read_text()))
+                tables.update(sql_tables(read_text(p)))
             elif art.get("parser") == "ts":
-                tables.update({k: v for k, v in ts_unions(p.read_text()).items()})
+                tables.update({k: v for k, v in ts_unions(read_text(p)).items()})
         if tables:
             for d in docs:
-                for m in re.finditer(r"`(\w+)\.(\w+)`", text_of[d]):
+                for m in re.finditer(r"`(\w+)\.(\w+)`", text_of[d], re.A):
                     whole, left, right = m.group(0).strip("`"), m.group(1), m.group(2)
                     if right in not_fields or whole in not_refs or left not in tables:
                         continue
@@ -976,21 +1172,24 @@ def main() -> int:
                 findings.append(finding("A5", f, 1, name,
                     f"no section called § {name} in `{f}` — the vocabulary was not compared"))
                 continue
-            blocks = re.findall(r"```[\w]*\n(.*?)```", body, re.S)
+            blocks = re.findall(r"```[\w]*\n(.*?)```", body, re.S | re.A)
             if not blocks:
                 findings.append(finding("A5", f, 1, name,
                     f"§ {name} in `{f}` has no fenced block — the vocabulary was not compared"))
                 continue
-            stated = {w.strip() for w in re.split(r"[\s,]+", "\n".join(blocks)) if w.strip()}
+            stated = {w for w in re.split(r"[ \t\r\n\f\v,]+", "\n".join(blocks)) if w}
             defined = None
-            for art in opt("A4", "artifacts", []) or cfg.get("artifacts", []):
+            # `given`, not `or`: an A4 artifact list that is present and EMPTY is an answer, and
+            # `or` read it as absent and fell through to the top-level one — which the Node
+            # emission's `??` does not, so the two read different artifacts.
+            for art in given(opt("A4", "artifacts"), given(cfg.get("artifacts"), [])):
                 p = ROOT / art["path"]
                 if not p.exists():
                     continue
                 if art.get("parser") == "sql":
-                    defined = sql_enum(p.read_text(), v["enum"])
+                    defined = sql_enum(read_text(p), v["enum"])
                 elif art.get("parser") == "ts":
-                    defined = ts_unions(p.read_text()).get(v["enum"])
+                    defined = ts_unions(read_text(p)).get(v["enum"])
                 if defined is not None:
                     break
             at = line_of(text_of[f], max(text_of[f].find(name), 0))
@@ -1009,13 +1208,14 @@ def main() -> int:
     if on("A6"):
         ran += 1
         for entry in opt("A6", "retired", []):
-            rx = re.compile(r"\b" + re.escape(entry["name"]) + r"\b", re.I)
+            rx = re.compile(r"\b" + re.escape(entry["name"]) + r"\b", re.I | re.A)
             for d in docs:
                 for m in rx.finditer(without_struck(text_of[d])):
                     findings.append(finding(
                         "A6", d, line_of(text_of[d], m.start()), entry["name"],
-                        f"`{entry['name']}` is retired — it became `{entry.get('became', '?')}`"
-                        f" ({entry.get('reason', 'no reason recorded')})"))
+                        f"`{entry['name']}` is retired — it became "
+                        f"`{given(entry.get('became'), '?')}`"
+                        f" ({given(entry.get('reason'), 'no reason recorded')})"))
 
     # ── A7. A reversed decision is not prescribed again. ────────────────────
     #
@@ -1025,10 +1225,10 @@ def main() -> int:
     if on("A7"):
         ran += 1
         for entry in opt("A7", "reversed", []):
-            rx = re.compile(entry["pattern"])
+            rx = re.compile(entry["pattern"], re.A)
             for d in docs:
                 for m in rx.finditer(without_struck(text_of[d])):
-                    where = entry.get("adr", "the decision record")
+                    where = given(entry.get("adr"), "the decision record")
                     findings.append(finding(
                         "A7", d, line_of(text_of[d], m.start()), m.group(0),
                         f"prescribes a reversed decision: {entry['reason']} — see `{where}`"))
@@ -1049,14 +1249,14 @@ def main() -> int:
                 f"switch A8 off; off is distinct from passing"))
         owners: dict[str, list[tuple[str, int]]] = {}
         for d in plans:
-            body = section_body(text_of[d], "The issues")
-            if body is None:
+            span = section_span(text_of[d], "The issues")
+            if span is None:
                 continue
-            base = text_of[d].split("\n").index(body.split("\n")[0]) + 1 if body.strip() else 0
+            body, base = span
             for i, cells in table_rows(body):
-                if len(cells) < 2 or not re.fullmatch(r"~*\d+~*", cells[0]):
+                if len(cells) < 2 or not re.fullmatch(r"~*\d+~*", cells[0], re.A):
                     continue
-                m = re.search(r"#(\d+)", cells[1])
+                m = re.search(r"#(\d+)", cells[1], re.A)
                 if m:
                     owners.setdefault(m.group(1), []).append((d, base + i))
         for issue, places in sorted(owners.items(), key=lambda kv: int(kv[0])):
@@ -1073,7 +1273,7 @@ def main() -> int:
     if on("A9"):
         ran += 1
         for site in opt("A9", "count_sites", []):
-            rx = re.compile(site["pattern"])
+            rx = re.compile(site["pattern"], re.A)
             actual = len(glob_files(ROOT, site["count_of"]))
             targets = [site["file"]] if site.get("file") else docs
             for d in targets:
@@ -1119,10 +1319,10 @@ def main() -> int:
     # ── A11. Config `load_bearing` and the table's Enforces column agree. ──
     if on("A11"):
         ran += 1
-        load_bearing = cfg.get("load_bearing", [])
+        load_bearing = given(cfg.get("load_bearing"), [])
         globs = [glob_re(g) for g in load_bearing]
         for row in table:
-            e = row["enforces"].strip()
+            e = strip_ws(row["enforces"])
             if not e:
                 continue
             # A path-shaped value is held to `load_bearing`; a command is not. The plan allows an
@@ -1140,15 +1340,19 @@ def main() -> int:
         # doc's layer could be two different things with nothing reconciling them — which is the
         # exact failure the method's central rule exists to prevent.
         by_path = {r["doc"]: r for r in table}
-        for d in cfg.get("docs", []):
-            row = by_path.get(d.get("path"))
+        for d in given(cfg.get("docs"), []):
+            # Read once, through `given`: a null printed as `None` here and as `null` there, and
+            # the message is part of a finding's baseline key.
+            path = given(d.get("path"), "")
+            layer = given(d.get("layer"), "")
+            row = by_path.get(path)
             if row is None:
-                findings.append(finding("A11", CONFIG_PATH, 1, d.get("path", ""),
-                    f"{CONFIG_PATH} lists `{d.get('path')}` and `{host}` has no row for it"))
-            elif row["layer"] is not None and d.get("layer") != row["layer"]:
-                findings.append(finding("A11", host, row["line"], d.get("path", ""),
-                    f"`{d.get('path')}` is layer {row['layer']} in the table and "
-                    f"layer {d.get('layer')} in {CONFIG_PATH} — the layer fixes the edit rule, so "
+                findings.append(finding("A11", CONFIG_PATH, 1, path,
+                    f"{CONFIG_PATH} lists `{path}` and `{host}` has no row for it"))
+            elif row["layer"] is not None and layer != row["layer"]:
+                findings.append(finding("A11", host, row["line"], path,
+                    f"`{path}` is layer {row['layer']} in the table and "
+                    f"layer {layer} in {CONFIG_PATH} — the layer fixes the edit rule, so "
                     f"two answers is two edit rules"))
 
     # ── A12. Append-only layers are byte-frozen on the default branch. ─────
@@ -1163,15 +1367,29 @@ def main() -> int:
     # decode would let invalid UTF-8 compare differently here than in the Node checker.
     if on("A12"):
         ran += 1
-        branch = opt("A12", "default_branch", cfg.get("repo", {}).get("default_branch", "main"))
-        adr_cfg = cfg.get("adr", {})
-        append_only = (adr_cfg.get("file", "docs/decisions.md")
+        # Unset, or null, means the repo's own default branch. Anything else must be a branch
+        # name: a `true` printed as `True` here and as `true` in the other language, and the
+        # finding's text is part of its baseline key, so one config had two keys. A15 was given
+        # this treatment and A12 was not; it is one pattern, not one site.
+        raw_branch = next((v for v in (opt("A12", "default_branch"),
+                                       given(cfg.get("repo"), {}).get("default_branch"))
+                           if v is not None), "main")
+        valid_branch = isinstance(raw_branch, str) and raw_branch != ""
+        branch = raw_branch if valid_branch else ""
+        adr_cfg = given(cfg.get("adr"), {})
+        append_only = (given(adr_cfg.get("file"), "docs/decisions.md")
                        if adr_cfg.get("format") == "single" else None)
         # The same directory and the same test for "a MADR record" that A13 uses.
-        madr_dir = adr_cfg.get("dir", "docs/adr") if adr_cfg.get("format") == "madr" else None
+        madr_dir = (given(adr_cfg.get("dir"), "docs/adr")
+                    if adr_cfg.get("format") == "madr" else None)
         frozen = [glob_re(r["doc"]) for r in table if r["layer"] in (3, 4)]
-        ref = resolve_default_branch(branch)
-        if ref is None:
+        ref = resolve_default_branch(branch) if valid_branch else None
+        if not valid_branch:
+            findings.append(finding("A12", CONFIG_PATH, 1, "default_branch",
+                "assertions.A12.default_branch is not a branch name — the byte-freeze comparison "
+                "was not made. Set it to a string naming the default branch, or switch A12 off; "
+                "off is distinct from passing"))
+        elif ref is None:
             findings.append(finding("A12", CONFIG_PATH, 1, branch,
                 f"no branch called `{branch}` and no `origin/{branch}` — the byte-freeze comparison "
                 f"was not made. Fetch the branch (in CI, `fetch-depth: 0` and the default branch "
@@ -1210,9 +1428,9 @@ def main() -> int:
     # ── A13. The append-only layers keep their shape. ──────────────────────
     if on("A13"):
         ran += 1
-        adr = cfg.get("adr", {})
+        adr = given(cfg.get("adr"), {})
         if adr.get("format") == "madr":
-            d_dir = adr.get("dir", "docs/adr")
+            d_dir = given(adr.get("dir"), "docs/adr")
             for d in docs:
                 if not d.startswith(d_dir + "/") or os.path.basename(d) in ("README.md", "template.md"):
                     continue
@@ -1227,7 +1445,8 @@ def main() -> int:
                         "a decision record carries a **Status:** — proposed, accepted, or "
                         "superseded by NNNN"))
                 elif "superseded" in m.group(1).lower():
-                    succ = re.search(r"superseded by\s+(\d{4})", m.group(1), re.I)
+                    succ = re.search(r"superseded by[ \t\r\n\f\v]+(\d{4})", m.group(1),
+                                     re.I | re.A)
                     if not succ:
                         findings.append(finding("A13", d, line_of(text, m.start()), m.group(1),
                             "a superseded record names its successor by number, or the reversal "
@@ -1236,29 +1455,30 @@ def main() -> int:
                         findings.append(finding("A13", d, line_of(text, m.start()), succ.group(1),
                             f"names {succ.group(1)} as its successor, and there is no such record"))
         else:
-            f = adr.get("file", "docs/decisions.md")
+            f = given(adr.get("file"), "docs/decisions.md")
             if f in text_of:
                 for m in re.finditer(r"^##[ \t]+(.*)$", text_of[f], re.M):
                     after = text_of[f][m.end():m.end() + 400]
-                    if not re.search(r"\d{4}-\d{2}-\d{2}", after.split("\n##")[0]):
+                    if not re.search(r"\d{4}-\d{2}-\d{2}", after.split("\n##")[0], re.A):
                         findings.append(finding("A13", f, line_of(text_of[f], m.start()),
                             m.group(1),
                             "a dated decisions file gives every entry a date — the layer is "
                             "append-only and dated, and the date is what makes it a record"))
-        prd = cfg.get("prd", {})
-        prd_dir = prd.get("dir", "docs/prd")
+        prd = given(cfg.get("prd"), {})
+        prd_dir = given(prd.get("dir"), "docs/prd")
         index = f"{prd_dir}/README.md"
         if index in text_of:
             for d in docs:
                 base = os.path.basename(d)
-                if not d.startswith(prd_dir + "/") or not re.fullmatch(r"PRD-v\d+\.md", base):
+                if not d.startswith(prd_dir + "/") or not re.fullmatch(r"PRD-v\d+\.md", base,
+                                                                      re.A):
                     continue
                 # Findable by filename or by version label: an index row reading `| v0 | … |`
                 # makes the version perfectly findable, and A13 exists so an unindexed version
                 # cannot hide, not so the index has to spell a filename.
                 label = base[4:-3]                       # PRD-v0.md -> v0
                 indexed = base in text_of[index] or re.search(
-                    r"(?<![\w-])" + re.escape(label) + r"(?![\w.-])", text_of[index])
+                    r"(?<![\w-])" + re.escape(label) + r"(?![\w.-])", text_of[index], re.A)
                 if not indexed:
                     findings.append(finding("A13", index, 1, base,
                         f"`{base}` is a PRD version and is named nowhere in the index — neither "
@@ -1302,8 +1522,8 @@ def main() -> int:
                 f"key for the default"))
         for d in plans:
             text = text_of[d]
-            body = section_body(text, "The units")
-            if body is None:
+            span = section_span(text, "The units")
+            if span is None:
                 # Only a plan that sequences issues is a plan that owes its units. A layer-5 doc
                 # with neither section is another kind of file under the same glob, and says
                 # nothing here.
@@ -1313,10 +1533,9 @@ def main() -> int:
                         "not made. A plan names its units, each with the test that proves it, "
                         "or nothing says what \"done\" is"))
                 continue
-            # The body is a slice of the text, so where it is found is where its first line is.
-            # Looking that line up by its content instead would send a blank first line to the
-            # first blank line in the file.
-            base = line_of(text, text.find(body))
+            # Both from the scan: `text.find(body)` is a lookup by content, and a plan that
+            # quotes its own units table has those exact lines earlier in the file.
+            body, base = span
             units = 0
             for i, cells in table_rows(body):
                 # A bare numeral only: the header, the rule under it, and a struck-through unit
@@ -1352,7 +1571,7 @@ def main() -> int:
                     tp = ROOT / m.group(1)
                     tp.stat()
                     if tp.is_file():
-                        content = tp.read_text(encoding="utf-8", errors="replace")
+                        content = read_text(tp)
                     else:
                         state = "missing"
                 except OSError as e:
@@ -1369,7 +1588,7 @@ def main() -> int:
                     # The pattern sees the file with line endings made `\n` and each run of
                     # non-ASCII characters made one `~`, so `.`, `\s` and `$` mean the same to
                     # both engines.
-                    flat = re.sub(r"[^\x00-\x7f]+", "~", content.replace("\r\n", "\n").replace("\r", "\n"))
+                    flat = re.sub(r"[^\x00-\x7f]+", "~", content)
                     if not assert_re.search(flat):
                         findings.append(finding("A14", d, base + i, m.group(1),
                             f"unit {cells[0]} names `{m.group(1)}` as its test, and the file "
@@ -1394,7 +1613,7 @@ def main() -> int:
         # name: a `true` would print as `True` here and `true` in the other language, and the
         # finding's text is part of its baseline key.
         raw_branch = next((v for v in (opt("A15", "default_branch"),
-                                       (cfg.get("repo") or {}).get("default_branch"))
+                                       given(cfg.get("repo"), {}).get("default_branch"))
                            if v is not None), "main")
         valid_branch = isinstance(raw_branch, str) and raw_branch != ""
         branch = raw_branch if valid_branch else ""
@@ -1622,8 +1841,8 @@ def main() -> int:
                 continue
             ran += 1
             for r in mod.run(ctx) or []:
-                findings.append(finding(r["id"], r["file"], int(r["line"]), r.get("text", ""),
-                                        r["message"]))
+                findings.append(finding(r["id"], r["file"], int(r["line"]),
+                                        given(r.get("text"), ""), r["message"]))
 
     # ── The baseline ───────────────────────────────────────────────────────
     #
@@ -1631,7 +1850,7 @@ def main() -> int:
     # allow-list, whose entries carry a written reason and mean "this will never be fixed".
     # Matching is exact on (id, file, line, text), so a violation whose line no longer matches
     # drops out rather than being carried forever.
-    bpath = ROOT / cfg.get("baseline", {}).get("path", ".seam/baseline.json")
+    bpath = ROOT / given(given(cfg.get("baseline"), {}).get("path"), ".seam/baseline.json")
     key = lambda f: (f["id"], f["file"], f["line"], f["text"])
     findings.sort(key=lambda f: (f["id"], f["file"], f["line"], f["text"]))
 
@@ -1650,8 +1869,8 @@ def main() -> int:
 
     baselined = set()
     if bpath.exists():
-        for e in json.loads(bpath.read_text()).get("entries", []):
-            baselined.add((e["id"], e["file"], e["line"], e.get("text", "")))
+        for e in given(json.loads(read_text(bpath)).get("entries"), []):
+            baselined.add((e["id"], e["file"], e["line"], given(e.get("text"), "")))
     new = [f for f in findings if key(f) not in baselined]
     carried = len(findings) - len(new)
 

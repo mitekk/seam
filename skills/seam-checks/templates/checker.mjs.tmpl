@@ -52,6 +52,57 @@ function lineOf(text, index) {
   return n;
 }
 
+// Every primitive below exists because this language's own built-in disagrees with the Python
+// emission's, and a repo is promised that the choice of checker language does not change what is
+// enforced.
+
+const ASCII_WS = " \t\r\n\f\v";
+const ASCII_WS_RE = /^[ \t\r\n\f\v]+|[ \t\r\n\f\v]+$/g;
+
+/** `s` without leading or trailing ASCII whitespace.
+ *
+ *  Not `trim()`, and the Python emission does not use `strip()`: `strip()` takes U+0085 and
+ *  `trim()` does not, `trim()` takes U+FEFF and `strip()` does not. So a padded table cell, a
+ *  heading or a citation was read one way here and another way there. */
+const stripWs = (s) => s.replace(ASCII_WS_RE, "");
+
+/** `s` split on runs of ASCII whitespace, with no empty pieces. `/\s+/` splits on one set and
+ *  Python's `str.split()` on another; this is the one both can agree on. */
+const splitWs = (s) => s.split(/[ \t\r\n\f\v]+/).filter(Boolean);
+
+/** Whether `ch` is an ASCII letter or digit — what both checkers mean by a word character.
+ *  Python's `str.isalnum()` is Unicode-aware and this is not, so a heading or a citation ending
+ *  in a non-ASCII letter was a word boundary on one side and not on the other. */
+const alnum = (ch) => ch !== undefined && ch !== "" && /^[a-z0-9]$/i.test(ch);
+
+/** Two strings in CODE POINT order, which is how Python compares them.
+ *
+ *  `localeCompare` is a collation: it puts `alpha.md` before `Zeta.md` and Python puts it after,
+ *  so the two checkers printed the same findings in different orders. `<` on a JS string compares
+ *  UTF-16 code units, which disagrees with Python above the BMP, so the comparison walks code
+ *  points. */
+function cmp(a, b) {
+  if (a === b) return 0;
+  const x = [...a];
+  const y = [...b];
+  const n = Math.min(x.length, y.length);
+  for (let i = 0; i < n; i++) {
+    const p = x[i].codePointAt(0);
+    const q = y[i].codePointAt(0);
+    if (p !== q) return p < q ? -1 : 1;
+  }
+  return x.length - y.length;
+}
+
+/** A repo file as text, read the way the Python emission reads one.
+ *
+ *  Line endings are normalised because `Path.read_text()` is universal-newline and never sees a
+ *  `\r`: without this, a CRLF plan had no sections at all on this side — the per-line heading
+ *  regex cannot match a line ending in `\r`, because `.` excludes it — so Node took the silent
+ *  branch and exited 0 where Python reported the defect. An invalid byte is U+FFFD here and was
+ *  an exception there, which is the other half of the same read. */
+const readText = (abs) => readFileSync(abs, "utf8").replace(/\r\n?/g, "\n");
+
 function globRe(pattern) {
   let out = "";
   let i = 0;
@@ -61,7 +112,11 @@ function globRe(pattern) {
     else if (pattern[i] === "?") { out += "[^/]"; i += 1; }
     else { out += pattern[i].replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); i += 1; }
   }
-  return new RegExp("^" + out + "$");
+  // The `s` flag so `.` in the `**/` expansion is any character: without it `.` excludes `\r`,
+  // U+2028 and U+2029 here and only `\n` in Python, so a path carrying one was inside the glob
+  // there and outside it here. `$` with no `m` flag is already the end of the string, which is
+  // what Python's `\Z` is for.
+  return new RegExp("^" + out + "$", "s");
 }
 
 const SKIP = new Set([".git", "node_modules", "dist", "build", ".next", "vendor", "__pycache__",
@@ -73,7 +128,7 @@ function allFiles(root, dir = root, out = []) {
   try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return out; }
   const names = entries.map((e) => e.name);
   if (dir !== root && names.includes(".git")) return out;
-  for (const name of names.slice().sort()) {
+  for (const name of names.slice().sort(cmp)) {
     const e = entries.find((x) => x.name === name);
     if (e.isSymbolicLink()) continue;
     const abs = join(dir, name);
@@ -90,23 +145,44 @@ function allFiles(root, dir = root, out = []) {
 /** Files matching a path glob, from the same walk the rest of the checker uses. */
 function globFiles(root, pattern) {
   const rx = globRe(pattern);
-  return allFiles(root).filter((f) => rx.test(f)).sort();
+  return allFiles(root).filter((f) => rx.test(f)).sort(cmp);
 }
 
 /** Every markdown file under docs/ plus every one at the repo root. */
 function walkMd(root) {
   return allFiles(root)
     .filter((f) => f.endsWith(".md") && (f.startsWith("docs/") || !f.includes("/")))
-    .sort();
+    .sort(cmp);
 }
 
 // ── Markdown reading ─────────────────────────────────────────────────────────
 
+const FENCE_RE = /^[ \t]*(?:```|~~~)/;
+
+/**
+ * `text` with every fenced block blanked, keeping the line count so offsets stay true.
+ *
+ * A `## Heading` written INSIDE a fence is a heading being SHOWN, not declared — and it was
+ * becoming a real anchor, so A2 passed a citation naming a section no human can find. The toggle
+ * is the one `sectionSpan` and `tableRows` already use: a marker at any indentation opens or
+ * closes a block, and an unterminated one runs to the end of the text. That is stricter than a
+ * renderer, which reads a four-space-indented marker as literal text, and it is deliberate:
+ * three readers of a fence in one file that disagreed would be the drift this whole layer is
+ * against.
+ */
+function withoutFences(text) {
+  let fenced = false;
+  return text.split("\n").map((line) => {
+    if (FENCE_RE.test(line)) { fenced = !fenced; return ""; }
+    return fenced ? "" : line;
+  }).join("\n");
+}
+
 function headings(text) {
   const out = [];
-  for (const m of text.matchAll(/^#{1,6}[ \t]+(.*)$/gm)) {
-    const h = m[1].replaceAll("~~", "").replaceAll("**", "").replaceAll("*", "")
-      .replaceAll("`", "").trim();
+  for (const m of withoutFences(text).matchAll(/^#{1,6}[ \t]+(.*)$/gm)) {
+    const h = stripWs(m[1].replaceAll("~~", "").replaceAll("**", "").replaceAll("*", "")
+      .replaceAll("`", ""));
     if (h) out.push(h);
   }
   return out;
@@ -125,11 +201,11 @@ function anchors(text) {
     // each one does" or "Pipeline, a note on scoring" — and since a citation matches any anchor
     // it starts with on a word boundary, A2 then silently passed citations to sections that do
     // not exist. A check that stops checking is worse than one that fails.
-    const clauses = h.split(/ — |, /).map((c) => c.trim()).filter(Boolean);
+    const clauses = h.split(/ — |, /).map(stripWs).filter(Boolean);
     clauses.forEach((c, i) => {
       out.add(c.toLowerCase());
       if (i) return;
-      const words = c.toLowerCase().split(/\s+/).filter(Boolean);
+      const words = splitWs(c.toLowerCase());
       for (let k = 1; k <= words.length; k++) out.add(words.slice(0, k).join(" "));
     });
   }
@@ -137,17 +213,27 @@ function anchors(text) {
 }
 
 function citesSection(anchorSet, cited) {
-  const low = cited.split(/\s+/).filter(Boolean).join(" ").toLowerCase().replace(/\)+$/, "");
+  const low = splitWs(cited).join(" ").toLowerCase().replace(/\)+$/, "");
   for (const a of [...anchorSet].sort((x, y) => y.length - x.length)) {
-    if (low.startsWith(a) && (low.length === a.length || !/[a-z0-9]/i.test(low[a.length]))) {
+    if (low.startsWith(a) && (low.length === a.length || !alnum(low[a.length]))) {
       return true;
     }
   }
   return false;
 }
 
-/** The lines under the heading called `name`; null when there is no such heading. */
-function sectionBody(text, name) {
+/**
+ * The lines under the heading called `name`, to the next heading at the same level or above, as
+ * `[body, line]` — where `line` is the 1-based line the first of them is on. Null when there is
+ * no such heading, which callers report rather than treat as empty.
+ *
+ * The line comes from the scan and not from looking the body up afterwards. `text.indexOf(body)`
+ * and `split("\n").indexOf(firstLine)` are lookups by CONTENT: a section body's first line is
+ * usually blank, so `indexOf("")` returned the first blank line in the whole file, and a plan
+ * that quoted its own units table sent the search into the quotation. Every A8 finding named a
+ * line about a dozen rows above the row it was about.
+ */
+function sectionSpan(text, name) {
   const lines = text.split("\n");
   let start = null;
   let startLevel = 0;
@@ -157,30 +243,34 @@ function sectionBody(text, name) {
     // A heading inside a fenced block is a QUOTE of a section, not that section. A doc that shows
     // a template inside ```markdown had its example read as the real thing, so the assertion
     // measured the placeholder row in the example rather than the table below it.
-    if (/^[ \t]*(?:```|~~~)/.test(lines[i])) { fenced = !fenced; continue; }
+    if (FENCE_RE.test(lines[i])) { fenced = !fenced; continue; }
     if (fenced) continue;
     // Levels 2 to 6: a `#` heading is the document's title, not a section of it. Without that
     // bound, `§ Checks` in a file called "# Checks" matched the title, whose body is the
     // whole file — so a renamed section still compared something and passed.
     const m = lines[i].match(/^(#{2,6})[ \t]+(.*)$/);
     if (!m) continue;
-    const clean = m[2].replaceAll("~~", "").replaceAll("**", "").replaceAll("*", "")
-      .trim().toLowerCase();
+    const clean = stripWs(m[2].replaceAll("~~", "").replaceAll("**", "").replaceAll("*", ""))
+      .toLowerCase();
     if (start === null) {
       // The same rule citations use: the heading begins with the cited name, ending on a word
       // boundary — "The issues" names "The issues, in the order they can be built".
-      if (clean.startsWith(low) && (clean.length === low.length || !/[a-z0-9]/i.test(clean[low.length]))) {
+      if (clean.startsWith(low) && (clean.length === low.length || !alnum(clean[low.length]))) {
         start = i + 1;
         startLevel = m[1].length;
       }
       continue;
     }
-    if (m[1].length <= startLevel) return lines.slice(start, i).join("\n");
+    if (m[1].length <= startLevel) return [lines.slice(start, i).join("\n"), start + 1];
   }
-  return start === null ? null : lines.slice(start).join("\n");
+  return start === null ? null : [lines.slice(start).join("\n"), start + 1];
 }
 
-const ASCII_WS = /^[ \t\r\n\f\v]+|[ \t\r\n\f\v]+$/g;
+/** `sectionSpan`'s body alone, for the callers that do not report a line inside it. */
+function sectionBody(text, name) {
+  const span = sectionSpan(text, name);
+  return span === null ? null : span[0];
+}
 
 /**
  * The cells of a markdown table row, or null when the line is not one. A8 and A14 read their
@@ -192,9 +282,9 @@ const ASCII_WS = /^[ \t\r\n\f\v]+|[ \t\r\n\f\v]+$/g;
  * `strip()` disagree about U+FEFF and U+0085.
  */
 function tableCells(line) {
-  const t = line.replace(ASCII_WS, "");
+  const t = stripWs(line);
   if (!t.startsWith("|")) return null;
-  return t.slice(1).replace(/\|$/, "").split("|").map((c) => c.replace(ASCII_WS, ""));
+  return t.slice(1).replace(/\|$/, "").split("|").map(stripWs);
 }
 
 /**
@@ -211,7 +301,7 @@ function tableRows(body) {
   let fenced = false;
   const lines = body.split("\n");
   for (let i = 0; i < lines.length; i++) {
-    if (/^[ \t]*(?:```|~~~)/.test(lines[i])) { fenced = !fenced; continue; }
+    if (FENCE_RE.test(lines[i])) { fenced = !fenced; continue; }
     if (fenced) continue;
     const cells = tableCells(lines[i]);
     if (cells !== null) out.push([i, cells]);
@@ -338,8 +428,11 @@ function portableRegex(p) {
 const MD_CITE_RE = /`([\w./@-]+\.md)`/g;
 // A `|` ends a section name: it is a table cell boundary and never part of a heading.
 const TOKEN_RE = /`([^`\n]+)`|(?<![`\w./-])([\w./-]+\.md)(?![\w.-])|§[ \t\n]*([A-Za-z][^.;:—(*`§|\n]*)/g;
-const ADJACENT_RE = /^[\s,*]{0,4}$/;
-const CONNECTOR_RE = /^[\s,]*(?:and|or)?[\s,]*$/;
+// Written out rather than `\s`: the three whitespace sets — this engine's `\s`, Python's
+// Unicode `\s` and its ASCII one — are three different sets, and only an explicit class is the
+// same on both sides.
+const ADJACENT_RE = /^[ \t\r\n\f\v,*]{0,4}$/;
+const CONNECTOR_RE = /^[ \t\r\n\f\v,]*(?:and|or)?[ \t\r\n\f\v,]*$/;
 
 function resolveMd(root, frm, cited) {
   if (existsSync(join(root, cited))) return cited;
@@ -405,7 +498,7 @@ function differsOnlyInStatusLines(was, now) {
 function mdCitations(root, frm, text) {
   const out = [];
   const linkedSpans = [];
-  for (const m of text.matchAll(/\[([^\]\n]*)\]\(([^)\s]+)\)/g)) {
+  for (const m of text.matchAll(/\[([^\]\n]*)\]\(([^) \t\r\n\f\v]+)\)/g)) {
     const labelStart = m.index + 1;
     linkedSpans.push([labelStart, labelStart + m[1].length]);
     const target = m[2].split("#")[0];
@@ -430,8 +523,13 @@ function readTable(text) {
   const offset = scoped ? start : 0;
   const rows = [];
   for (const m of body.matchAll(/^\|(.*)\|[ \t]*$/gm)) {
-    const cells = m[1].split("|").map((c) => c.trim());
-    const doc = cells.length ? cells[0].match(/^`([^`]+)`$/) : null;
+    // The same splitter A8 and A14 read a row with. Its own split-and-trim disagreed with
+    // Python's about U+0085 and U+FEFF, so a padded first cell was a row in one checker and not
+    // in the other — and a doc with no row is A10's loudest finding.
+    const cells = tableCells(m[0]);
+    // `cells &&`, because the splitter returns null for a line that is not a row at all — which
+    // this regex cannot produce, and the Python emission's `if cells` already tolerated.
+    const doc = cells && cells.length ? cells[0].match(/^`([^`]+)`$/) : null;
     if (!doc) continue;
     let layer = null;
     if (cells.length > 1) {
@@ -453,23 +551,27 @@ function readTable(text) {
 
 function sqlTables(sql) {
   const out = {};
-  for (const m of sql.matchAll(/create table (?:if not exists )?(\w+)\s*\(([\s\S]*?)\n\);/gi)) {
-    const cols = new Set([...m[2].matchAll(/^\s{2,}(\w+)\s/gm)].map((c) => c[1]));
+  for (const m of sql.matchAll(
+      /create table (?:if not exists )?(\w+)[ \t\r\n\f\v]*\(([\s\S]*?)\n\);/gi)) {
+    const cols = new Set([...m[2].matchAll(/^[ \t\r\n\f\v]{2,}(\w+)[ \t\r\n\f\v]/gm)]
+      .map((c) => c[1]));
     out[m[1]] = cols;
   }
   return out;
 }
 
 function sqlEnum(sql, name) {
-  const rx = new RegExp("create type\\s+" + name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-    + "\\s+as enum\\s*\\(([\\s\\S]*?)\\);", "i");
+  const ws = "[ \\t\\r\\n\\f\\v]";
+  const rx = new RegExp("create type" + ws + "+" + name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    + ws + "+as enum" + ws + "*\\(([\\s\\S]*?)\\);", "i");
   const m = sql.match(rx);
   return m ? new Set([...m[1].matchAll(/'([^']+)'/g)].map((x) => x[1])) : null;
 }
 
 function tsUnions(text) {
   const out = {};
-  for (const m of text.matchAll(/(?:type|enum)\s+(\w+)\s*=?\s*\{?([^;}]*)[;}]/g)) {
+  for (const m of text.matchAll(
+      /(?:type|enum)[ \t\r\n\f\v]+(\w+)[ \t\r\n\f\v]*=?[ \t\r\n\f\v]*\{?([^;}]*)[;}]/g)) {
     const members = new Set([...m[2].matchAll(/['"]([\w-]+)['"]/g)].map((x) => x[1]));
     if (members.size) out[m[1]] = members;
   }
@@ -496,7 +598,7 @@ const DEFAULT_TOKEN_RES = [
   "scripts/[\\w.\\-/]+\\.(?:py|sql|mjs|js|ts|sh)",
   "(?:npm|pnpm|yarn|bun) run [\\w:.\\-]+",
   "node --test",
-  "(?:^|&&|;|\\|)\\s*(?:pytest|ruff|mypy|eslint|tsc|cargo|go test)\\b",
+  "(?:^|&&|;|\\|)[ \\t\\r\\n\\f\\v]*(?:pytest|ruff|mypy|eslint|tsc|cargo|go test)\\b",
   "check:[a-z\\-]+",
   "docker build",
   "drop schema public cascade",
@@ -516,7 +618,7 @@ function stripComments(text) {
         if (ch === quote) quote = "";
       } else if (ch === "'" || ch === '"') {
         quote = ch;
-      } else if (ch === "#" && (i === 0 || /\s/.test(line[i - 1]))) {
+      } else if (ch === "#" && (i === 0 || ASCII_WS.includes(line[i - 1]))) {
         cut = i;
         break;
       }
@@ -531,7 +633,7 @@ function checkTokens(text, extra) {
   const found = new Set();
   for (const src of [...DEFAULT_TOKEN_RES, ...extra]) {
     for (const m of text.matchAll(new RegExp(src, "gm"))) {
-      found.add(m[0].replace(/^[&|;\s\n\t]+/, ""));
+      found.add(m[0].replace(/^[&|; \t\r\n\f\v]+/, ""));
     }
   }
   for (const m of text.matchAll(TURBO_RE)) {
@@ -556,8 +658,8 @@ function runPayloads(yamlText) {
     let j = i + 1;
     while (j < lines.length) {
       const line = lines[j];
-      if (line.trim() === "") { body.push(""); j += 1; continue; }
-      const indent = line.length - line.replace(/^\s+/, "").length;
+      if (stripWs(line) === "") { body.push(""); j += 1; continue; }
+      const indent = line.length - line.replace(/^[ \t\r\n\f\v]+/, "").length;
       if (indent <= col) break;
       body.push(line);
       j += 1;
@@ -572,6 +674,77 @@ function runPayloads(yamlText) {
 
 const finding = (id, file, line, text, message) => ({ id, file, line, text, message });
 
+/**
+ * The first config value no reader below can use, as the message to refuse with — or null.
+ *
+ * One pass over the shapes, before anything indexes them. A value of the wrong shape was a
+ * `TypeError` here and a `KeyError` or an `AttributeError` in the Python emission, so the same
+ * malformed config ended two different ways — and an `allow` that is an object rather than a
+ * list escaped the refusal below entirely, because `list.length` was `undefined` and the loop
+ * body never ran. A traceback is never an acceptable ending for a malformed config: it is a
+ * refusal, with the same message and the same exit in both languages.
+ *
+ * The checks are in a fixed order and assertion ids are sorted, so a config broken in two ways
+ * is refused for the same one by both.
+ */
+function configShapeRefusal(cfg) {
+  const isObj = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
+  const isList = (v) => Array.isArray(v);
+  const isName = (v) => typeof v === "string" && v !== "";
+  const checks = [];
+  const table = cfg.table ?? {};
+  checks.push(["table", isObj(table), "an object",
+    "it names the file that hosts the sources-of-truth table"]);
+  if (isObj(table)) {
+    checks.push(["table.file", isName(table.file), "a path",
+      "every doc's layer is recorded in that file, so without it there is nothing to hold a doc "
+      + "to"]);
+  }
+  const docsRows = cfg.docs ?? [];
+  checks.push(["docs", isList(docsRows), "a list", "A11 reads it row by row against the table"]);
+  if (isList(docsRows)) {
+    docsRows.forEach((d, i) => {
+      checks.push([`docs[${i}]`, isObj(d), "an object", "a docs row is a path and the layer it is on"]);
+      if (isObj(d)) {
+        checks.push([`docs[${i}].path`, isName(d.path), "a path",
+          "a row naming no doc says nothing about one"]);
+      }
+    });
+  }
+  const lb = cfg.load_bearing ?? [];
+  checks.push(["load_bearing", isList(lb), "a list", "A11 reads it as path globs"]);
+  if (isList(lb)) {
+    lb.forEach((g, i) => checks.push([`load_bearing[${i}]`, typeof g === "string", "a string",
+      "each entry is a path glob"]));
+  }
+  const A = cfg.assertions ?? {};
+  checks.push(["assertions", isObj(A), "an object",
+    "every assertion's settings live under its id there"]);
+  if (isObj(A)) {
+    for (const aid of Object.keys(A).sort(cmp)) {
+      checks.push([`assertions.${aid}`, isObj(A[aid]), "an object",
+        "an assertion's settings are an object with an `enabled` switch"]);
+      if (isObj(A[aid]) && (A[aid].allow ?? null) !== null) {
+        const allow = A[aid].allow;
+        checks.push([`assertions.${aid}.allow`, isList(allow), "a list",
+          "an allow-list is a list of entries, each naming one path and the reason it will never "
+          + "be fixed"]);
+        if (isList(allow)) {
+          allow.forEach((e, i) => checks.push([`assertions.${aid}.allow[${i}]`, isObj(e),
+            "an entry", "an allow-list entry is an object with a `path` and a `reason`"]));
+        }
+      }
+    }
+  }
+  for (const [where, ok, want, why] of checks) {
+    if (ok) continue;
+    return `seam: ${CONFIG_PATH} ${where} is not ${want} — ${why}. The answers file is the `
+      + `source and this file is its projection, so write it there and regenerate `
+      + `(\`seam-init --answers <file> --repo .\`).`;
+  }
+  return null;
+}
+
 const WORDS = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8,
   nine: 9, ten: 10, eleven: 11, twelve: 12 };
 
@@ -582,10 +755,32 @@ async function main() {
       + `${dirname(fileURLToPath(import.meta.url))}\n`);
     return 2;
   }
-  const cfg = JSON.parse(readFileSync(cfgFile, "utf8"));
+  let cfg;
+  try {
+    cfg = JSON.parse(readText(cfgFile));
+  } catch (e) {
+    process.stderr.write(`seam: ${CONFIG_PATH} is not readable JSON (${e.message}). Regenerate `
+      + `it with the wizard (\`seam-init --answers <file> --repo .\`), which writes it from the `
+      + `answers file.\n`);
+    return 2;
+  }
+  if (typeof cfg !== "object" || cfg === null || Array.isArray(cfg)) {
+    process.stderr.write(`seam: ${CONFIG_PATH} is not an object. The config is what every knob `
+      + `is read from, so there is nothing to run — regenerate it with the wizard `
+      + `(\`seam-init --answers <file> --repo .\`).\n`);
+    return 2;
+  }
+  const shape = configShapeRefusal(cfg);
+  if (shape !== null) {
+    process.stderr.write(shape + "\n");
+    return 2;
+  }
   const A = cfg.assertions ?? {};
   const on = (k) => Boolean(A[k]?.enabled);
-  const opt = (k, name, dflt = undefined) => (A[k]?.[name] !== undefined ? A[k][name] : dflt);
+  // A JSON null means the key is unset, which is what `??` reads it as — and what the Python
+  // emission now reads it as too. Returning the null instead handed a reader a value no reader
+  // expects: `[...null]` threw before any assertion could report anything.
+  const opt = (k, name, dflt = undefined) => (A[k]?.[name] ?? dflt);
 
   // A checker that measures nothing cannot be told from one that passed, which is the thing this
   // whole layer exists to prevent. Refuse rather than exit 0.
@@ -630,8 +825,8 @@ async function main() {
       + ` enabled". ${regenerate}\n`);
     return 2;
   }
-  const live = enabledIds.slice().sort();
-  const want = recorded.slice().sort();
+  const live = enabledIds.slice().sort(cmp);
+  const want = recorded.slice().sort(cmp);
   if (live.join(",") !== want.join(",")) {
     const only = (a, b) => a.filter((x) => !b.includes(x));
     const added = only(live, want);
@@ -653,7 +848,9 @@ async function main() {
   // three readers of that field disagreed about what a missing one was — a Python `KeyError`, a
   // Node `undefined`, and `"None"` against `""` in the obsolescence message, whose text is part
   // of a finding's baseline key — so it is refused here, once, before anything reads it.
-  for (const aid of Object.keys(A).sort()) {
+  // The shape of `allow` and of each entry is settled by `configShapeRefusal` above, so what is
+  // left here is what the entry SAYS.
+  for (const aid of Object.keys(A).sort(cmp)) {
     const list = A[aid]?.allow ?? [];
     for (let i = 0; i < list.length; i++) {
       if (typeof list[i]?.path !== "string" || list[i].path === "") {
@@ -662,7 +859,7 @@ async function main() {
           + `none exempts nothing — write the path, or delete the entry.\n`);
         return 2;
       }
-      if (!String(list[i]?.reason ?? "").trim()) {
+      if (!stripWs(String(list[i]?.reason ?? ""))) {
         process.stderr.write(`seam: ${CONFIG_PATH} assertions.${aid}.allow[${i}] exempts `
           + `'${list[i]?.path ?? "<no path>"}' with no reason. An allow-list entry means "this `
           + `will never be fixed" — write why, or use the baseline, which means "not yet".\n`);
@@ -674,7 +871,7 @@ async function main() {
   const host = cfg.table.file;
   const docs = walkMd(ROOT);
   const textOf = {};
-  for (const d of docs) if (existsSync(join(ROOT, d))) textOf[d] = readFileSync(join(ROOT, d), "utf8");
+  for (const d of docs) if (existsSync(join(ROOT, d))) textOf[d] = readText(join(ROOT, d));
   const anchorsOf = {};
   for (const [d, t] of Object.entries(textOf)) anchorsOf[d] = anchors(t);
   const table = readTable(textOf[host] ?? "");
@@ -782,7 +979,7 @@ async function main() {
           let aset = anchorsOf[file];
           if (aset === undefined) {
             if (!existsSync(join(ROOT, file))) continue;   // A1 owns a path that does not resolve
-            aset = anchors(readFileSync(join(ROOT, file), "utf8"));
+            aset = anchors(readText(join(ROOT, file)));
             anchorsOf[file] = aset;
           }
           if (!citesSection(aset, cited)) {
@@ -846,19 +1043,19 @@ async function main() {
       } else {
         const inCi = new Map();
         for (const rel of workflows) {
-          for (const [lineNo, payload] of runPayloads(readFileSync(join(ROOT, rel), "utf8"))) {
+          for (const [lineNo, payload] of runPayloads(readText(join(ROOT, rel)))) {
             for (const tok of checkTokens(payload, extra)) {
               if (!inCi.has(tok)) inCi.set(tok, [rel, lineNo]);
             }
           }
         }
-        for (const [tok, [f, ln]] of [...documented.entries()].sort()) {
+        for (const [tok, [f, ln]] of [...documented.entries()].sort((a, b) => cmp(a[0], b[0]))) {
           if (!inCi.has(tok) && !ciOnly.has(tok)) {
             findings.push(finding("A3", f, ln, tok,
               `\`${tok}\` is documented as a check but no CI step runs it`));
           }
         }
-        for (const [tok, [f, ln]] of [...inCi.entries()].sort()) {
+        for (const [tok, [f, ln]] of [...inCi.entries()].sort((a, b) => cmp(a[0], b[0]))) {
           if (!documented.has(tok) && !localOnly.has(tok)) {
             findings.push(finding("A3", f, ln, tok,
               `CI runs \`${tok}\` but no documented check list names it`));
@@ -889,8 +1086,8 @@ async function main() {
           + "against it"));
         continue;
       }
-      if (art.parser === "sql") Object.assign(tables, sqlTables(readFileSync(p, "utf8")));
-      else if (art.parser === "ts") Object.assign(tables, tsUnions(readFileSync(p, "utf8")));
+      if (art.parser === "sql") Object.assign(tables, sqlTables(readText(p)));
+      else if (art.parser === "ts") Object.assign(tables, tsUnions(readText(p)));
     }
     if (Object.keys(tables).length) {
       for (const d of docs) {
@@ -935,13 +1132,16 @@ async function main() {
           `§ ${name} in \`${f}\` has no fenced block — the vocabulary was not compared`));
         continue;
       }
-      const stated = new Set(blocks.join("\n").split(/[\s,]+/).map((w) => w.trim()).filter(Boolean));
+      const stated = new Set(blocks.join("\n").split(/[ \t\r\n\f\v,]+/).filter(Boolean));
       let defined = null;
-      for (const art of (opt("A4", "artifacts", null) ?? cfg.artifacts ?? [])) {
+      // An A4 artifact list that is present and EMPTY is an answer: Python's `or` read it as
+      // absent and fell through to the top-level one, and `??` does not, so the two read
+      // different artifacts. Both now take the A4 list whenever it is there.
+      for (const art of (opt("A4", "artifacts") ?? cfg.artifacts ?? [])) {
         const p = join(ROOT, art.path);
         if (!existsSync(p)) continue;
-        if (art.parser === "sql") defined = sqlEnum(readFileSync(p, "utf8"), v.enum);
-        else if (art.parser === "ts") defined = tsUnions(readFileSync(p, "utf8"))[v.enum] ?? null;
+        if (art.parser === "sql") defined = sqlEnum(readText(p), v.enum);
+        else if (art.parser === "ts") defined = tsUnions(readText(p))[v.enum] ?? null;
         if (defined !== null) break;
       }
       const at = lineOf(textOf[f], Math.max(textOf[f].indexOf(name), 0));
@@ -950,11 +1150,11 @@ async function main() {
           `the artifact defines no vocabulary called \`${v.enum}\``));
         continue;
       }
-      for (const extraMember of [...stated].filter((x) => !defined.has(x)).sort()) {
+      for (const extraMember of [...stated].filter((x) => !defined.has(x)).sort(cmp)) {
         findings.push(finding("A5", f, at, extraMember,
           `§ ${name} lists \`${extraMember}\`, which the artifact does not define`));
       }
-      for (const missing of [...defined].filter((x) => !stated.has(x)).sort()) {
+      for (const missing of [...defined].filter((x) => !stated.has(x)).sort(cmp)) {
         findings.push(finding("A5", f, at, missing,
           `the artifact defines \`${missing}\`, which § ${name} does not list`));
       }
@@ -1008,10 +1208,9 @@ async function main() {
     }
     const owners = new Map();
     for (const d of plans) {
-      const body = sectionBody(textOf[d], "The issues");
-      if (body === null) continue;
-      const first = body.split("\n")[0];
-      const base = body.trim() ? textOf[d].split("\n").indexOf(first) + 1 : 0;
+      const span = sectionSpan(textOf[d], "The issues");
+      if (span === null) continue;
+      const [body, base] = span;
       for (const [i, cells] of tableRows(body)) {
         if (cells.length < 2 || !/^~*\d+~*$/.test(cells[0])) continue;
         const m = cells[1].match(/#(\d+)/);
@@ -1023,8 +1222,10 @@ async function main() {
     }
     for (const [issue, places] of [...owners.entries()].sort((a, b) => Number(a[0]) - Number(b[0]))) {
       if (new Set(places.map((p) => p[0])).size > 1) {
-        const where = [...new Set(places.map((p) => p[0]))].sort().join(", ");
-        for (const [f, ln] of places.slice().sort()) {
+        const where = [...new Set(places.map((p) => p[0]))].sort(cmp).join(", ");
+        // An explicit comparator, because the default one stringifies the pair: `["f", 10]`
+        // sorts before `["f", 9]` as text, and Python compares the line as a number.
+        for (const [f, ln] of places.slice().sort((a, b) => cmp(a[0], b[0]) || a[1] - b[1])) {
           findings.push(finding("A8", f, ln, "#" + issue,
             `#${issue} is owned by more than one plan (${where}) — one issue, one owning plan, `
             + `so "where is this tracked" has one answer`));
@@ -1090,7 +1291,7 @@ async function main() {
     const loadBearing = cfg.load_bearing ?? [];
     const globs = loadBearing.map(globRe);
     for (const row of table) {
-      const e = row.enforces.trim();
+      const e = stripWs(row.enforces);
       if (!e) continue;
       // A path-shaped value is held to `load_bearing`; a command is not. An Enforces cell may
       // name "a constraint, an index, a CI assertion", and a CI assertion is a command — which
@@ -1109,13 +1310,17 @@ async function main() {
     // failure the method's central rule exists to prevent.
     const byPath = new Map(table.map((r) => [r.doc, r]));
     for (const d of cfg.docs ?? []) {
-      const row = byPath.get(d.path);
+      // Read once, through `??`: a null printed as `null` here and as `None` there, and the
+      // message is part of a finding's baseline key.
+      const path = d.path ?? "";
+      const layer = d.layer ?? "";
+      const row = byPath.get(path);
       if (row === undefined) {
-        findings.push(finding("A11", CONFIG_PATH, 1, d.path ?? "",
-          `${CONFIG_PATH} lists \`${d.path}\` and \`${host}\` has no row for it`));
-      } else if (row.layer !== null && d.layer !== row.layer) {
-        findings.push(finding("A11", host, row.line, d.path ?? "",
-          `\`${d.path}\` is layer ${row.layer} in the table and layer ${d.layer} in `
+        findings.push(finding("A11", CONFIG_PATH, 1, path,
+          `${CONFIG_PATH} lists \`${path}\` and \`${host}\` has no row for it`));
+      } else if (row.layer !== null && layer !== row.layer) {
+        findings.push(finding("A11", host, row.line, path,
+          `\`${path}\` is layer ${row.layer} in the table and layer ${layer} in `
           + `${CONFIG_PATH} — the layer fixes the edit rule, so two answers is two edit rules`));
       }
     }
@@ -1129,14 +1334,26 @@ async function main() {
   // decode would let invalid UTF-8 compare differently here than in the Python checker.
   if (on("A12")) {
     ran += 1;
-    const branch = opt("A12", "default_branch", cfg.repo?.default_branch ?? "main");
+    // Unset, or null, means the repo's own default branch. Anything else must be a branch name:
+    // a `true` printed as `true` here and as `True` in the other language, and the finding's text
+    // is part of its baseline key, so one config had two keys. A15 was given this treatment and
+    // A12 was not; it is one pattern, not one site.
+    const rawBranch = [opt("A12", "default_branch"), cfg.repo?.default_branch]
+      .find((v) => v !== undefined && v !== null) ?? "main";
+    const validBranch = typeof rawBranch === "string" && rawBranch !== "";
+    const branch = validBranch ? rawBranch : "";
     const adrCfg = cfg.adr ?? {};
     const appendOnly = adrCfg.format === "single" ? (adrCfg.file ?? "docs/decisions.md") : null;
     // The same directory and the same test for "a MADR record" that A13 uses.
     const madrDir = adrCfg.format === "madr" ? (adrCfg.dir ?? "docs/adr") : null;
     const frozen = table.filter((r) => r.layer === 3 || r.layer === 4).map((r) => globRe(r.doc));
-    const ref = resolveDefaultBranch(branch);
-    if (ref === null) {
+    const ref = validBranch ? resolveDefaultBranch(branch) : null;
+    if (!validBranch) {
+      findings.push(finding("A12", CONFIG_PATH, 1, "default_branch",
+        `assertions.A12.default_branch is not a branch name — the byte-freeze comparison was not `
+        + `made. Set it to a string naming the default branch, or switch A12 off; off is distinct `
+        + `from passing`));
+    } else if (ref === null) {
       findings.push(finding("A12", CONFIG_PATH, 1, branch,
         `no branch called \`${branch}\` and no \`origin/${branch}\` — the byte-freeze comparison `
         + `was not made. Fetch the branch (in CI, \`fetch-depth: 0\` and the default branch `
@@ -1272,8 +1489,8 @@ async function main() {
     }
     for (const d of plans) {
       const text = textOf[d];
-      const body = sectionBody(text, "The units");
-      if (body === null) {
+      const span = sectionSpan(text, "The units");
+      if (span === null) {
         // Only a plan that sequences issues is a plan that owes its units. A layer-5 doc with
         // neither section is another kind of file under the same glob, and says nothing here.
         if (sectionBody(text, "The issues") !== null) {
@@ -1284,10 +1501,9 @@ async function main() {
         }
         continue;
       }
-      // The body is a slice of the text, so where it is found is where its first line is. Looking
-      // that line up by its content instead would send a blank first line to the first blank
-      // line in the file.
-      const base = lineOf(text, text.indexOf(body));
+      // Both from the scan: `text.indexOf(body)` is a lookup by content, and a plan that quotes
+      // its own units table has those exact lines earlier in the file.
+      const [body, base] = span;
       let units = 0;
       for (const [i, cells] of tableRows(body)) {
         // A bare numeral only: the header, the rule under it, and a struck-through unit are not
@@ -1321,7 +1537,7 @@ async function main() {
         let content = "";
         try {
           const tp = join(ROOT, m[1]);
-          if (statSync(tp).isFile()) content = readFileSync(tp, "utf8");
+          if (statSync(tp).isFile()) content = readText(tp);
           else state = "missing";
         } catch (e) {
           state = e.code === "ENOENT" || e.code === "ENOTDIR" ? "missing" : "unreadable";
@@ -1336,7 +1552,7 @@ async function main() {
         } else if (assertRe !== null) {
           // The pattern sees the file with line endings made `\n` and each run of non-ASCII
           // characters made one `~`, so `.`, `\s` and `$` mean the same to both engines.
-          const flat = content.replace(/\r\n?/g, "\n").replace(/[^\x00-\x7f]+/g, "~");
+          const flat = content.replace(/[^\x00-\x7f]+/g, "~");
           if (!assertRe.test(flat)) {
             findings.push(finding("A14", d, base + i, m[1],
               `unit ${cells[0]} names \`${m[1]}\` as its test, and the file asserts nothing — `
@@ -1567,7 +1783,7 @@ async function main() {
   const adir = join(ROOT, ".seam", "assertions");
   if (existsSync(adir) && statSync(adir).isDirectory()) {
     const ctx = { root: ROOT, config: cfg, docs, text_of: textOf, table, host };
-    for (const f of readdirSync(adir).filter((x) => x.endsWith(".mjs")).sort()) {
+    for (const f of readdirSync(adir).filter((x) => x.endsWith(".mjs")).sort(cmp)) {
       const mod = await import(pathToFileURL(join(adir, f)).href);
       if (typeof mod.run !== "function") {
         process.stderr.write(`seam: ${f} has no run(ctx)\n`);
@@ -1583,9 +1799,12 @@ async function main() {
   // ── The baseline ───────────────────────────────────────────────────────
   const bpath = join(ROOT, cfg.baseline?.path ?? ".seam/baseline.json");
   const key = (f) => JSON.stringify([f.id, f.file, f.line, f.text]);
+  // `cmp`, not `localeCompare`: a collation puts `alpha.md` before `Zeta.md` and Python's
+  // code-point sort puts it after, so the two checkers printed the same findings in different
+  // orders — and the order is what a human reads down. The baseline is a set and was unaffected,
+  // which is why a green suite never saw this.
   findings.sort((a, b) =>
-    a.id.localeCompare(b.id) || a.file.localeCompare(b.file) || a.line - b.line
-    || a.text.localeCompare(b.text));
+    cmp(a.id, b.id) || cmp(a.file, b.file) || a.line - b.line || cmp(a.text, b.text));
 
   if (process.argv.includes("--write-baseline")) {
     mkdirSync(dirname(bpath), { recursive: true });
@@ -1602,7 +1821,7 @@ async function main() {
 
   const baselined = new Set();
   if (existsSync(bpath)) {
-    for (const e of (JSON.parse(readFileSync(bpath, "utf8")).entries ?? [])) {
+    for (const e of (JSON.parse(readText(bpath)).entries ?? [])) {
       baselined.add(JSON.stringify([e.id, e.file, e.line, e.text ?? ""]));
     }
   }
