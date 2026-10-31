@@ -47,7 +47,7 @@ rather than asking open questions about them.
 | 8 | One file per decision, or one dated file? | `adr.format` | `madr` or `single`. `layers.md` has the trade, beside this file. Asked **once**. |
 | 9 | Which paths, if any, are **prose-only** enough that a cheap review is adequate? | `low_review_paths` | **Defaults to empty, and empty is the right answer for most repos.** Take an empty answer without arguing. Ask for prose paths specifically: `low` is the sixth row of the level table and a path that also matches a `high` or `medium` row above takes the higher level, so a source file or a convention file on this list is a row that never fires. |
 | 10 | What are the domains work gets labelled with? | `domains[]` | One per source-of-truth row is the usual mapping. |
-| 11 | What is the build order? | `milestones[]` | From the infra or architecture doc if one exists. |
+| 11 | What is the build order, and which milestone is being built now? | `milestones[]`, `milestones[].active` | The order from the infra or architecture doc if one exists. **Exactly one milestone is `"active": true` and every other is `false`** — the follow-up qualifier's third clause, "blocks the active milestone", reads it, so the wizard refuses an answers file with none or two. Ask which — it is not readable from the tree. No milestones yet is a complete answer. |
 | 12 | Which agents does this repo want, and what does each cover? | `agents[]` | Optional. An empty list is fine; a generic agent is worse than none. |
 | 13 | Checker language: Python 3 or Node? | `checker.language` | Both implement the same assertions with the same output. **Pick what the repo already runs in CI** — that is the whole rule, because a runner that has to install the other one is a check that can fail for a reason that is not drift. `checker.path` is optional and defaults to `scripts/check_docs.py` or `scripts/check_docs.mjs`; if you give it, the extension has to match the language. |
 | 14 | Anything still undecided? | `open_questions[]` | Each goes in **as a question**. Never promoted to a confident sentence. |
@@ -91,7 +91,8 @@ rather than asking open questions about them.
   "load_bearing":     ["db/schema.sql"],
   "low_review_paths": [],
   "domains":    [ { "name": "hives", "covers": "Hive state and scheduling" } ],
-  "milestones": [ { "n": 1, "title": "Queenless list", "green": "the list renders" } ],
+  "milestones": [ { "n": 1, "title": "Queenless list", "green": "the list renders",
+                    "active": true } ],            // exactly one true when any milestone exists
   "agents":     [ { "name": "schema", "covers": "...", "model": "opus", "effort": "high" } ],
 
   "assertions": {                                  // overrides; every switch has a default

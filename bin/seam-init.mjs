@@ -150,6 +150,33 @@ function validate(a) {
       + ` doc, so it is load-bearing by construction`);
   });
 
+  // The follow-up qualifier's third clause is "it blocks the active milestone", and a clause can
+  // only be checked against one fact. So `active` is a boolean on every row — not truthy, not
+  // absent-means-false, which would give a config whose key means different things on different
+  // rows — and exactly one row is true. Zero milestones is fine: the build order is asked for,
+  // and "none yet" is an answer.
+  need(a.milestones === undefined || Array.isArray(a.milestones), "milestones",
+    "must be a list, or absent, which means none yet");
+  const ms = Array.isArray(a.milestones) ? a.milestones : [];
+  ms.forEach((m, i) => {
+    const got = m?.active === undefined ? "missing" : JSON.stringify(m.active);
+    need(typeof m?.active === "boolean", `milestones[${i}].active`,
+      `must be true or false, not ${got} — exactly one milestone is active, and every row says`
+      + ` whether it is`);
+  });
+  if (ms.length && ms.every((m) => typeof m?.active === "boolean")) {
+    const on = ms.flatMap((m, i) => (m.active ? [i] : []));
+    if (on.length === 0) {
+      bad.push(`milestones[].active: none of the milestones is active — exactly one`
+        + ` must be, because the follow-up qualifier's third clause ("blocks the active`
+        + ` milestone") reads it. Mark the one being built now with "active": true`);
+    } else if (on.length > 1) {
+      bad.push(`milestones[${on[1]}].active: milestones[${on[0]}] is already active — exactly one`
+        + ` milestone is active at a time, so the qualifier's third clause has one thing to check`
+        + ` against`);
+    }
+  }
+
   if (bad.length) die(bad[0]);
 }
 
@@ -346,8 +373,9 @@ function templateVars(a, cfg) {
       : "| _none recorded_ | `/seam:init` asks for these; they are never inferred |",
     milestones_table: (a.milestones ?? []).length
       ? (a.milestones ?? []).map((m) =>
-          `| ${m.n} | ${m.title} | ${m.green ?? "_not recorded_"} |`).join("\n")
-      : "| — | _none recorded_ | _the build order is asked for, not inferred_ |",
+          `| ${m.n} | ${m.title} | ${m.green ?? "_not recorded_"} | ${m.active ? "yes" : "no"} |`)
+          .join("\n")
+      : "| — | _none recorded_ | _the build order is asked for, not inferred_ | — |",
   };
 }
 

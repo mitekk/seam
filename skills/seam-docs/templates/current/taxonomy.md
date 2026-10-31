@@ -42,13 +42,14 @@ priority scheme stops meaning anything: everything becomes `p1` and the board st
 
 The build order. Each ends green before the next starts, and each produces a reviewable diff.
 
-| # | Milestone | Green when |
-|---|---|---|
+| # | Milestone | Green when | Active |
+|---|---|---|---|
 {{milestones_table}}
 
 **The active milestone is the one the priority rule reads**, so it has to be unambiguous: exactly
-one milestone is active at a time, and clause 3 of the follow-up qualifier — "blocks the active
-milestone" — is answered from this table rather than from how important something feels.
+one milestone is active at a time — the `yes` above, `milestones[].active` in
+`.seam/config.json` — and clause 3 of the follow-up qualifier, "blocks the active milestone", is
+answered from it rather than from how important something feels.
 
 ## What this does not own
 

@@ -155,7 +155,8 @@ it is not an issue:
 
 1. **a bug someone outside the repo sees** — a user or an auditor is worse off;
 2. **an exposure on anything in `load_bearing`** — the paths the repo named as carrying weight;
-3. **it blocks the active milestone** — which the milestone says, not how important it feels.
+3. **it blocks the active milestone** — the one `milestones[].active` marks in `.seam/config.json`,
+   not how important it feels.
 
 **Everything else is one row in the findings ledger**, committed in the same PR. That file owns
 nothing and is not a plan, so a row there is a record rather than a commitment. A row that later

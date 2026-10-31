@@ -37,6 +37,9 @@ test("writes .seam/config.json as the answers minus every prose key", () => {
   assert.equal(cfg.adr.format, "madr");
   assert.deepEqual(cfg.load_bearing, ["db/schema.sql"]);
   assert.deepEqual(cfg.low_review_paths, []);
+  // `active` is a machine key: the qualifier's third clause reads it from here, so a projection
+  // that dropped it would leave the clause with no fact to check.
+  assert.deepEqual(cfg.milestones, [{ n: 1, title: "First subsystem", active: true }]);
   assert.deepEqual(
     cfg.docs.map((d) => [d.path, d.layer]),
     [
@@ -284,7 +287,7 @@ test("a layer-2 row named taxonomy.md gets the taxonomy template, not the generi
     { name: "hives", covers: "Hive state and inspection scheduling" },
     { name: "web", covers: "The pages a beekeeper opens" },
   ];
-  ans.milestones = [{ n: 1, title: "Queenless list", green: "the list renders from the database" }];
+  ans.milestones = [{ n: 1, title: "Queenless list", green: "the list renders from the database", active: true }];
   const { dir, r } = init(ans);
   assert.equal(r.status, 0, r.stderr);
   const t = read(dir, "docs/taxonomy.md");
@@ -581,5 +584,97 @@ test("A15's default_branch must be a branch name", () => {
   assert.equal(r.status, 2, r.stdout);
   assert.match(r.stderr, /assertions\.A15\.default_branch/);
   assert.ok(!has(dir, ".seam/config.json"), "a rejected run still wrote a config");
+  rm(dir);
+});
+
+// ── milestones[].active ───────────────────────────────────────────────────────
+//
+// The follow-up qualifier's third clause is "it blocks the active milestone". It is answerable
+// only if exactly one milestone is active, so the answers file is refused when that does not hold
+// — a quietly wrong config would leave the clause pointing at nothing, or at two things.
+
+const TWO_MILESTONES = (a0, a1) => [
+  { n: 1, title: "Queenless list", green: "the list renders", active: a0 },
+  { n: 2, title: "Inspection plan", green: "a week of inspections renders", active: a1 },
+];
+
+test("exactly one milestone may be active", () => {
+  const { dir, r } = init(answers({ milestones: TWO_MILESTONES(true, true) }));
+  assert.equal(r.status, 2, r.stdout);
+  // It names the second one, which is the one that makes it two, and the one it collides with.
+  assert.match(r.stderr, /milestones\[1\]\.active/, r.stderr);
+  assert.match(r.stderr, /milestones\[0\]/, r.stderr);
+  assert.ok(!has(dir, ".seam/config.json"), "a rejected run still wrote a config");
+  rm(dir);
+});
+
+test("milestones with none active are rejected", () => {
+  // Explicit `false` on every row, so this is the none-active rule and not the boolean rule.
+  const { dir, r } = init(answers({ milestones: TWO_MILESTONES(false, false) }));
+  assert.equal(r.status, 2, r.stdout);
+  assert.match(r.stderr, /milestones\[\]\.active/, r.stderr);
+  assert.match(r.stderr, /none/i, r.stderr);
+  assert.ok(!has(dir, ".seam/config.json"), "a rejected run still wrote a config");
+  rm(dir);
+});
+
+test("every milestone says whether it is active, as a boolean", () => {
+  // A string "true" is truthy and a missing key is falsy; both would pass a loose check and give
+  // a config whose `active` means different things on different rows.
+  for (const [ms, at] of [
+    [[{ n: 1, title: "A", active: true }, { n: 2, title: "B" }], 1],
+    [[{ n: 1, title: "A", active: "true" }, { n: 2, title: "B", active: false }], 0],
+  ]) {
+    const { dir, r } = init(answers({ milestones: ms }));
+    assert.equal(r.status, 2, `${JSON.stringify(ms)}: ${r.stdout}`);
+    assert.match(r.stderr, new RegExp(`milestones\\[${at}\\]\\.active`), r.stderr);
+    assert.ok(!has(dir, ".seam/config.json"), "a rejected run still wrote a config");
+    rm(dir);
+  }
+});
+
+/** The cells of every row in a taxonomy doc's Milestones table, header and separator included. */
+function milestoneRows(taxonomy) {
+  const section = taxonomy.split(/^## Milestones$/m)[1].split(/^## /m)[0];
+  return section.split("\n").filter((l) => l.startsWith("|"))
+    .map((l) => l.split("|").slice(1, -1).map((c) => c.trim()));
+}
+
+const TAXONOMY_ROW = {
+  path: "docs/taxonomy.md",
+  layer: 2,
+  owns: "The domain labels, the three priorities, and the milestones",
+  enforces: "",
+  create: true,
+};
+
+test("the active milestone reaches the taxonomy doc", () => {
+  // The active one is the second row, so a table that marked the first would not pass.
+  const ans = answers({ milestones: TWO_MILESTONES(false, true) });
+  ans.docs.push(TAXONOMY_ROW);
+  const { dir, r } = init(ans);
+  assert.equal(r.status, 0, r.stderr);
+  const [header, , ...rows] = milestoneRows(read(dir, "docs/taxonomy.md"));
+  assert.equal(header.at(-1), "Active", `the table has no Active column: ${header}`);
+  assert.deepEqual(
+    Object.fromEntries(rows.map((c) => [c[1], c.at(-1)])),
+    { "Queenless list": "no", "Inspection plan": "yes" },
+  );
+  // And the config the checker and the skills read says the same thing.
+  assert.deepEqual(
+    JSON.parse(read(dir, ".seam/config.json")).milestones.map((m) => m.active),
+    [false, true],
+  );
+  rm(dir);
+});
+
+test("no milestones is still valid, and the taxonomy table stays rectangular", () => {
+  const ans = answers({ milestones: [] });
+  ans.docs.push(TAXONOMY_ROW);
+  const { dir, r } = init(ans);
+  assert.equal(r.status, 0, r.stderr);
+  const rows = milestoneRows(read(dir, "docs/taxonomy.md"));
+  assert.ok(rows.length >= 3, "the empty-state row is missing");
+  for (const cells of rows) assert.equal(cells.length, rows[0].length, `ragged row: ${cells}`);
   rm(dir);
 });

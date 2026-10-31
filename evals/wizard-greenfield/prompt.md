@@ -54,7 +54,7 @@ create table apiaries (
   "load_bearing": ["db/schema.sql"],
   "low_review_paths": [],
   "domains": [{ "name": "hives", "covers": "Hive state and inspection scheduling" }],
-  "milestones": [{ "n": 1, "title": "Queenless list", "green": "the list renders from the database" }],
+  "milestones": [{ "n": 1, "title": "Queenless list", "green": "the list renders from the database", "active": true }],
   "agents": [],
   "assertions": {},
   "open_questions": ["Whether inspections need to work offline, in a field with no signal."]
