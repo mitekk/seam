@@ -1044,6 +1044,13 @@ test("the interview asks for teardown_command, and § Defaults records what empt
     "the teardown row does not say an empty answer is a complete one");
   assert.match(tables.defaults, /^\|\s*`teardown_command`\s*\|\s*`""`\s*\|/m,
     "§ Defaults has no row giving teardown_command's default");
+  // The answers file is the source and § Teardown is this fact's consumer, so the two cannot
+  // disagree about where the command runs: a command written for a worktree root resolves its
+  // relative paths somewhere else when the skill runs it from the main checkout.
+  assert.match(row, /main checkout/,
+    "the teardown row does not say where the command runs, or no longer says the main checkout");
+  assert.ok(!/run from the repo root/.test(row),
+    "the teardown row still says 'the repo root', which § Teardown says is the wrong directory");
 });
 
 test("every key path seam-github reads resolves, and the asked ones carry a question row", () => {
@@ -1074,13 +1081,17 @@ test("every key path seam-github reads resolves, and the asked ones carry a ques
     ["assertions", "checker", "docs", "domains", "load_bearing", "milestones", "repo", "table",
       "teardown_command"],
     "seam-github names a config key this test does not know about, or stopped naming one");
-  // **The subject is the config the wizard just wrote**, walked path by path. The answers file is
-  // its source, so a path that resolves is one the answers can fill — asked, or stated from the
-  // tree, which `repo.default_branch` is and which no question row may be demanded for.
+  // **The subject is the answers file**, walked path by path, with the config beside it for the
+  // keys the program fills rather than the interview. The projection alone is the wrong subject:
+  // `docs[].owns`, `milestones[].green`, `domains[].covers` and `agents[].covers` are real
+  // answers keys it **deliberately strips** (PROSE_SUBKEYS), so a clause citing one red with a
+  // message telling a maintainer to project a prose key — the one change this project is built on
+  // not making. A path in neither is a key nothing fills, which is what a typo is.
+  const ans = answers();
   for (const k of paths)
-    assert.notEqual(resolveKeyPath(cfg, k), undefined,
-      `seam-github reads ${k} and a config the wizard wrote has no such path — fix the key, or`
-      + ` add it to the answers file and the projection`);
+    assert.ok(resolveKeyPath(ans, k) !== undefined || resolveKeyPath(cfg, k) !== undefined,
+      `seam-github reads ${k}, which is neither a path an answers file carries nor one the program`
+      + ` fills — the key is misspelled, or the interview does not collect it`);
   const { questions, schema } = interviewTables();
   // § Schema is the documented half of the same claim: the key a clause reads is in the answers
   // schema a reader of the interview sees, not only in whatever the program happens to emit.
@@ -1132,6 +1143,40 @@ test("§ Teardown's steps are numbered in an order that can be performed", () =>
   assert.match(sec, /expect `-D` rather than `-d`/,
     "§ Teardown does not say which flag a squashed branch needs, so -d's merged check reads as a"
     + " verification it is not");
+  // Measured: `git worktree remove` refuses on an untracked or modified file (gitignored contents
+  // do not count), and `--force` then deletes work that exists nowhere else. That is a human's
+  // call, so the step says to look rather than to force.
+  assert.match(sec, /do not force past it unasked/,
+    "§ Teardown does not say what a refused removal is, so --force reads as the way past it");
+  // And the diagnostic names both causes of the delete's error, not only the one this round added
+  // a step for: step 4 skipped, or step 4 taken and refused.
+  assert.match(sec, /step 4 not taken, or step 4 taken and \*\*refused\*\*/,
+    "the diagnostic attributes `cannot delete branch … used by worktree` to one cause");
+});
+
+test("no command seam-github ships reads a path by splitting on whitespace", () => {
+  // Measured in a repo under `My Project`: `git worktree list | head -1 | awk '{print $1}'`
+  // returns `…/My`, the `cd` fails, and the session is still in the worktree — so the next line
+  // runs there and deletes its own directory. A silent wrong directory, not a stop, and the
+  // shipped example is the thing a model copies. `--porcelain` plus `cut -d' ' -f2-` is the idiom
+  // that survives it; this asserts the class, so the same read cannot arrive in another command.
+  const sdir = join(REPO, "skills/seam-github");
+  const files = readdirSync(sdir, { recursive: true }).map(String).filter((f) => f.endsWith(".md"));
+  for (const f of files) {
+    const text = readFileSync(join(sdir, f), "utf8");
+    // Fenced blocks only: prose may well quote the broken idiom to say not to use it, as the
+    // bullet under this example does.
+    const fenced = [...text.matchAll(/^```[a-z]*\n([\s\S]*?)^```$/gm)].map((m) => m[1]).join("\n");
+    for (const line of fenced.split("\n")) {
+      assert.ok(!/awk\s+'\{\s*print\s+\$\d/.test(line),
+        `${f} ships a command that splits a path on whitespace, which truncates at the first`
+        + ` space and leaves the session where it was: ${line.trim()}`);
+      if (/git worktree list/.test(line) && /\|/.test(line))
+        assert.match(line, /--porcelain/,
+          `${f} pipes \`git worktree list\` without --porcelain, so the path is read out of a`
+          + ` column rather than after \`worktree \`: ${line.trim()}`);
+    }
+  }
 });
 
 test("the clean fixture carries every top-level key the wizard projects", () => {

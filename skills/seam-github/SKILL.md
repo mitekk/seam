@@ -287,9 +287,12 @@ be done**: `gh pr merge --delete-branch` deletes the local branch as well as the
 command that removes a worktree takes its branch with it. **A step already done is skipped rather
 than retried** — the sequence is idempotent, and `branch not found` here is that, not a failure.
 
-1. **Leave the worktree: run the rest from the main checkout**, which `git worktree list` names
-   on its first line. "The repo root" is not the instruction — in a worktree repo the worktree is
-   one too, and it is the wrong one.
+1. **Leave the worktree: run the rest from the main checkout**, which
+   `git worktree list --porcelain` names on its first line, after `worktree `. Read it that way
+   rather than splitting the line on whitespace: a repo path may contain spaces, and the split
+   returns a truncated path the `cd` then fails on, leaving the session in the worktree. "The repo
+   root" is not the instruction — in a worktree repo the worktree is one too, and it is the wrong
+   one.
 2. **Run the repo's own teardown command, if `.seam/config.json` names one** in
    `teardown_command`, with the issue number in place of `<n>`. It goes before the delete because
    it owns whatever the branch was given, and because it commonly deletes the branch too.
@@ -297,11 +300,14 @@ than retried** — the sequence is idempotent, and `branch not found` here is th
    the next one possible: **`git branch -d` and `-D` both refuse a branch that is checked out**, in
    a worktree or in the repo root alike, and the error names the worktree rather than the flag, so
    it reads as a tooling fault rather than as the ordinary state it is.
-4. **Remove the branch's worktree, if it still has one** — `git worktree remove <path>`, and
-   `git worktree list` is what says whether it does. **A branch checked out in a worktree cannot
-   be deleted while that worktree exists**, with either flag, so without this step the next one
-   cannot run in a worktree repo whose `teardown_command` is empty — which is the common case
-   twice over.
+4. **Remove the branch's worktree, if it still has one** — `git worktree remove "<path>"`, quoted,
+   and `git worktree list` is what says whether it does. **A branch checked out in a worktree
+   cannot be deleted while that worktree exists**, with either flag, so without this step the next
+   one cannot run in a worktree repo whose `teardown_command` is empty — which is the common case
+   twice over. **If the removal refuses, the worktree has uncommitted or untracked work in it —
+   look at what it is, and do not force past it unasked.** `--force` deletes files that exist
+   nowhere else; gitignored contents do not trigger the refusal, so what it is reporting is real
+   work, not the norm.
 5. **Delete the local branch, if it is still there, and expect `-D` rather than `-d`.** A squash
    gives the default branch a new commit, so the branch tip is never an ancestor of it and `-d`'s
    merged check cannot hold: while `refs/remotes/origin/<branch>` is still present it reports the
@@ -316,8 +322,10 @@ is standing in**: every git command after that — step 4 of § Merging included
 prevent is exactly what is left, and nothing in the error mentions a branch or a worktree. With
 `teardown_command` empty, step 3 fails instead with
 `fatal: '<default>' is already used by worktree at …`, and step 5 with `cannot delete branch …
-used by worktree` whichever flag it is given, which is step 4 not taken. None of the three is a
-tooling fault.
+used by worktree` whichever flag it is given. **That last one has two causes and they are not the
+same thing:** step 4 not taken, or step 4 taken and **refused** on a dirty worktree
+(`contains modified or untracked files, use --force to delete it`). Check which before doing
+anything, because the second is work someone has not saved. None of these is a tooling fault.
 
 **Where that key is empty or absent, the steps after it are the whole teardown.** Most repos have
 nothing else to take down, so an empty value is a complete answer rather than an unfilled one: do

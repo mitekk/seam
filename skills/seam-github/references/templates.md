@@ -185,14 +185,14 @@ The example repo's `.seam/config.json` names one teardown command, `scripts/rm-w
 and its `repo.default_branch` is `main`.
 
 ```bash
-gh pr merge 12 -R mitekk/apiary --squash --delete-branch   # gated — needs the OK
-gh issue view 12 -R mitekk/apiary                          # did Closes fire?
-cd "$(git worktree list | head -1 | awk '{print $1}')"     # the main checkout, not the worktree
-scripts/rm-worktree.sh 12                                  # the repo's own teardown
-git switch main                                            # -d and -D refuse a checked-out branch
-git worktree remove .worktrees/12-queenless-filter         # if the teardown command left it
-git branch -D 12-queenless-filter                          # and the branch that worktree held
-git pull --ff-only                                         # the base the next branch is cut from
+gh pr merge 12 -R mitekk/apiary --squash --delete-branch          # gated — needs the OK
+gh issue view 12 -R mitekk/apiary                                 # did Closes fire?
+cd "$(git worktree list --porcelain | head -1 | cut -d' ' -f2-)"  # the main checkout
+scripts/rm-worktree.sh 12                                         # the repo's own teardown
+git switch main                                                   # before the delete
+git worktree remove ".worktrees/12-queenless-filter"              # if the teardown left it
+git branch -D 12-queenless-filter                                 # and the branch it held
+git pull --ff-only                                                # the next branch's base
 ```
 
 How the first of those is offered:
@@ -223,6 +223,11 @@ What that shows:
   line deletes the directory the session is standing in, and every git command after it fails with
   `Unable to read current working directory` — including the `git pull` that keeps the next
   branch's base fresh;
+- it reads `--porcelain` and `cut`, **not `awk '{print $1}'`**: measured in a repo under
+  `My Project`, the whitespace split returns `…/My`, the `cd` fails, and the session is still in
+  the worktree — so the next line runs there and deletes its own directory. A silent wrong
+  directory is worse than a stop, and `My Project`, `Mobile Documents` and `Google Drive` are all
+  ordinary paths;
 - `--delete-branch` has already taken the local branch, and `rm-worktree.sh` takes it again, so
   both are **skipped if already done** — which is why the `git branch -D` sits behind an "if it is
   still there" rather than behind a check;
