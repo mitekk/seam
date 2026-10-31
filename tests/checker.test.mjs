@@ -2026,3 +2026,23 @@ test("a table row inside a fenced block is not a row", () => {
   assert.deepEqual(ids(bareR.findings), ["A14", "A8"].sort(), bareR.findings.join("\n"));
   rm(bare);
 });
+
+test("this repo's committed checker is what the template now emits", () => {
+  // CI runs the COMMITTED `scripts/check_docs.mjs`, not a fresh emission, so a change to the
+  // template with no regeneration after it leaves CI running the old checker — a check that
+  // stopped checking the thing that was just added, with every test still green because the
+  // tests generate their own. Found while bumping the version, which is the one change that makes
+  // the drift visible in the file header.
+  const cfg = readFileSync(join(REPO, ".seam", "config.json"), "utf8");
+  const { checker } = JSON.parse(cfg);
+  const dir = scratch("seam-emitted-");
+  mkdirSync(join(dir, ".seam"), { recursive: true });
+  writeFileSync(join(dir, ".seam", "config.json"), cfg);
+  const g = run("generate-checker.mjs", ["--repo", dir, "--out", checker.path]);
+  assert.equal(g.status, 0, g.stderr);
+  assert.equal(readFileSync(join(dir, checker.path), "utf8"),
+    readFileSync(join(REPO, checker.path), "utf8"),
+    `${checker.path} is not what \`node bin/generate-checker.mjs --repo .\` emits today. The`
+    + ` committed file is what CI runs, so regenerate it in the same commit as the template.`);
+  rm(dir);
+});

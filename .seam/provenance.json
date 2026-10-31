@@ -1,6 +1,6 @@
 {
-  "seam_version": "0.1.0",
+  "seam_version": "0.2.0",
   "answers": ".seam/answers.json",
-  "answers_sha256": "7fe2584b3b60ce231733f6a6c8927b62056277694e090ba9b111e597d06da320",
-  "config_sha256": "e7d842152541e531b3ca5786968db2455a442a8910344419f8c93ee079980e61"
+  "answers_sha256": "561776456d949e0ac34b05f4a951ca74fb3cc6bb8d470094f004666b53b9b3cb",
+  "config_sha256": "7b1e229a5e706ad6699ba5da7d5c8cb856310f7b2448f3846635eb2361657294"
 }

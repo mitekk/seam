@@ -1,5 +1,5 @@
 {
-  "seam_version": "0.1.0",
+  "seam_version": "0.2.0",
   "purpose": "A Claude Code plugin that installs a layered, mechanically-enforced documentation method into a repo. README.md is the one-page method; docs/contributing.md is seam's own instance of it.",
   "users": "Anyone adopting the method into a repo, and anyone working on seam itself.",
   "in_scope": [

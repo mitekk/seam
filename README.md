@@ -183,6 +183,8 @@ file currently owns and which layer it is; reshaping a file is a separate, opt-i
 |---|---|
 | `seam-docs` | The wizard: inventory, layer classification, the sources-of-truth table, the templates. |
 | `seam-checks` | Generating and maintaining the drift checker. |
+| `seam-build` | Working against the plan: naming the unit that owns a change, its test, and what done means. |
+| `seam-context` | How much of a session's window a piece of work may spend, and when work goes to a subagent. |
 | `seam-github` | Issues, branches, commits, PRs, and the commit gate. |
 | `seam-review` | How to pick a review level and run the rounds. |
 
@@ -200,6 +202,8 @@ layer's doc has to take live in exactly one place each, and these are the places
 | What each of the sixteen assertions reads, and what it deliberately does not | [`skills/seam-checks/references/assertions.md`](skills/seam-checks/references/assertions.md) |
 | Issues, commits, PRs, the four dispositions, the gate | [`skills/seam-github/SKILL.md`](skills/seam-github/SKILL.md) · [`references/templates.md`](skills/seam-github/references/templates.md) |
 | The review level table, the bound, the three triggers | [`skills/seam-review/SKILL.md`](skills/seam-review/SKILL.md) |
+| The start and finish contracts, the test-first rule, and the three sizes | [`skills/seam-build/SKILL.md`](skills/seam-build/SKILL.md) · [`templates/current/building.md`](skills/seam-docs/templates/current/building.md) |
+| The context thresholds, what triggers a level, and when to dispatch | [`skills/seam-context/SKILL.md`](skills/seam-context/SKILL.md) · [`templates/current/context.md`](skills/seam-docs/templates/current/context.md) |
 
 ## Tech stack
 
