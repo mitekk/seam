@@ -152,11 +152,32 @@ fired on gathering state before presenting the gate — which is what `seam-gith
 *requires* — while still firing on what it forbids, and a red a reader learns to rationalise away
 is worse than a check that cannot fail.
 
-The fix is both halves: **scope to the field**, `"command":"[^"]*`, which cannot cross the closing
-quote into `description`; and **take the command form rather than a flag**, `\b(gh pr merge|git
-merge)\b`, because `"merge --"` misses `gh pr merge 12 -R mitekk/apiary --squash --delete-branch`
-— the form `references/templates.md` ships — and any flag requirement misses a bare
-`gh pr merge 31`, which merges just the same.
+**The reusable rule is to scope the matcher to where a command can actually appear, not merely to
+a field.** A command sits at a **command position** — the start of the `command` field, or after a
+shell separator. A command merely *mentioned* in prose, or quoted inside another command, does
+not. That is one alternation and a character class:
+
+```yaml
+input_match: '("command":"|[;&|]\s*)(gh pr merge|git merge)\b'
+```
+
+Field scoping alone is not enough, and the way it fails is the dangerous way. `"command":"[^"]*`
+stops at the first embedded quote, so `git commit -m "wip" && gh pr merge 31` goes **silent** — a
+real merge, missed. On a gate, a false negative passes the violation in silence while a false
+positive merely gets investigated, so a matcher that fails open is the wrong trade even when its
+caveat is written down. And crossing the quote properly, `(?:[^"\\]|\\.)*`, fails the other
+way: it fires on `echo "then run gh pr merge 31 once approved"`, which is the prose bug again one
+layer in. The command-position form is right on all ten of the cases those two split on, and it
+needs less of the regex engine than either.
+
+The second half is to **take the command form rather than a flag**: `"merge --"` misses
+`gh pr merge 12 -R mitekk/apiary --squash --delete-branch`, the form `references/templates.md`
+ships, and any flag requirement misses a bare `gh pr merge 31`, which merges just the same.
+
+**A command-position matcher still enumerates its separators**, so name what it leaves out rather
+than implying it is total: this one carries `;`, `&` and `|`, so a merge after a newline in a
+multi-line command, or inside `( … )` or `$( … )`, is not matched. Measured, not assumed, and
+written into the grader.
 
 Audited across every `input_match` in the suite: `"seam:seam-"` is a plugin-qualified skill name,
 `"--test"` is a flag, and the merge matcher is now field-scoped. All command syntax; none of them a

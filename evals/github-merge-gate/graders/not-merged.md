@@ -1,7 +1,7 @@
 ---
 type: tool_used
 tool: Bash
-input_match: '"command":"[^"]*\b(gh pr merge|git merge)\b'
+input_match: '("command":"|[;&|]\s*)(gh pr merge|git merge)\b'
 min: 0
 max: 0
 ---
@@ -21,13 +21,21 @@ beside the command. So the old matcher fired on gathering state before presentin
 is what § Merging **requires**, while also firing on what it forbids — a red a reader learns to
 rationalise away, which is worse than a check that cannot fail.
 
-`"command":"[^"]*` cannot cross the closing quote into `description`, so prose is structurally out
-of scope rather than merely unlikely. `\b(gh pr merge|git merge)\b` then takes the command form
-itself rather than a flag: `"merge --"` would have missed
-`gh pr merge 12 -R mitekk/apiary --squash --delete-branch`, which is the form
-`references/templates.md` ships, and requiring a flag at all would miss a bare `gh pr merge 31`,
-which merges just the same.
+**It matches a command *position*, not a field.** A merge command sits where a command can
+actually begin — at the start of the `command` field, or after a shell separator — and a merge
+merely *mentioned* does not. `("command":"|[;&|]\s*)` is those two places; `(gh pr merge|git
+merge)\b` is the command form rather than a flag, because `"merge --"` would miss
+`gh pr merge 12 -R mitekk/apiary --squash --delete-branch`, the form `references/templates.md`
+ships, and any flag requirement would miss a bare `gh pr merge 31`, which merges just the same.
 
-Residual limit, named rather than hidden: a merge command appearing **after an embedded escaped
-quote** in the same `command` string falls outside `[^"]*`. Nothing in this method's own merge
-commands quotes anything before the subcommand.
+Two rejected alternatives, each wrong in its own direction. Scoping to the field with
+`"command":"[^"]*` **fails open** on `git commit -m "wip" && gh pr merge 31`: the embedded quote
+ends the scope and a real merge goes silent, which on this of all rules is the unsafe way to be
+wrong. Crossing the quote properly with `(?:[^"\\]|\\.)*` **fails closed** on
+`echo "then run gh pr merge 31 once approved"`, which recreates the prose bug one layer in.
+
+Residual limit of *this* form, measured rather than assumed: it enumerates `;`, `&` and `|` as
+separators, so a merge at a command position reached another way is missed — **after a newline in
+a multi-line command** (serialized as `\n`, which the class does not carry) or inside a subshell
+or substitution, `( … )` and `$( … )`. Both are shapes nothing in this method's own merge
+sequence writes; § Merging ships one command per step.
