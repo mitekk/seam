@@ -558,9 +558,9 @@ Does not reach:
 - **An answers file that is valid and wrong.** A16 compares bytes. Whether the answers say what the
   repo means is the interview's question.
 
-## Three refusals before anything is checked
+## The refusals before anything is checked
 
-All three are exit 2, and all three exist because the alternative is a check that looks like a
+All of them are exit 2, and all of them exist because the alternative is a check that looks like a
 pass:
 
 - **No assertion enabled.** A config with no `assertions` block, or one with every switch off,
@@ -581,6 +581,16 @@ pass:
   A legitimate change goes through the answers file, which rewrites both and agrees; an absent
   sidecar is refused rather than skipped, because "no record" would otherwise be the switch-off
   defeat with one extra step.
+
+- **A config value whose shape no reader can use.** `table.file` missing, `docs` or
+  `load_bearing` not a list, a `docs` row that is not an object or names no path, an entry of
+  `load_bearing` that is not a string, `assertions` or one assertion's settings not an object, an
+  `allow` that is a list of strings or an object rather than a list of entries — each is refused
+  by name, saying what shape that value has to have and why a reader needs it. It is one pass
+  before anything indexes any of them, because the same malformed config was a `TypeError` in
+  Node and a `KeyError` or an `AttributeError` in Python: two different endings for one config,
+  and a traceback is never an acceptable ending for a malformed config. Unreadable JSON, and a
+  config that is not an object at all, are refused the same way.
 
 An entry that is no longer *needed* is not a refusal: it is an ordinary A1 finding, because it is
 about the tree rather than about the config being readable. See § A1.
