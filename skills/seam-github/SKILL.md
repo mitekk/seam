@@ -163,8 +163,7 @@ blocks the active milestone qualifies on clause 3 and becomes an issue then.
 
 **Then size, which decides fold-in versus not, and nothing else.** The three sizes — Small,
 Medium, Large — and what puts a change in each are **the repo's `docs/building.md`'s to define**,
-because the same sizes set how much ceremony a change carries; this file only uses them. There is
-one test and it is **blast radius**, not felt effort.
+because the same sizes set how much ceremony a change carries; this file only uses them.
 
 If the repo has no `docs/building.md`, say so and offer to write it with `seam-docs`. Until it
 exists, take the sizes from the template it would be written from,

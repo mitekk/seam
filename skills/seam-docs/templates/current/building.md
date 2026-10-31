@@ -4,8 +4,9 @@
 this file is wrong, that is a **bug**, so the edit rule is **amend in place**.
 
 Owns: the **start contract**, the **finish contract**, the **test-first rule**, and the
-**proportionality rule** with the three sizes it is built on. Nothing else may define them. Which units exist is the plans' to say,
-and the PR and the review have their own owners — see the end of this file.
+**proportionality rule** with the three sizes it is built on. Nothing else may define them. Which
+units exist is the plans' to say, and the PR and the review have their own owners — see the end of
+this file.
 
 ## The one principle
 
@@ -95,13 +96,16 @@ DoD and no ruling.** Run that unit's test and go on.
 | Size | What it is | Ceremony |
 |---|---|---|
 | Small | one file, no new test | a unit owns it, or a document does: none. Neither does: one row, and still no DoD and no ruling |
-| Medium | anything in between — a handful of files, or a test that does not exist yet | both contracts; if no unit owns it, write the row |
-| Large | crosses a structural seam — a schema, a state machine, two runtimes | both contracts, and expect rulings: say what each costs if wrong |
+| Medium | anything in between — a handful of files, or a test that does not exist yet | both contracts; if no unit or document owns it, write the row |
+| Large | crosses a structural seam — a schema, a state machine, two runtimes | both contracts, and expect rulings: say what each costs if wrong; if no unit or document owns it, write the row |
 
 **This table is the only copy of the sizes.** The tracker conventions sort follow-ups by the same
 three, and they cite this file for them rather than defining their own. A size is **blast radius,
 not felt effort**: a one-line fix to a sentence in a doc is Small, and so is a typo in a README —
 and a document owns those, so they need no row.
+
+**Who owns the work is a separate question from its size.** At every size, a document that owns
+the change stands in for the unit, as the start contract says: name it instead of writing a row.
 
 **"A unit covers this" means you can point at the row.** The change sits inside what that row says
 it makes true, or it is a defect in what that row built. A defect in a unit's output belongs to

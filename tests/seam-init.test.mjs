@@ -385,6 +385,9 @@ test("a layer-2 row named building.md gets the build template", () => {
   // ...and so is a change a document owns: without the carve-out in the Small row a README typo
   // would earn a plan unit, which is the anti-goal verbatim.
   assert.match(flat, /\| Small \| one file, no new test \| a unit owns it, or a document does/);
+  // Who owns the work is orthogonal to its size, so Medium and Large carry the carve-out too.
+  assert.match(flat, /\| Medium \|[^|]*\| [^|]*if no unit or document owns it, write the row \|/);
+  assert.match(flat, /\| Large \|[^|]*\| [^|]*if no unit or document owns it, write the row \|/);
   // A ruling is written in the layer-3 track's own shape, so the doc never fixes the fields — in a
   // one-file-per-decision repo a recipe written for the single file reds the checker's own A13.
   assert.match(flat, /in the shape that layer-3 track already defines/i);
