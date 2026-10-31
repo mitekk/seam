@@ -176,6 +176,13 @@ function validate(a) {
     "must be a list, or absent, which means none yet");
   const ms = Array.isArray(a.milestones) ? a.milestones : [];
   ms.forEach((m, i) => {
+    // `n` and `title` are the table's first two columns, built from the row rather than
+    // substituted per key — so a row without them renders `| undefined | undefined |`.
+    need(isLabel(m?.n), `milestones[${i}].n`,
+      "a milestone needs its number — it is the first column of the table this row builds, and a"
+      + " row without it renders as `| undefined |`");
+    need(isLabel(m?.title), `milestones[${i}].title`,
+      "a milestone needs its title, for the same reason as its number");
     const got = m?.active === undefined ? "missing" : JSON.stringify(m.active);
     need(typeof m?.active === "boolean", `milestones[${i}].active`,
       `must be true or false, not ${got} — exactly one milestone is active, and every row says`
@@ -195,7 +202,48 @@ function validate(a) {
     }
   }
 
+  // `agents[]` had no validation block at all, and neither did `domains[]`. Both reach a template,
+  // and the two leak differently: `agent/agent.md` substitutes per key, and `render()` returns an
+  // unresolved `{{key}}` as itself, so a row with no `model` writes `model: {{agent.model}}` into
+  // the frontmatter the harness parses to choose that agent's model — and `{{` opens a YAML flow
+  // mapping, so the block does not parse at all and the agent does not load. The taxonomy tables
+  // are built from their rows instead, so a row with no label renders the literal `undefined`.
+  // Both are this program writing a broken artifact into a repo and exiting 0.
+  //
+  // `covers` on a DOMAIN row and `green` on a milestone row are deliberately not here: each has an
+  // honest `_not recorded_` fallback, which is the wizard saying what it was not told rather than
+  // writing a value it does not have. `covers` on an AGENT row is required, because it is that
+  // agent's `description:` and the template substitutes it per key.
+  const AGENT_KEYS = {
+    name: "the agent's filename and its `name:` frontmatter",
+    covers: "the agent's `description:`, which is what a dispatch matches on",
+    model: "the `model:` frontmatter the harness reads to choose the model",
+    effort: "the `effort:` frontmatter the harness reads to choose the level",
+  };
+  need(a.agents === undefined || Array.isArray(a.agents), "agents",
+    "must be a list, or absent, which means the repo named no agents — which is a complete answer");
+  (Array.isArray(a.agents) ? a.agents : []).forEach((g, i) => {
+    for (const [k, why] of Object.entries(AGENT_KEYS)) {
+      need(typeof g?.[k] === "string" && g[k], `agents[${i}].${k}`,
+        `${why}. The template substitutes it per key, so a row without it writes`
+        + ` \`{{agent.${k}}}\` into the repo as itself`);
+    }
+  });
+
+  need(a.domains === undefined || Array.isArray(a.domains), "domains",
+    "must be a list, or absent, which means none yet");
+  (Array.isArray(a.domains) ? a.domains : []).forEach((d, i) => {
+    need(typeof d?.name === "string" && d.name, `domains[${i}].name`,
+      "a domain row needs its label — the taxonomy table is built from the rows, so a row with no"
+      + " name renders as `| `undefined` |` and the doc carries a label nobody can apply");
+  });
+
   if (bad.length) die(bad[0]);
+}
+
+/** A table cell's value: a non-empty string, or a number. Anything else renders as `undefined`. */
+function isLabel(v) {
+  return (typeof v === "string" && v !== "") || (typeof v === "number" && Number.isFinite(v));
 }
 
 // ── The config projection ─────────────────────────────────────────────────────
@@ -368,9 +416,9 @@ function templateVars(a, cfg) {
   const planRow = (a.docs ?? []).find((d) => d.layer === 5);
   const artifact = (a.artifacts ?? [])[0];
   const agents = a.agents ?? [];
-  // A level the answers did not pin reads as `—` here, which this doc defines as "not pinned
-  // here" — the honest cell for an agent whose frontmatter the answers left blank.
-  const level = (v) => (v ? `\`${v}\`` : "—");
+  // Every agent row carries both levels or the run was refused (`validate`), so there is no
+  // unpinned state to render here. The `—` in this table is the literal cell on the rows the
+  // template fixes — planning, review — and it means "not pinned by this repo".
   return {
     date: a.date ?? new Date().toISOString().slice(0, 10),
     repo: cfg.repo,
@@ -407,7 +455,7 @@ function templateVars(a, cfg) {
     // authoritative table as the one place they are missing.
     implement_rows: agents.length
       ? agents.map((g) => `| Implement — ${g.name} | \`.claude/agents/${g.name}.md\` `
-          + `| ${level(g.model)} | ${level(g.effort)} |`).join("\n")
+          + `| \`${g.model}\` | \`${g.effort}\` |`).join("\n")
       : "| Implement | `.claude/agents/<name>.md` | — | — |",
     // A header over no rows reads as a table someone forgot to fill, and an empty list is a real
     // answer here, so the whole block is the variable rather than just its rows.

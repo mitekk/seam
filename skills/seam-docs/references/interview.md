@@ -158,3 +158,9 @@ are not there. Each failure names the key path:
 - a glob row with `"create": true` outside layers 3 and 4 — a glob names a form, not a file
 - `artifacts[N].path` absent from `load_bearing`
 - `assertions.A15.impl_globs` or `assertions.A15.test_globs` given without the other, or not a list; `assertions.A15.default_branch` given and not a branch name
+- `agents[N]` missing any of `name`, `covers`, `model` or `effort` — the agent template substitutes each per key, and an absent value ships as `{{agent.model}}` into the frontmatter the harness parses, which then does not parse at all
+- `domains[N].name`, `milestones[N].n` or `milestones[N].title` absent — the taxonomy tables are built from their rows, so a row without its label renders the literal `undefined`
+
+A row's **optional** keys are the ones with an honest fallback: `domains[N].covers` and
+`milestones[N].green` render `_not recorded_`, which is the wizard saying what it was not told.
+`agents[N].covers` is **not** one of them — it is that agent's `description:`, substituted per key.

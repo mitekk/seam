@@ -1240,3 +1240,148 @@ test("the size vocabulary is the same set in the template and in seam-github", (
     + ` skills/seam-github/SKILL.md names [${[...named].sort()}]. The template defines them and`
     + ` the skill names the members; a size added to one side belongs on both.`);
 });
+
+// ── Unresolved template output (Ruling 111) ───────────────────────────────────
+//
+// `render()` returns an unresolved `{{key}}` as itself, and a table builder renders a missing row
+// key as the literal `undefined`. Both are this program — the one its own header calls "a program
+// with no judgment in it" — writing a broken artifact into an adopting repo and exiting 0. The
+// measured instance was `model: {{agent.model}}` in a `.claude/agents/*.md` frontmatter, which is
+// worse than a bogus value: `{{` opens a YAML flow mapping, so PyYAML refuses the whole block
+// (`found unhashable key`) and the agent does not load at all.
+//
+// The tests below are of the CLASS — every template, every key — because the sixteenth template
+// is the one nobody will remember to check.
+
+const TEMPLATES = join(REPO, "skills", "seam-docs", "templates");
+
+/** Every template, with its `{{keys}}` and one line unique to it that carries no placeholder. */
+function templateSet() {
+  const out = [];
+  for (const dir of readdirSync(TEMPLATES).sort()) {
+    for (const f of readdirSync(join(TEMPLATES, dir)).sort()) {
+      if (!f.endsWith(".md")) continue;
+      const rel = `${dir}/${f}`;
+      const body = readFileSync(join(TEMPLATES, rel), "utf8");
+      const keys = [...new Set([...body.matchAll(/\{\{([\w.]+)\}\}/g)].map((m) => m[1]))].sort();
+      const print = body.split("\n").find((l) =>
+        l.length >= 30 && !l.includes("{{") && !l.trimStart().startsWith("|"));
+      assert.ok(print, `${rel} has no placeholder-free line long enough to recognise it by`);
+      out.push({ rel, keys, print });
+    }
+  }
+  assert.ok(out.length >= 16, `found ${out.length} templates, expected at least 16 — the walk`
+    + ` broke, and every assertion below would pass on an empty set`);
+  return out;
+}
+
+/** Answers that reach every template the wizard can write, in one of the two ADR formats. */
+function maximal(format) {
+  const named = ["taxonomy", "reviewing", "routing", "building", "context"].map((n) => ({
+    path: `docs/${n}.md`,
+    layer: 2,
+    owns: `What is true now about ${n}`,
+    enforces: "",
+    create: true,
+  }));
+  const ans = answers({
+    adr: format === "madr" ? { format: "madr", dir: "docs/adr" } : { format: "single", file: "docs/decisions.md" },
+    agents: [{ name: "core", covers: "the one subsystem", model: "opus", effort: "high" }],
+  });
+  ans.docs = [...ans.docs, ...named];
+  if (format === "single") {
+    ans.docs = ans.docs.map((d) =>
+      d.path === "docs/adr/*.md" ? { ...d, path: "docs/decisions.md", create: true } : d);
+  }
+  return ans;
+}
+
+/** Every file the wizard wrote under `dir`, as `[rel, text]`, minus the answers file itself. */
+function writtenFiles(dir, sub = "", out = []) {
+  for (const e of readdirSync(join(dir, sub), { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : 1)) {
+    const rel = sub ? `${sub}/${e.name}` : e.name;
+    if (e.isDirectory()) writtenFiles(dir, rel, out);
+    else if (rel !== "answers.json") out.push([rel, readFileSync(join(dir, rel), "utf8")]);
+  }
+  return out;
+}
+
+test("nothing the wizard writes carries an unresolved placeholder, in any template", () => {
+  const tmpls = templateSet();
+  const written = [];
+  for (const format of ["madr", "single"]) {
+    const { dir, r } = init(maximal(format));
+    assert.equal(r.status, 0, `${format}: ${r.stderr}`);
+    written.push(...writtenFiles(dir).map(([rel, text]) => [`${format}:${rel}`, text]));
+    rm(dir);
+  }
+
+  // Coverage first, or the two assertions below pass on a template nothing rendered — which is
+  // this branch's recurring class, and the state `routing.md` actually shipped in.
+  const all = written.map(([, t]) => t).join("\n");
+  const missed = tmpls.filter((t) => !all.includes(t.print)).map((t) => t.rel);
+  assert.deepEqual(missed, [], `these templates were not reached by either run, so nothing below`
+    + ` measured them: ${missed.join(", ")}`);
+
+  for (const [where, text] of written) {
+    const at = text.indexOf("{{");
+    assert.equal(at, -1, `${where} carries an unresolved placeholder: `
+      + `${JSON.stringify(text.slice(at, at + 40))}`);
+    const und = text.match(/(?<![\w`])undefined(?![\w`])/);
+    assert.equal(und, null, `${where} carries a literal \`undefined\` where a value belonged`);
+  }
+});
+
+test("every template key a row supplies is one validate requires", () => {
+  // The instance is `agent.model`. The class is "a template key no validation requires": a
+  // `{{list.key}}` whose value comes from a row the answers carry, where nothing rejects a row
+  // without it. A key the program DERIVES (`doc.title`) is not one — no row supplies it — and is
+  // skipped by asking the maximal answers file rather than by a hand-kept list.
+  const ROW_LISTS = { agent: "agents", doc: "docs", artifact: "artifacts" };
+  const base = maximal("madr");
+  const pairs = new Set();
+  for (const t of templateSet()) {
+    for (const k of t.keys) {
+      const [head, leaf] = k.split(".");
+      if (leaf === undefined || !(head in ROW_LISTS)) continue;
+      pairs.add(`${head}.${leaf}`);
+    }
+  }
+  assert.ok(pairs.size >= 5, `parsed ${pairs.size} row keys from the templates, expected at`
+    + ` least five — the parse found nothing and the loop below would check nothing`);
+
+  for (const pair of [...pairs].sort()) {
+    const [head, leaf] = pair.split(".");
+    const list = ROW_LISTS[head];
+    if (!base[list].some((row) => leaf in row)) continue;      // derived, not supplied
+    const ans = JSON.parse(JSON.stringify(base));
+    for (const row of ans[list]) delete row[leaf];
+    const { dir, r } = init(ans);
+    assert.equal(r.status, 2, `an answers file whose ${list} rows carry no \`${leaf}\` was`
+      + ` accepted, and \`{{${pair}}}\` ships into the adopting repo as itself: ${r.stdout}`);
+    assert.match(r.stderr, new RegExp(`${list}\\[\\d+\\]\\.${leaf}\\b`),
+      `the rejection does not name ${list}[N].${leaf}: ${r.stderr}`);
+    assert.ok(!has(dir, ".seam/config.json"),
+      `a rejected run wrote .seam/config.json anyway, for ${pair}`);
+    rm(dir);
+  }
+});
+
+test("a domain or milestone row with no label is refused, not rendered as `undefined`", () => {
+  // Measured, not reasoned: `domains_table` and `milestones_table` are built from the rows rather
+  // than substituted per key, so they leak differently — `| \`undefined\` | no name at all |` and
+  // `| undefined | undefined | … |` reached a written docs/taxonomy.md with exit 0. `covers` and
+  // `green` are NOT on this list: both have an honest `_not recorded_` fallback, which is the
+  // wizard saying what it was not told rather than writing a value it does not have.
+  for (const [key, patch] of [
+    ["domains[0].name", { domains: [{ covers: "no name at all" }] }],
+    ["milestones[0].n", { milestones: [{ title: "First", green: "tests pass", active: true }] }],
+    ["milestones[0].title", { milestones: [{ n: 1, green: "tests pass", active: true }] }],
+  ]) {
+    const { dir, r } = init(answers(patch));
+    assert.equal(r.status, 2, `${key} missing was accepted: ${r.stdout}`);
+    assert.match(r.stderr, new RegExp(key.replace(/[[\].]/g, "\\$&").replace("\\[0\\]", "\\[\\d+\\]")),
+      `the rejection does not name ${key}: ${r.stderr}`);
+    rm(dir);
+  }
+});
