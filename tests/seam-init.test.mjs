@@ -502,3 +502,13 @@ test("A15's lists must be lists", () => {
   assert.ok(!has(dir, ".seam/config.json"), "a rejected run still wrote a config");
   rm(dir);
 });
+
+test("A15's default_branch must be a branch name", () => {
+  const { dir, r } = init(answers({
+    assertions: { A15: { enabled: true, default_branch: 5, impl_globs: ["src/**"], test_globs: ["tests/**"] } },
+  }));
+  assert.equal(r.status, 2, r.stdout);
+  assert.match(r.stderr, /assertions\.A15\.default_branch/);
+  assert.ok(!has(dir, ".seam/config.json"), "a rejected run still wrote a config");
+  rm(dir);
+});

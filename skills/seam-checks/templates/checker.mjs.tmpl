@@ -1191,7 +1191,13 @@ async function main() {
   // test-first method promises. A finding names the implementation file, line 1 — never a commit,
   // because a sha is fresh on every branch and a finding carrying one could not be baselined.
   if (on("A15")) {
-    const branch = opt("A15", "default_branch", cfg.repo?.default_branch ?? "main");
+    // Unset, or null, means the repo's own default branch. Anything else must be a branch name:
+    // a `true` would print as `true` here and `True` in the other language, and the finding's text
+    // is part of its baseline key.
+    const rawBranch = [opt("A15", "default_branch"), cfg.repo?.default_branch]
+      .find((v) => v !== undefined && v !== null) ?? "main";
+    const validBranch = typeof rawBranch === "string" && rawBranch !== "";
+    const branch = validBranch ? rawBranch : "";
     const globsOf = (k) => {
       const v = opt("A15", k, []);
       return (typeof v === "string" ? [v] : Array.isArray(v) ? v : [])
@@ -1222,6 +1228,11 @@ async function main() {
         + `the test-first comparison was not made. A15 compares the paths that are implementation `
         + `with the paths that are tests, so it needs both. Fill them in, or switch A15 off; off is `
         + `distinct from passing`];
+    } else if (!validBranch) {
+      notMade = ["default_branch",
+        `assertions.A15.default_branch is not a branch name — the test-first comparison was not `
+        + `made. Set it to a string naming the default branch, or switch A15 off; off is distinct `
+        + `from passing`];
     } else if (git("rev-parse", "--verify", "--quiet", `${branch}^{commit}`) === null) {
       notMade = [branch,
         `git cannot resolve \`${branch}\` to a commit — the test-first comparison was not made. Set `
@@ -1246,24 +1257,46 @@ async function main() {
       const implRes = implGlobs.map(globRe);
       const isTest = (p) => testRes.some((rx) => rx.test(p));
       const isImpl = (p) => implRes.some((rx) => rx.test(p));
+      let seenTest = false;
       for (const sha of shas) {
+        // Once a test has arrived nothing after it can be early, so the walk only goes on for a
+        // file still outstanding: it has to be followed through a later rename, or it would be
+        // dropped as gone.
+        if (seenTest && late.length === 0) break;
         // `-z` so a path with a space or a non-ASCII character is not quoted, `-M` so a rename is
-        // told from a new file, `--relative` so a checker below the repo root sees its own paths.
-        // Plumbing, because `git show` obeys the user's config and diff-tree does not.
-        const out = git("diff-tree", "--no-commit-id", "--root", "-r", "-z", "-M", "--relative",
-          "--name-status", sha);
+        // told from a new file, `-l` so the repo's `diff.renameLimit` cannot turn a batch of
+        // renames back into new files, `--relative` so a checker below the repo root sees its
+        // own paths. Plumbing, because `git show` obeys the user's config and diff-tree mostly
+        // does not.
+        const out = git("diff-tree", "--no-commit-id", "--root", "-r", "-z", "-M", "-l32767",
+          "--relative", "--name-status", sha);
         if (out === null) { notMade = unreadable; break; }
         const added = [];
+        const moved = [];
         const toks = out.split("\0");
         for (let i = 0; i < toks.length && toks[i] !== "";) {
-          if (/^[RC]/.test(toks[i])) { i += 3; continue; }      // a move or copy is not an arrival
+          // A rename or copy entry carries two paths. Neither is an arrival.
+          if (/^[RC]/.test(toks[i])) {
+            if (toks[i][0] === "R") moved.push([toks[i + 1], toks[i + 2]]);
+            i += 3;
+            continue;
+          }
           if (toks[i] === "A") added.push(toks[i + 1]);
           i += 2;
         }
-        // Once a test has arrived, nothing after it can be early. It is checked before the
-        // implementations, so a file matching both lists is a test: read as an implementation,
-        // a test beside the code it proves would be its own missing test.
-        if (added.some(isTest)) break;
+        // A rename is not a delete: an outstanding file is still in the tree under its new name,
+        // as long as that name is still an implementation path.
+        for (const [from, to] of moved) {
+          const k = late.indexOf(from);
+          if (k < 0) continue;
+          late.splice(k, 1);
+          if (isImpl(to) && !late.includes(to)) late.push(to);
+        }
+        if (seenTest) continue;
+        // Tests are checked before implementations, so a file matching both lists is a test:
+        // read as an implementation, a test beside the code it proves would be its own missing
+        // test.
+        if (added.some(isTest)) { seenTest = true; continue; }
         for (const p of added.filter(isImpl)) if (!late.includes(p)) late.push(p);
       }
     }

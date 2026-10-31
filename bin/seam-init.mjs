@@ -131,6 +131,8 @@ function validate(a) {
       need(a15[k] === undefined || Array.isArray(a15[k]), `assertions.A15.${k}`,
         "must be a list of path globs");
     }
+    need(a15.default_branch === undefined || (typeof a15.default_branch === "string" && a15.default_branch),
+      "assertions.A15.default_branch", "must be the name of a branch");
     for (const [k, other] of [keys, keys.slice().reverse()]) {
       need(a15[k] === undefined || a15[other] !== undefined, `assertions.A15.${other}`,
         `${k} is given and ${other} is not — A15 compares the two, so it needs both`);

@@ -1316,3 +1316,101 @@ test("A15 reads whether a file is at HEAD from below the repo root as well", () 
   rm(dir);
   rm(outer);
 });
+
+test("A15 follows an untested implementation file through a rename", () => {
+  // A rename is not an arrival, but it is not a delete either: the implementation is still in the
+  // tree under a new name, and a finding that named the old one would be dropped as gone.
+  const body = IMPL.repeat(20);
+  const rename = (from, to) => ({ dir: d, git }) => {
+    mkdirSync(dirname(join(d, to)), { recursive: true });
+    git("mv", from, to);
+    git("commit", "-m", `${from} becomes ${to}`);
+  };
+  // Test last: the rename sits between the implementation and its test.
+  const before = a15Repo([{ "src/a.ts": body }, rename("src/a.ts", "src/b.ts"),
+    { "tests/a.test.ts": TEST }]);
+  const r = both(before.dir);
+  assert.deepEqual(r.findings.map((l) => l.split(" ")[0]), ["src/b.ts:1:"], r.findings.join("\n"));
+  rm(before.dir);
+
+  // The rename after the test: the walk has to keep going past the first test to see it.
+  const after = a15Repo([{ "src/a.ts": body }, { "tests/a.test.ts": TEST },
+    rename("src/a.ts", "src/b.ts")]);
+  const a = both(after.dir);
+  assert.deepEqual(a.findings.map((l) => l.split(" ")[0]), ["src/b.ts:1:"], a.findings.join("\n"));
+  rm(after.dir);
+
+  // A file renamed out of the implementation paths is no longer an implementation file.
+  const out = a15Repo([{ "src/a.ts": body }, rename("src/a.ts", "lib/a.ts")]);
+  const o = both(out.dir);
+  assert.equal(o.status, 0, o.py.stdout + o.py.stderr);
+  assert.deepEqual(o.findings, []);
+  rm(out.dir);
+});
+
+test("A15 reads a commit's modify, rename and add entries without losing its place", () => {
+  // A modification is not an arrival. And a rename entry carries two paths: a parser that took
+  // it for one would read the new name as a status and drop whatever follows it in the commit.
+  const { dir } = a15Repo(
+    [({ dir: d, git }) => {
+      put(d, "src/existing.ts", IMPL.repeat(20) + "export const more = 2;\n");
+      git("mv", "src/old.ts", "src/new.ts");
+      put(d, "src/zzz.ts");
+      git("add", "--", "src/existing.ts", "src/zzz.ts");
+      git("commit", "-m", "modify one, move one, add one");
+    }],
+    { base: (d) => { put(d, "src/existing.ts", IMPL.repeat(20)); put(d, "src/old.ts", IMPL.repeat(20)); } });
+  const r = both(dir);
+  assert.deepEqual(r.findings.map((l) => l.split(" ")[0]), ["src/zzz.ts:1:"], r.findings.join("\n"));
+  rm(dir);
+});
+
+test("A15 tells a rename from a new file whatever diff.renameLimit says", () => {
+  // With three inexact renames in one commit and a limit of 1, git skips rename detection and
+  // reports three deletions and three additions. A repo's config must not change what A15 reads.
+  const names = [1, 2, 3];
+  const content = (n, extra = "") =>
+    Array.from({ length: 30 }, (_, i) => `export const v${n}_${i} = ${i * n};\n`).join("") + extra;
+  const { dir, git } = a15Repo(
+    [({ dir: d, git: g }) => {
+      for (const n of names) {
+        g("mv", `src/x${n}.ts`, `src/y${n}.ts`);
+        put(d, `src/y${n}.ts`, content(n, "export const extra = 1;\n"));
+      }
+      g("add", "--", ...names.map((n) => `src/y${n}.ts`));
+      g("commit", "-m", "rename three, editing each a little");
+    }],
+    { base: (d) => names.forEach((n) => put(d, `src/x${n}.ts`, content(n))) });
+  git("config", "diff.renameLimit", "1");
+  const r = both(dir);
+  assert.equal(r.status, 0, r.py.stdout + r.py.stderr);
+  assert.deepEqual(r.findings, []);
+  rm(dir);
+});
+
+test("A15 with a default_branch that is not a branch name says the comparison was not made", () => {
+  // The text of the finding is part of its baseline key, so it must not carry the value: `null`
+  // and `None` are one value printed two ways.
+  for (const bad of [true, 5, "", ["main"], {}]) {
+    const { dir } = a15Repo([{ "src/hive.ts": IMPL }], { a15: { default_branch: bad } });
+    const r = both(dir);
+    const what = JSON.stringify(bad);
+    assert.equal(r.status, 1, `${what}: ${r.py.stdout}${r.py.stderr}`);
+    assert.deepEqual(ids(r.findings), ["A15"], `${what}: ${r.findings.join("\n")}`);
+    assert.equal(r.findings.length, 1, `${what}: ${r.findings.join("\n")}`);
+    assert.match(r.findings[0], /^\.seam\/config\.json:1: A15 .*not a branch name.*comparison was not made/, what);
+    const keys = [];
+    for (const language of ["python", "node"]) {
+      assert.equal(check(dir, language, ["--write-baseline"]).status, 0);
+      keys.push(JSON.parse(readFileSync(join(dir, ".seam/baseline.json"), "utf8")).entries);
+    }
+    assert.deepEqual(keys[0], keys[1], `${what}: the two languages baseline it differently`);
+    assert.equal(keys[0][0].text, "default_branch", what);
+    rm(dir);
+  }
+  // `null` is unset, in both languages: the repo's own default branch is used.
+  const { dir } = a15Repo([{ "src/hive.ts": IMPL }], { a15: { default_branch: null } });
+  const r = both(dir);
+  assert.deepEqual(r.findings.map((l) => l.split(" ")[0]), ["src/hive.ts:1:"], r.findings.join("\n"));
+  rm(dir);
+});

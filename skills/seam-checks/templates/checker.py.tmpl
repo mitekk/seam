@@ -1216,7 +1216,14 @@ def main() -> int:
     # commit, because a sha is fresh on every branch and a finding carrying one could not be
     # baselined.
     if on("A15"):
-        branch = opt("A15", "default_branch", cfg.get("repo", {}).get("default_branch", "main"))
+        # Unset, or null, means the repo's own default branch. Anything else must be a branch
+        # name: a `true` would print as `True` here and `true` in the other language, and the
+        # finding's text is part of its baseline key.
+        raw_branch = next((v for v in (opt("A15", "default_branch"),
+                                       (cfg.get("repo") or {}).get("default_branch"))
+                           if v is not None), "main")
+        valid_branch = isinstance(raw_branch, str) and raw_branch != ""
+        branch = raw_branch if valid_branch else ""
 
         def globs_of(key):
             v = opt("A15", key, [])
@@ -1251,6 +1258,11 @@ def main() -> int:
                 f"was not made. A15 compares the paths that are implementation with the paths "
                 f"that are tests, so it needs both. Fill them in, or switch A15 off; off is "
                 f"distinct from passing")
+        elif not valid_branch:
+            not_made = ("default_branch",
+                "assertions.A15.default_branch is not a branch name — the test-first comparison "
+                "was not made. Set it to a string naming the default branch, or switch A15 off; "
+                "off is distinct from passing")
         elif git("rev-parse", "--verify", "--quiet", f"{branch}^{{commit}}") is None:
             not_made = (branch,
                 f"git cannot resolve `{branch}` to a commit — the test-first comparison was not "
@@ -1277,31 +1289,53 @@ def main() -> int:
             impl_res = [glob_re(g) for g in impl_globs]
             is_test = lambda p: any(rx.match(p) for rx in test_res)
             is_impl = lambda p: any(rx.match(p) for rx in impl_res)
+            seen_test = False
             for sha in shas:
+                # Once a test has arrived nothing after it can be early, so the walk only goes on
+                # for a file still outstanding: it has to be followed through a later rename, or
+                # it would be dropped as gone.
+                if seen_test and not late:
+                    break
                 # `-z` so a path with a space or a non-ASCII character is not quoted, `-M` so a
-                # rename is told from a new file, `--relative` so a checker below the repo root
-                # sees its own paths. Plumbing, because `git show` obeys the user's config and
-                # diff-tree does not.
-                out = git("diff-tree", "--no-commit-id", "--root", "-r", "-z", "-M", "--relative",
-                          "--name-status", sha)
+                # rename is told from a new file, `-l` so the repo's `diff.renameLimit` cannot
+                # turn a batch of renames back into new files, `--relative` so a checker below
+                # the repo root sees its own paths. Plumbing, because `git show` obeys the user's
+                # config and diff-tree mostly does not.
+                out = git("diff-tree", "--no-commit-id", "--root", "-r", "-z", "-M", "-l32767",
+                          "--relative", "--name-status", sha)
                 if out is None:
                     not_made = unreadable
                     break
                 added = []
+                moved = []
                 toks = out.split("\0")
                 i = 0
                 while i < len(toks) and toks[i] != "":
-                    if toks[i][0] in "RC":          # a move or copy is not an arrival
+                    # A rename or copy entry carries two paths. Neither is an arrival.
+                    if toks[i][0] in "RC":
+                        if toks[i][0] == "R":
+                            moved.append((toks[i + 1], toks[i + 2]))
                         i += 3
                         continue
                     if toks[i] == "A":
                         added.append(toks[i + 1])
                     i += 2
-                # Once a test has arrived, nothing after it can be early. It is checked before the
-                # implementations, so a file matching both lists is a test: read as an
-                # implementation, a test beside the code it proves would be its own missing test.
+                # A rename is not a delete: an outstanding file is still in the tree under its
+                # new name, as long as that name is still an implementation path.
+                for old, new in moved:
+                    if old not in late:
+                        continue
+                    late.remove(old)
+                    if is_impl(new) and new not in late:
+                        late.append(new)
+                if seen_test:
+                    continue
+                # Tests are checked before implementations, so a file matching both lists is a
+                # test: read as an implementation, a test beside the code it proves would be its
+                # own missing test.
                 if any(is_test(p) for p in added):
-                    break
+                    seen_test = True
+                    continue
                 for p in added:
                     if is_impl(p) and p not in late:
                         late.append(p)

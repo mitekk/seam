@@ -357,22 +357,26 @@ passes — only that it exists and that it asserts something.
 Reads: the commits on this branch that the default branch does not have, oldest first
 (`git rev-list --reverse --topo-order --no-merges <default_branch>..HEAD`), and for each the paths it
 **added** (`git diff-tree`). A path matching `test_globs` is a test; one matching `impl_globs` is an
-implementation. Walking forward, the first commit that adds a test ends the check — nothing after it
-can be early — and every implementation file added in a commit before that one, and still in the
-tree at HEAD, is a finding. An
-implementation added in the **same** commit as the first test is fine: with, not after.
+implementation. Walking forward, every implementation file added in a commit before the first one
+that adds a test, and still in the tree at HEAD, is a finding. An implementation added in the
+**same** commit as the first test is fine: with, not after. Nothing added after the first test can
+be early, so the walk goes on past it only to follow a file still outstanding through a rename.
 
 A path matching both lists is a test. Only an added file counts: a modification of an
 implementation file is not an arrival, and neither is a rename or a copy, so moving code does not
-make it new. A file added with no test, removed, and added again is reported once.
+make it new. A rename is not a delete either: a file added with no test and then renamed is
+reported under its new name, as long as the new name still matches `impl_globs` (a file renamed out
+of the implementation paths is no longer an implementation file). A file added with no test,
+removed, and added again is reported once. Renames are detected with `-M -l32767`, so a repo's
+`diff.renameLimit` cannot turn a batch of renames back into new files.
 
 Off by default, because it needs two repo-specific lists and an empty one is not a sensible
 default: the interview asks which paths are implementation and which are tests, and writes
 `"A15": { "enabled": true, "impl_globs": […], "test_globs": […] }` only once it has both.
 
-Needs: `default_branch` (defaults from `repo.default_branch`), `impl_globs` and `test_globs`, each a
-list of path globs written the way `plan_glob` is. `seam-init` refuses one list given without the
-other, naming the missing key.
+Needs: `default_branch` (unset or null means `repo.default_branch`; anything else must be a branch
+name), `impl_globs` and `test_globs`, each a list of path globs written the way `plan_glob` is.
+`seam-init` refuses one list given without the other, naming the missing key.
 
 **A finding names the implementation file at line 1, with the file's path as its text** — never a
 commit. A sha is fresh on every branch, and a finding keyed on one could not be baselined.
@@ -385,10 +389,12 @@ commit`, and reports no finding. A15 is still **counted** among the assertions t
 a verdict, and the same config must print the same total on every branch.
 
 **Fails loudly, with the comparison named as not made**, as one finding at `.seam/config.json:1`, in
-four cases:
+five cases:
 
 - an enabled A15 with `impl_globs` or `test_globs` missing or empty — checked first, so it is
   reported on every branch, the default one included;
+- a `default_branch` that is not a non-empty string. The finding names the key and not the value,
+  because its text is part of its baseline key and the two checkers print `true` and `True` apart;
 - a `default_branch` git cannot resolve to a commit, which is also what no `git` binary or no
   repository looks like. In CI the usual cause is a checkout holding only `origin/main`: set
   `default_branch` to that;

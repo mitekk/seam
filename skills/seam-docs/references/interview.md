@@ -142,4 +142,4 @@ are not there. Each failure names the key path:
 - `load_bearing` or `low_review_paths` present and not a list (absent is fine — both mean empty)
 - a glob row with `"create": true` outside layers 3 and 4 — a glob names a form, not a file
 - `artifacts[N].path` absent from `load_bearing`
-- `assertions.A15.impl_globs` or `assertions.A15.test_globs` given without the other, or not a list
+- `assertions.A15.impl_globs` or `assertions.A15.test_globs` given without the other, or not a list; `assertions.A15.default_branch` given and not a branch name
