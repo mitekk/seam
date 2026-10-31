@@ -4,7 +4,8 @@
 place.
 
 Owns: the domain labels, the three priorities, and the milestones. Nothing else may define them —
-`.seam/config.json` carries the machine mirror and the checker asserts the two agree.
+`.seam/config.json` carries the machine mirror. The two are kept in step by hand: no checker
+assertion compares them, so a drift between them is not caught.
 
 ## Domains
 
