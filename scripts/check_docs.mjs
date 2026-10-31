@@ -1272,13 +1272,18 @@ async function main() {
       findings.push(finding("A15", CONFIG_PATH, 1, notMade[0], notMade[1]));
     } else if (!walked) {
       // After a squash merge a test and its implementation are always one commit, so on the
-      // default branch this check has nothing to compare. Saying so is not a finding, and it is
-      // not counted among the assertions that ran: silence would read as a pass.
+      // default branch this check has nothing to compare. Saying so is not a finding, and silence
+      // would read as a pass. It is counted: A15 ran and reached a verdict, and a total that
+      // differed between branches for one config would say nothing about the config.
+      ran += 1;
       process.stdout.write(`A15: not applicable on ${branch} — a squash merge puts test and `
         + `implementation in one commit\n`);
     } else {
       ran += 1;
-      for (const p of late) {
+      // A file the branch added and later removed is not in the tree at HEAD: there is nothing to
+      // open and nothing to fix, and it proves nothing. `HEAD:./` is relative to where the checker
+      // runs, like the paths above.
+      for (const p of late.filter((q) => git("cat-file", "-e", `HEAD:./${q}`) !== null)) {
         findings.push(finding("A15", p, 1, p,
           `is an implementation file (\`assertions.A15.impl_globs\`) added in \`${branch}..HEAD\` `
           + `with no test (\`assertions.A15.test_globs\`) before it or in the same commit — a test `

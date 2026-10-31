@@ -358,14 +358,13 @@ Reads: the commits on this branch that the default branch does not have, oldest 
 (`git rev-list --reverse --topo-order --no-merges <default_branch>..HEAD`), and for each the paths it
 **added** (`git diff-tree`). A path matching `test_globs` is a test; one matching `impl_globs` is an
 implementation. Walking forward, the first commit that adds a test ends the check — nothing after it
-can be early — and every implementation file added in a commit before that one is a finding. An
+can be early — and every implementation file added in a commit before that one, and still in the
+tree at HEAD, is a finding. An
 implementation added in the **same** commit as the first test is fine: with, not after.
 
 A path matching both lists is a test. Only an added file counts: a modification of an
 implementation file is not an arrival, and neither is a rename or a copy, so moving code does not
-make it new. It is the history that is read, not the tree: a file added with no test, removed, and
-added again is reported once, and one removed for good is still reported, because what the commits
-did is what was asked.
+make it new. A file added with no test, removed, and added again is reported once.
 
 Off by default, because it needs two repo-specific lists and an empty one is not a sensible
 default: the interview asks which paths are implementation and which are tests, and writes
@@ -382,7 +381,8 @@ commit. A sha is fresh on every branch, and a finding keyed on one could not be 
 one commit, so on the default branch this check has nothing to compare, and a silent pass would be
 a check with no teeth pretending otherwise. When the range is empty the checker prints one line to
 stdout, `A15: not applicable on <branch> — a squash merge puts test and implementation in one
-commit`, reports no finding, and does **not** count A15 among the assertions that ran.
+commit`, and reports no finding. A15 is still **counted** among the assertions that ran: it reached
+a verdict, and the same config must print the same total on every branch.
 
 **Fails loudly, with the comparison named as not made**, as one finding at `.seam/config.json:1`, in
 four cases:
@@ -400,7 +400,10 @@ four cases:
 
 A detached HEAD is not a failure: the range is `<default_branch>..HEAD` either way.
 
-Does not reach: **which test proves which implementation.** One test file added anywhere at or
+Does not reach: **an implementation file that is no longer there.** A file the branch added and
+later removed is not in the tree at HEAD, so there is nothing to open and nothing to fix, and the
+only way to clear a finding for it would be a baseline entry for a path that does not exist. It is
+skipped. And **which test proves which implementation.** One test file added anywhere at or
 before an implementation file satisfies it, however unrelated — the same boundary A14 draws, for the
 same reason: pairing them needs a declaration per file that drifts within a day. It does not read
 file contents, so it cannot tell a test that asserts something from one that does not (A14 reads that

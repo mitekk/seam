@@ -1069,8 +1069,9 @@ test("A15 reports not-applicable on the default branch rather than passing", () 
   for (const [lang, res] of [["python", r.py], ["node", r.js]]) {
     assert.ok(res.stdout.split("\n").includes(NOT_APPLICABLE),
       `${lang} did not say A15 was not applicable:\n${res.stdout}`);
-    // Something that measured nothing is not counted among the assertions that ran.
-    assert.match(res.stdout, /\b14 assertions\b/, lang);
+    // A15 reached a verdict, and the verdict was that comparing makes no sense here, so it is
+    // counted: the 14 that always run, and A15.
+    assert.match(res.stdout, /\b15 assertions\b/, lang);
   }
   rm(dir);
 });
@@ -1247,4 +1248,71 @@ test("A15 says the comparison was not made when git cannot read a commit it list
   assert.match(r.findings[0], /^\.seam\/config\.json:1: A15 .*could not read.*comparison was not made/,
     r.findings[0]);
   rm(dir);
+});
+
+test("A15 is counted among the assertions that ran on the default branch and off it alike", () => {
+  // The same config must print the same total on every branch, or the number says nothing about
+  // the config. A15 ran on the default branch too: its verdict was "not applicable".
+  const { dir, git } = a15Repo([{ "tests/hive.test.ts": TEST, "src/hive.ts": IMPL }]);
+  const total = (res) => res.stdout.match(/: (\d+) assertions,/)[1];
+  const onBranch = both(dir);
+  git("checkout", "--quiet", "main");
+  git("merge", "--ff-only", "feat");
+  const onDefault = both(dir);
+  assert.ok(onDefault.py.stdout.includes(NOT_APPLICABLE), onDefault.py.stdout);
+  assert.equal(total(onBranch.py), "15");
+  assert.equal(total(onDefault.py), total(onBranch.py));
+  assert.equal(total(onDefault.js), total(onBranch.js));
+  rm(dir);
+});
+
+test("A15 does not flag an implementation file the branch added and later removed", () => {
+  // It is not in the tree at HEAD, so there is nothing to open and nothing to fix, and the only
+  // way to clear the finding would be a baseline entry for a path that does not exist.
+  const removeHive = ({ git }) => { git("rm", "--quiet", "src/hive.ts"); git("commit", "-m", "drop it"); };
+  const some = a15Repo([{ "src/hive.ts": IMPL, "src/other.ts": IMPL }, removeHive]);
+  const r = both(some.dir);
+  assert.equal(r.status, 1, r.py.stdout + r.py.stderr);
+  assert.deepEqual(r.findings.map((l) => l.split(" ")[0]), ["src/other.ts:1:"], r.findings.join("\n"));
+  rm(some.dir);
+
+  const all = a15Repo([{ "src/hive.ts": IMPL }, removeHive]);
+  const a = both(all.dir);
+  assert.equal(a.status, 0, a.py.stdout + a.py.stderr);
+  assert.deepEqual(a.findings, []);
+  // The range had commits and A15 compared them, so this is a pass and not "not applicable".
+  assert.ok(!a.py.stdout.includes("not applicable"), a.py.stdout);
+  rm(all.dir);
+});
+
+test("A15 reads whether a file is at HEAD from below the repo root as well", () => {
+  // `--relative` makes the paths the checker sees relative to where it runs, so the presence
+  // check has to be relative too.
+  const { dir } = fixture({
+    mutate: ({ dir: d }) => setA15(d, {}),
+    commitAfter: true,
+  });
+  // Move the whole fixture one level down, as a project inside a larger repo.
+  const outer = scratch("seam-outer-");
+  const inner = join(outer, "proj");
+  cpSync(dir, inner, { recursive: true });
+  rmSync(join(inner, ".git"), { recursive: true, force: true });
+  const og = (...args) => execFileSync("git", args, { cwd: outer, stdio: "pipe" });
+  og("init", "-q", "-b", "main");
+  og("config", "user.email", "test@example.com");
+  og("config", "user.name", "Test");
+  og("add", "-A", "--", ".");
+  og("commit", "-q", "-m", "base");
+  og("checkout", "-q", "-b", "feat");
+  put(inner, "src/kept.ts");
+  put(inner, "src/gone.ts");
+  put(outer, "elsewhere/src/x.ts");
+  og("add", "--", "proj/src", "elsewhere");
+  og("commit", "-q", "-m", "c1");
+  og("rm", "-q", "proj/src/gone.ts");
+  og("commit", "-q", "-m", "c2");
+  const r = both(inner);
+  assert.deepEqual(r.findings.map((l) => l.split(" ")[0]), ["src/kept.ts:1:"], r.findings.join("\n"));
+  rm(dir);
+  rm(outer);
 });
