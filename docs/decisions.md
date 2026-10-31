@@ -93,3 +93,41 @@ reachable only for work not worth doing, so the two questions above replace it.
 **Enforced by:** nothing mechanical. No assertion reads a PR body, and which disposition an item
 takes is a judgement made in flight; `skills/seam-github/SKILL.md` § Follow-ups is the procedural
 owner, and `evals/github-pr-shape` is the only measurement.
+
+## R-001 — rulings taken while building the plan-first layer
+
+*2026-11-01 · in flight*
+
+### Ruling — a MADR repo writes one record per ruling, not one per batch
+
+Settled with a fixture, because `tests/prescribed.test.mjs` is where both ADR formats are built
+and the question could be measured rather than argued.
+
+**Settled:** in a repo whose `adr.format` is `madr`, a ruling taken in flight is **its own
+numbered record**, named `NNNN-ruling-<slug>.md`. A plan's worth of rulings is a plan's worth of
+records.
+
+**Why, measured:** a batch record — one record collecting a branch's rulings — is appendable only
+while the branch is in flight. The moment it is on the default branch A12 freezes its bytes, with
+only the `**Status:**` line exempt, so the next ruling cannot go in it. A prescription to batch is
+therefore one that works until the first merge and then fails, and the failure arrives as a byte
+violation on a file somebody is in the middle of appending to.
+`tests/prescribed.test.mjs` pins all three states: the batch record appended to before it lands
+passes, the landed record untouched passes, and the append after landing is an A12 finding.
+
+A record per ruling cannot be reopened by construction, and it gives each ruling a **number** —
+which `superseded by NNNN`, and every citation of one ruling by another, need.
+
+**Costs if wrong:** directory volume. `docs/adr/` reads as mostly rulings rather than decisions,
+and a reader looking for why something is the way it is scrolls past them. The `ruling-` filename
+prefix is the whole mitigation: the listing is chronological, as an append-only dated track is,
+and the kind is visible without opening the file. The alternative trades that volume for a record
+that can be reopened by mistake, and the mistake is silent until a merge.
+
+**The single-file format has no such constraint**, and that asymmetry is the reason this ruling is
+needed at all: `docs/decisions.md` is held to a *prefix* check rather than byte-equality, so a
+dated section that is still the last thing in the file stays open and a branch's rulings batch
+into it naturally — which is what this very section does.
+
+**Enforced by:** `scripts/check_docs.mjs`, assertion A12, and `tests/prescribed.test.mjs`, which
+performs every prescribed action in both formats and fails if one of them reds the checker.

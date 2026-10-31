@@ -71,4 +71,10 @@ shape that track defines — `adr.format` in `.seam/config.json` says whether th
 in one file or a record of its own. **Keep it short.** A ruling longer than the deviation it
 records is ceremony, and the doc's proportionality rule is the reason to cut it.
 
+**In a `madr` repo that is one record per ruling, never one record collecting several.** A record
+is byte-frozen the moment it is on the default branch, so a batch record cannot be appended to
+after the branch it was opened on merges — the second ruling would be an edit to frozen bytes.
+A `single` repo has no such constraint, because that file is held to a prefix check instead and a
+dated section still at the end of it stays open.
+
 The PR's gate is `seam-github`'s, not this file's.
