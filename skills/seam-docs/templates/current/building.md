@@ -101,11 +101,13 @@ DoD and no ruling.** Run that unit's test and go on.
 | Medium | anything in between — a handful of files, or a test that does not exist yet | both contracts; if no unit or document owns it, write the row |
 | Large | crosses a structural seam — a schema, a state machine, two runtimes | both contracts, and expect rulings: say what each costs if wrong; if no unit or document owns it, write the row |
 
-**This table is the only copy of the sizes.** The tracker conventions report a follow-up's size
-from these same three and cite this file for them rather than defining their own; what they sort a
-follow-up by is who owns it, never how big it is. A size is **blast radius, not felt effort**: a
-one-line fix to a sentence in a doc is Small, and so is a typo in a README — and a document owns
-those, so they need no row.
+**This table is the only place the sizes are defined.** The tracker conventions **name** the three
+members, so that a required slot does not wait on an optional read, and cite this file for what
+each one *means* rather than defining their own — A5's shape, which is members in both places and
+the definitions in one; what they sort a follow-up by is who owns it, never how big it is.
+
+A size is **blast radius, not felt effort**: a one-line fix to a sentence in a doc is Small, and so
+is a typo in a README — and a document owns those, so they need no row.
 
 **Who owns the work is a separate question from its size.** At every size, a document that owns
 the change stands in for the unit, as the start contract says: name it instead of writing a row.

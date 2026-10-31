@@ -1196,3 +1196,47 @@ test("the clean fixture carries every top-level key the wizard projects", () => 
     assert.ok(k in fixture, `tests/fixtures/clean/.seam/config.json has no ${k} — the wizard`
       + ` projects it, so the fixture is a config no run could write`);
 });
+
+test("the size vocabulary is the same set in the template and in seam-github", () => {
+  // The size slot in seam-github's PR skeleton names its three members, so a required slot does
+  // not wait on an optional read of docs/building.md. That is A5's shape — members in both
+  // places, definitions in one — and A5 itself cannot hold it: the repo's own assertions.A5 is
+  // off with an empty `vocabularies`, and its implementation resolves only `sql` and `ts` artifact
+  // parsers, so it could not read a markdown table even switched on. Nothing else compared the two
+  // copies, so a fourth size added to either side drifted in silence.
+  const tmpl = readFileSync(
+    join(REPO, "skills/seam-docs/templates/current/building.md"), "utf8");
+  const skill = readFileSync(join(REPO, "skills/seam-github/SKILL.md"), "utf8");
+
+  // Template side: the first column of § Ceremony scales with blast radius' table.
+  const table = tmpl.split(/^## /m).find((s) => /^Ceremony scales/.test(s));
+  assert.ok(table, "the template has no § Ceremony scales with blast radius to read sizes from");
+  const defined = new Set();
+  for (const line of table.split("\n")) {
+    const m = /^\|\s*([^|]+?)\s*\|/.exec(line);
+    if (!m) continue;
+    const cell = m[1];
+    if (cell === "Size" || /^-+$/.test(cell)) continue;   // header and separator
+    defined.add(cell);
+  }
+
+  // Skill side: the backticked capitalised members in the paragraph that names the slot's
+  // vocabulary. Scoped to that paragraph so `one-liner` (a route marker, not a size) and
+  // `docs/building.md` (a path) are not mistaken for members.
+  const para = skill.split(/\n\n/).find((p) => /^\*\*The size slot is a vocabulary/.test(p));
+  assert.ok(para, "seam-github names no size vocabulary — the slot is free prose again");
+  const named = new Set(
+    [...para.matchAll(/`([A-Z][a-z]+)`/g)].map((m) => m[1]));
+
+  // Both parses have to have found something, or set equality passes on two empty sets — the
+  // check that passes without making its comparison.
+  assert.ok(defined.size >= 3,
+    `parsed ${defined.size} sizes from the template's table, expected at least three`);
+  assert.ok(named.size >= 3,
+    `parsed ${named.size} members from seam-github's paragraph, expected at least three`);
+
+  assert.deepEqual([...named].sort(), [...defined].sort(),
+    `the size vocabulary has drifted. docs/building.md defines [${[...defined].sort()}] and`
+    + ` skills/seam-github/SKILL.md names [${[...named].sort()}]. The template defines them and`
+    + ` the skill names the members; a size added to one side belongs on both.`);
+});
