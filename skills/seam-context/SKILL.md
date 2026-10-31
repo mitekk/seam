@@ -35,8 +35,9 @@ which is what the doc exists to prevent. The offer is one line and it is **not a
    action is to write something, the written file is what makes it done; saying it will be written
    is not the action.
 4. **Run the loop at the moments it pays** — before a dispatch, when a verbose result lands, at a
-   phase boundary, and when a tool call behaves unexpectedly. A session that only checks once the
-   window feels tight arrives with one level left, and that level's action is to stop.
+   phase boundary, and whenever a tool call's result is not what the session expected. A session
+   that only checks when the window feels tight reaches the doc's last level, whose action is the
+   one it least wants to be told.
 
 ## Dispatching
 

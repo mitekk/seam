@@ -23,13 +23,17 @@ before the window runs out. Neither file owns the other's half.
 
 | Level | Usage | Required action |
 |---|---|---|
-| **Green** | 0–50% | Continue. |
-| **Yellow** | 50–60% | Summarise finished work to disk. Compact before a large read or dispatch. |
-| **Orange** | 60–75% | Compact now. Start no new large reads; work from what is on disk. |
+| **Green** | 0–49% | Continue. |
+| **Yellow** | 50–59% | Summarise finished work to disk. Compact before a large read or dispatch. |
+| **Orange** | 60–74% | Compact now. Start no new large reads; work from what is on disk. |
 | **Red** | 75%+ | Stop new work. Write the handoff, commit, then compact or end the session. |
 
 **Every action above Green is the same one at a different strength: write to disk, and prefer disk
 over context.** None of them is "be careful", because that is not an action anyone can take.
+
+**Where compaction is the human's command rather than the session's**, the session still owes the
+half that is its own: write the state to disk, say which level it is at and on what, then ask. An
+action that waits on someone else is not a reason to skip the part that does not.
 
 **The bands are not re-derived per session.** They arrive with the method, already in use
 elsewhere, and a band argued down on the day it binds is a band that never triggers again.
@@ -37,7 +41,10 @@ elsewhere, and a band argued down on the day it binds is a band that never trigg
 ## What triggers a level
 
 **The harness's own budget indicator, where there is one.** A figure the session can read beats
-every proxy, and it stays right as the window fills. Read it rather than estimating.
+every proxy, and it stays right as the window fills. Read it rather than estimating — and read it
+in the direction this table is keyed. **Usage is the fraction of the window already consumed.**
+Where the harness reports what is *left* instead, which is the common case, the level is read off
+100% minus that figure: "23% remaining" is 77% consumed, which is Red and not Green.
 
 **Where there is none, count instead of feeling.** The fallback is the kind of thing that fills a
 window, counted:
@@ -45,9 +52,14 @@ window, counted:
 | Signal | Level |
 |---|---|
 | A fresh session; at most one agent dispatched | Green |
-| Two agents dispatched, or five or more large reads — 200 lines each and up | Yellow |
-| Several agents returned and their output still in the thread, or a long debugging cycle | Orange |
+| Two or more agents dispatched, or five or more large reads — 200 lines each and up | Yellow |
+| Two or more agents returned with output still in the thread, or a long debugging cycle | Orange |
 | Tool calls behaving oddly, or a decision taken earlier in this session already lost | Red |
+
+**Take the highest level whose row matches. Where none matches, the level is Green.** The counts
+are lower bounds and the rows overlap on purpose, so a session that matches two takes the worse of
+them: acting a level early costs a file written sooner than it had to be, and acting a level late
+is the degradation this table exists to catch.
 
 Tune these counts here. They are a proxy, and one calibrated to someone else's session is the one
 that reads Green while the window fills.
@@ -80,10 +92,12 @@ file a dispatched agent leaves behind: all of it is this session's working state
 whoever picks the thread up and stale after that. A harness that provides a scratch directory of
 its own is the same answer — what matters is that the files are not in git and not under `docs/`.
 
-**One directory, one file per writer.** Where agents run in parallel — which the dispatch rule
-above licenses — each writes a scoped file of its own in here, named for the work it was given and
-never a shared path: two handoffs at one name is one of them silently overwritten, and whoever
-picks the thread up reads the surviving agent's state as though it were both.
+**One file per writer, wherever they write.** Where agents run in parallel — which the dispatch
+rule above licenses — each writes a scoped file of its own, never a shared path, and the name
+carries the unit and the agent rather than the role: `progress-7-context.md`, not `progress.md`,
+because two agents given similar work collide on a role. Two handoffs at one name is one of them
+silently overwritten, and whoever picks the thread up reads the surviving agent's state as though
+it were both.
 
 Add the line when this file is adopted:
 

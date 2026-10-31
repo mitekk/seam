@@ -440,11 +440,12 @@ test("a layer-2 row named context.md gets the context template", () => {
   const flat = t.replace(/\s+/g, " ");
   assert.match(t, /Layer 2/);
   assert.match(t, /amend in place/i);
-  // The four levels and their bands, measured in another repo rather than re-derived here. A
-  // table missing a level is a session with no action to take in that band.
-  assert.match(flat, /\| \*\*Green\*\* \| 0–50% \|/);
-  assert.match(flat, /\| \*\*Yellow\*\* \| 50–60% \|/);
-  assert.match(flat, /\| \*\*Orange\*\* \| 60–75% \|/);
+  // The four levels, on the decision points the method arrived with — 50, 60, 75 — and bands that
+  // do not overlap at them, so one figure gives one level. A table missing a level is a session
+  // with no action to take in that band.
+  assert.match(flat, /\| \*\*Green\*\* \| 0–49% \|/);
+  assert.match(flat, /\| \*\*Yellow\*\* \| 50–59% \|/);
+  assert.match(flat, /\| \*\*Orange\*\* \| 60–74% \|/);
   assert.match(flat, /\| \*\*Red\*\* \| 75%\+ \|/);
   // Every action above Green is one move, which is what makes the table a policy and not a mood.
   assert.match(flat, /write to disk, and prefer disk over context/i);
@@ -455,6 +456,17 @@ test("a layer-2 row named context.md gets the context template", () => {
   assert.match(flat, /agents dispatched/i);
   assert.match(flat, /large reads/i);
   assert.match(flat, /an unreadable threshold is the same as no threshold/i);
+  // The bands are keyed on what has been consumed, and the likeliest harness reports the inverse,
+  // so the direction is stated where the reader meets the indicator. Without it a session reading
+  // "23% left" lands on Green while it is in fact at Red — the degradation the table prevents,
+  // reached by following the instruction correctly.
+  assert.match(flat, /usage is the fraction of the window already consumed/i);
+  assert.match(flat, /100% minus/);
+  // The fallback rows overlap and are not exhaustive, so without a precedence rule and a default
+  // the level is undecidable in ordinary states — a fresh session whose tool call misbehaves
+  // matches Green and Red at once, and the skill forbids falling back to a feeling.
+  assert.match(flat, /take the highest level whose row matches/i);
+  assert.match(flat, /where none matches, the level is Green/i);
   // The dispatch rule: two reasons, and the closed list is the rule.
   assert.match(flat, /\*\*parallel\*\*/);
   assert.match(flat, /\*\*detached\*\*/);
@@ -466,7 +478,7 @@ test("a layer-2 row named context.md gets the context template", () => {
   assert.match(flat, /cannot earn (a row|one)/i);
   // One directory plus a licence to dispatch in parallel is a collision the doc grants, so the
   // doc makes it safe: a scoped path per agent, or one handoff silently overwrites another.
-  assert.match(flat, /scoped|its own file|a path of its own/i);
+  assert.match(flat, /a scoped file of its own/i);
   assert.match(flat, /\bnever a shared path\b/i);
   // The checker's path reached it from the config rather than being hardcoded.
   assert.ok(t.includes("scripts/check_docs.py"), "the checker path did not substitute");
