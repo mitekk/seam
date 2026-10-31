@@ -130,6 +130,13 @@ function validate(a) {
     "teardown_command",
     `must be one shell command as a string, not ${JSON.stringify(a.teardown_command)} — or absent,`
     + ` which means the repo has no teardown step beyond deleting the branch`);
+  // "One shell command" is what the interview asks for and what the skill runs, as written, so a
+  // value carrying a newline is two commands whose order would be the caller's to guess. A repo
+  // with two things to take down writes a script and names the script here.
+  if (typeof a.teardown_command === "string" && /[\r\n]/.test(a.teardown_command)) {
+    bad.push(`teardown_command: carries a newline, so it is more than one command — put the`
+      + ` sequence in a script of the repo's own and name that script here`);
+  }
 
   // A15 compares two lists, and one without the other is a comparison with one side empty: it
   // could only ever fail, or only ever pass. The checker reports an enabled A15 with an empty

@@ -187,9 +187,11 @@ and its `repo.default_branch` is `main`.
 ```bash
 gh pr merge 12 -R mitekk/apiary --squash --delete-branch   # gated — needs the OK
 gh issue view 12 -R mitekk/apiary                          # did Closes fire?
+cd "$(git worktree list | head -1 | awk '{print $1}')"     # the main checkout, not the worktree
 scripts/rm-worktree.sh 12                                  # the repo's own teardown
 git switch main                                            # -d and -D refuse a checked-out branch
-git branch -D 12-queenless-filter                          # if the teardown command left it
+git worktree remove .worktrees/12-queenless-filter         # if the teardown command left it
+git branch -D 12-queenless-filter                          # and the branch that worktree held
 git pull --ff-only                                         # the base the next branch is cut from
 ```
 
@@ -204,10 +206,11 @@ Here is what the merge would do:
   title:   feat(hives): filter the queenless list on hive state
   closes:  #12
 
-That one needs your OK. The rest follows it and does not: check that #12 actually closed, then
-`scripts/rm-worktree.sh 12`, which takes the worktree, the per-branch database and the local
-branch with it — so the `git branch -D` after it is usually a no-op — and `git pull --ff-only`,
-so the next branch is cut from the merge rather than from the commit before it.
+That one needs your OK. The rest follows it and does not: check that #12 actually closed, leave
+the worktree for the main checkout, then `scripts/rm-worktree.sh 12`, which takes the worktree,
+the per-branch database and the local branch with it — so the `git branch -D` after it is usually
+a no-op — and `git pull --ff-only`, so the next branch is cut from the merge rather than from the
+commit before it.
 ```
 
 What that shows:
@@ -216,11 +219,16 @@ What that shows:
   body already said;
 - the local steps are named **in the same breath**, because they are the rest of the sequence
   rather than cleanup to come back to;
+- the `cd` is **first among them and not housekeeping**: run from inside the worktree, the next
+  line deletes the directory the session is standing in, and every git command after it fails with
+  `Unable to read current working directory` — including the `git pull` that keeps the next
+  branch's base fresh;
 - `--delete-branch` has already taken the local branch, and `rm-worktree.sh` takes it again, so
   both are **skipped if already done** — which is why the `git branch -D` sits behind an "if it is
   still there" rather than behind a check;
 - **`-D`, not `-d`**: the squash leaves the branch tip no ancestor of `main`, so `-d` either
   refuses or reports the branch merged to its *upstream*, which is a different question;
-- the first teardown step exists only because this repo's config names a command. A repo whose
-  `teardown_command` is empty switches branch and deletes it, and that is the common case rather
-  than a gap.
+- `rm-worktree.sh` is here only because this repo's config names it. A repo whose
+  `teardown_command` is empty runs the two lines after it instead — **worktree first, then
+  branch**, because a branch a worktree holds cannot be deleted with either flag — and that is
+  the common case rather than a gap.

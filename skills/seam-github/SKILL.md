@@ -269,7 +269,7 @@ It is a sequence rather than one command, and § Teardown below is the last step
 3. **Tear the branch down** — § Teardown below.
 4. **Bring the default branch up to date** — the one `repo.default_branch` names in
    `.seam/config.json`, which is the fact this step needs and the one place it is written down, so
-   do not guess `main` — fast-forward only, and on the branch § Teardown's step 2 has already
+   do not guess `main` — fast-forward only, and on the branch § Teardown's step 3 has already
    switched to. The merge happens on the tracker's side, so the checkout the next branch is cut
    from still points at the commit before it, which is how that branch starts out missing the
    change that just shipped. A pull that cannot fast-forward is a divergence to look at rather
@@ -287,21 +287,39 @@ be done**: `gh pr merge --delete-branch` deletes the local branch as well as the
 command that removes a worktree takes its branch with it. **A step already done is skipped rather
 than retried** — the sequence is idempotent, and `branch not found` here is that, not a failure.
 
-1. **Run the repo's own teardown command, if `.seam/config.json` names one** in
-   `teardown_command`, with the issue number in place of `<n>`, from the repo root. It goes first
-   because it owns whatever the branch was given, and because it commonly deletes the branch too.
-2. **Switch to the default branch**, the one § Merging's step 4 names. This is the step that makes
+1. **Leave the worktree: run the rest from the main checkout**, which `git worktree list` names
+   on its first line. "The repo root" is not the instruction — in a worktree repo the worktree is
+   one too, and it is the wrong one.
+2. **Run the repo's own teardown command, if `.seam/config.json` names one** in
+   `teardown_command`, with the issue number in place of `<n>`. It goes before the delete because
+   it owns whatever the branch was given, and because it commonly deletes the branch too.
+3. **Switch to the default branch**, the one § Merging's step 4 names. This is the step that makes
    the next one possible: **`git branch -d` and `-D` both refuse a branch that is checked out**, in
    a worktree or in the repo root alike, and the error names the worktree rather than the flag, so
    it reads as a tooling fault rather than as the ordinary state it is.
-3. **Delete the local branch, if it is still there, and expect `-D` rather than `-d`.** A squash
+4. **Remove the branch's worktree, if it still has one** — `git worktree remove <path>`, and
+   `git worktree list` is what says whether it does. **A branch checked out in a worktree cannot
+   be deleted while that worktree exists**, with either flag, so without this step the next one
+   cannot run in a worktree repo whose `teardown_command` is empty — which is the common case
+   twice over.
+5. **Delete the local branch, if it is still there, and expect `-D` rather than `-d`.** A squash
    gives the default branch a new commit, so the branch tip is never an ancestor of it and `-d`'s
    merged check cannot hold: while `refs/remotes/origin/<branch>` is still present it reports the
    branch merged **to its upstream**, which is not the comparison it looks like, and after a
    `fetch --prune` it refuses outright. `-D` loses nothing here, because the squash carries the
    content and the PR carries the history.
 
-**Where that key is empty or absent, deleting the branch is the whole teardown.** Most repos have
+**Steps 1 and 4 are both measured, and skipping either ends somewhere undiagnosable.** Run step 2
+from inside the worktree and a teardown command that removes it **deletes the directory the session
+is standing in**: every git command after that — step 4 of § Merging included — answers
+`fatal: Unable to read current working directory`, so the stale branch point that step exists to
+prevent is exactly what is left, and nothing in the error mentions a branch or a worktree. With
+`teardown_command` empty, step 3 fails instead with
+`fatal: '<default>' is already used by worktree at …`, and step 5 with `cannot delete branch …
+used by worktree` whichever flag it is given, which is step 4 not taken. None of the three is a
+tooling fault.
+
+**Where that key is empty or absent, the steps after it are the whole teardown.** Most repos have
 nothing else to take down, so an empty value is a complete answer rather than an unfilled one: do
 not go looking for a script to run, and do not write one.
 
@@ -334,6 +352,12 @@ milestone names nothing because there is nothing yet to name: say which mileston
 rather than counting them against the invariant. The issue the invariant is **for** is one in a
 **planned** milestone that no row owns and no document names — which is how a board re-spreads
 across every milestone with every check still green.
+
+**Which files are the plans is `assertions.A8.plan_glob` in `.seam/config.json`**, never the path
+an example happened to show. Glob the configured one: on a repo whose plans sit under
+`docs/superpowers/plans/`, a session that globbed `docs/plans/*.md` finds nothing, concludes every
+milestone is unplanned, and reports every open issue as covered by no plan — the silent half of
+the same mistake the paragraph above refuses in its noisy half.
 
 **The active milestone is read, never inferred**: it is the one `milestones[].active` marks in
 `.seam/config.json`, which is the field § Follow-ups' qualifier reads in its third clause — that is

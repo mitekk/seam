@@ -42,6 +42,38 @@ function interviewTables() {
 }
 
 /**
+ * Every question row's **answers-key cell** — the third column — with its row number. That cell is
+ * the only place a row says which key it fills: a key in a Notes cell is a cross-reference, and
+ * matching the whole section let the interview lose the question that fills `load_bearing` or
+ * `milestones[].active` with the test still green.
+ */
+function questionKeyCells(questions) {
+  return questions.split("\n").filter((l) => /^\|\s*\d+\s*\|/.test(l))
+    .map((l) => l.split("|").map((c) => c.trim()))
+    .map((cells) => ({ n: Number(cells[1]), key: cells[3] ?? "" }));
+}
+
+/**
+ * Resolve a dotted answers-key path against a config object. `milestones[].active` resolves on the
+ * first row, since every row carries the same shape. Returns `undefined` for a path the config
+ * does not have — which is what a mistyped subkey is, and what substring-matching a doc missed.
+ */
+function resolveKeyPath(cfg, path) {
+  let node = cfg;
+  for (const seg of path.split(".")) {
+    const isList = seg.endsWith("[]");
+    const name = isList ? seg.slice(0, -2) : seg;
+    if (node === null || typeof node !== "object" || !(name in node)) return undefined;
+    node = node[name];
+    if (isList) {
+      if (!Array.isArray(node)) return undefined;
+      node = node[0];
+    }
+  }
+  return node;
+}
+
+/**
  * A layer-2 doc is proposed when a question **asks for it as a proposal** and carries the row it
  * writes, and when § Defaults records that default. Both halves match on the words the convention
  * uses rather than on the shape of a proposal: a row can carry the row it would write and still
@@ -974,12 +1006,21 @@ test("teardown_command is optional, and absent means deleting the branch is all 
   assert.equal(JSON.parse(read(b.dir, ".seam/config.json")).teardown_command,
     "scripts/rm-worktree.sh <n>");
   rm(b.dir);
+
+  // And an explicit "" is a complete answer, not a rejected one — the interview says an empty
+  // answer is complete, so the program has to accept the empty string the wizard would record.
+  const c = init(answers({ teardown_command: "" }));
+  assert.equal(c.r.status, 0, c.r.stderr);
+  assert.equal(JSON.parse(read(c.dir, ".seam/config.json")).teardown_command, "");
+  rm(c.dir);
 });
 
 test("a teardown_command that is not one command string is rejected", () => {
   // A list would have to be sequenced by whoever ran it, and the skill runs what the key names as
   // written. Absent and `""` are the two ways to say there is nothing to run.
-  for (const value of [["scripts/rm-worktree.sh <n>"], 5]) {
+  // The newline case is the one the name claimed and the program did not hold: a two-line value
+  // is two commands, and whoever ran them would be guessing the order.
+  for (const value of [["scripts/rm-worktree.sh <n>"], 5, "git worktree remove wt\ngit branch -D f"]) {
     const { dir, r } = init(answers({ teardown_command: value }));
     assert.equal(r.status, 2, r.stdout);
     assert.match(r.stderr, /teardown_command/, r.stderr);
@@ -990,7 +1031,11 @@ test("a teardown_command that is not one command string is rejected", () => {
 
 test("the interview asks for teardown_command, and § Defaults records what empty means", () => {
   const tables = interviewTables();
-  const row = tables.questions.split("\n").find((l) => l.includes("`teardown_command`"));
+  // By the row's **key cell**, not by the section: a Notes cell mentioning the key would have
+  // satisfied this, which is N4's defect in the test written one round earlier.
+  const n = questionKeyCells(tables.questions).find((c) => /`teardown_command`/.test(c.key))?.n;
+  assert.ok(n, "no question row's answers-key cell is teardown_command");
+  const row = tables.questions.split("\n").find((l) => new RegExp(`^\\|\\s*${n}\\s*\\|`).test(l));
   assert.ok(row, "the question table has no row naming teardown_command");
   // Optional by construction, so the row says so and says what an empty answer is. A question
   // that reads as a requirement gets an invented answer, which is what the discipline forbids.
@@ -1001,76 +1046,101 @@ test("the interview asks for teardown_command, and § Defaults records what empt
     "§ Defaults has no row giving teardown_command's default");
 });
 
-test("every config key seam-github reads is one the answers file fills", () => {
-  // The blind scan is the point: every top-level key of a config the wizard actually wrote,
-  // against every file the skill ships, so a key added to a clause later cannot pass by being
-  // absent from a hand-written list here.
+test("every key path seam-github reads resolves, and the asked ones carry a question row", () => {
+  // The scan is blind twice over: it reads every file the skill ships, and it matches a key name
+  // **anywhere** — prose, a JSON fence, a bash pipeline — because the previous detector was the
+  // backtick convention wearing the name "reads a key", and `jq -r .prd.dir` read green.
   const { dir, r } = init(answers());
   assert.equal(r.status, 0, r.stderr);
-  const keys = Object.keys(JSON.parse(read(dir, ".seam/config.json")));
+  const cfg = JSON.parse(read(dir, ".seam/config.json"));
   rm(dir);
-  // The whole directory and not SKILL.md alone: `references/` is loaded by the skill and names
-  // config keys of its own, so a clause there reads a key exactly as a clause in SKILL.md does.
   const sdir = join(REPO, "skills/seam-github");
   const skill = readdirSync(sdir, { recursive: true })
     .map(String).filter((f) => f.endsWith(".md"))
     .map((f) => readFileSync(join(sdir, f), "utf8")).join("\n");
-  // Two ways a file names a key, because reading one out of a fenced config excerpt is the same
-  // read with the quoting changed — a scan that only knew backticks called that a non-read.
-  const backticked = (text, k) => new RegExp("`" + k + "(`|\\[|\\.)").test(text);
-  const jsonKey = (text, k) => new RegExp('"' + k + '"\\s*:').test(text);
-  const reads = keys.filter((k) => backticked(skill, k) || jsonKey(skill, k)).sort();
-  // Pinned, so a sixth key reaches this test rather than arriving quietly. `docs` is in the set
-  // because the commit-type list writes `docs` in backticks; the key is filled anyway, so the
-  // collision costs nothing and a blind scan is worth more than a hand-curated one.
-  assert.deepEqual(reads, ["docs", "load_bearing", "milestones", "repo", "teardown_command"],
+  // Candidates are dotted paths **rooted in a real top-level key**, so the whole path is the unit
+  // rather than its first segment: `repo.trunk_branch` is a key this repo does not have, and a
+  // comparison on top-level keys alone called it accepted because `repo` is.
+  const tops = Object.keys(cfg);
+  const rx = new RegExp(`\\b(${tops.join("|")})((?:\\[\\])?(?:\\.[A-Za-z_]\\w*)*)(?!\\w)`, "g");
+  const paths = [...new Set([...skill.matchAll(rx)].map((m) => m[1] + m[2]))].sort();
+  const named = [...new Set(paths.map((k) => k.split(/[.[]/)[0]))].sort();
+  // Pinned, so a new key reaches this test rather than arriving quietly. Four entries are prose
+  // collisions rather than clauses — `docs` from the commit-type list, `checker` from "the drift
+  // checker", `domains` from "owns the domains", `table` from "an empty table" — and the blind
+  // match is kept anyway: a detector that demanded a marker is how a bash fence, a YAML fence and
+  // an unquoted dotted path all read green, and every one of these resolves and is harmless.
+  assert.deepEqual(named,
+    ["assertions", "checker", "docs", "domains", "load_bearing", "milestones", "repo", "table",
+      "teardown_command"],
     "seam-github names a config key this test does not know about, or stopped naming one");
+  // **The subject is the config the wizard just wrote**, walked path by path. The answers file is
+  // its source, so a path that resolves is one the answers can fill — asked, or stated from the
+  // tree, which `repo.default_branch` is and which no question row may be demanded for.
+  for (const k of paths)
+    assert.notEqual(resolveKeyPath(cfg, k), undefined,
+      `seam-github reads ${k} and a config the wizard wrote has no such path — fix the key, or`
+      + ` add it to the answers file and the projection`);
   const { questions, schema } = interviewTables();
-  // The answers file is the source, so the schema is what a read has to be in: a key absent from
-  // it is a key nothing can fill. The question table cannot be this subject, because the
-  // interview STATES some keys from the tree instead of asking — `repo.default_branch` is the
-  // live one, and an assertion demanding a row for it only makes the clause that reads it vaguer.
-  for (const k of reads)
-    assert.ok(jsonKey(schema, k),
+  // § Schema is the documented half of the same claim: the key a clause reads is in the answers
+  // schema a reader of the interview sees, not only in whatever the program happens to emit.
+  const cells = questionKeyCells(questions);
+  for (const k of named)
+    assert.match(schema, new RegExp(`"${k}"\\s*:`),
       `seam-github reads ${k} and § Schema has no such key — add it to the answers schema, or stop`
       + ` reading it in the skill`);
-  // Then the stricter test, for the keys the interview must **ask**: a question row each, pinned
-  // as a set. A key that arrives with no row surfaces here as the question it is — asked, or
-  // stated from the tree — rather than passing because the schema happens to carry it.
-  assert.deepEqual(reads.filter((k) => backticked(questions, k)),
-    ["docs", "load_bearing", "milestones", "teardown_command"],
-    "a key seam-github reads lost its question row, or gained one this test does not expect");
+  // Then the stricter test, for the keys the interview must **ask**: a row whose **answers-key
+  // cell** is that key. Scoped to the cell because a key named in another row's Notes let the
+  // interview lose question 4 (`load_bearing`) or question 11 (`milestones[].active`) green.
+  // Per top-level key by design — which subkey a row asks for is the resolution check's business.
+  const askedFor = (k) => cells.some((c) => new RegExp("`" + k + "(`|\\[|\\.)").test(c.key));
+  assert.deepEqual(named.filter(askedFor),
+    ["assertions", "checker", "docs", "domains", "load_bearing", "milestones", "teardown_command"],
+    "a key seam-github reads lost the question row that fills it, or gained one unexpectedly");
   // The teardown clause is a real conditional, and the else-branch is stated: a key most repos
   // leave empty needs one, or "if the config names one" is a requirement in conditional clothing.
   const flat = skill.replace(/\s+/g, " ");
   assert.match(flat, /if `\.seam\/config\.json` names one/);
-  assert.ok(flat.includes("Where that key is empty or absent, deleting the branch is the whole"
+  assert.ok(flat.includes("Where that key is empty or absent, the steps after it are the whole"
     + " teardown"), "the teardown clause states no else-branch for a config that names no command");
-  // And the steps are in an order that runs. `git branch -d` and `-D` both refuse a branch that
-  // is checked out, and a teardown command that removes a worktree deletes the branch with it —
-  // so the repo's own command comes first and the switch comes before the delete, or the delete
-  // errors in the very repo this procedure was generalised from.
-  const md = readFileSync(join(sdir, "SKILL.md"), "utf8");
-  const sec = md.slice(md.indexOf("### Teardown,"), md.indexOf("## Status reporting"));
-  assert.ok(sec.length > 0 && md.indexOf("### Teardown,") !== -1, "§ Teardown was renamed");
-  const at = (needle) => {
-    const i = sec.indexOf(needle);
-    assert.notEqual(i, -1, `§ Teardown no longer says "${needle}"`);
-    return i;
-  };
-  assert.ok(at("teardown command") < at("Switch to the default branch")
-    && at("Switch to the default branch") < at("Delete the local branch"),
-    "§ Teardown's steps are in an order that cannot run: the delete is before the switch, or"
-    + " before the command that commonly performs it");
+});
+
+test("§ Teardown's steps are numbered in an order that can be performed", () => {
+  // Measured in three shapes (plain checkout, worktree from the main checkout, worktree from
+  // inside it): run from the worktree, step 2 deletes the session's cwd and every later git
+  // command answers `Unable to read current working directory`; with no teardown command, the
+  // switch and the delete both refuse while the branch is checked out. So the order is part of
+  // the procedure, and it is asserted on the **list markers** — anchoring on where a label first
+  // appears in the section let an intro sentence in the right order mask a list in the wrong one.
+  const md = readFileSync(join(REPO, "skills/seam-github/SKILL.md"), "utf8");
+  const from = md.indexOf("### Teardown,");
+  const to = md.indexOf("## Status reporting");
+  assert.ok(from !== -1 && to > from, "§ Teardown's heading moved, or § Status reporting did");
+  const sec = md.slice(from, to);
+  const steps = [...sec.matchAll(/^(\d+)\. \*\*(.+?)\*\*/gm)].map((m) => [Number(m[1]), m[2]]);
+  assert.deepEqual(steps.map(([n]) => n), [1, 2, 3, 4, 5],
+    `§ Teardown is not a five-step numbered list: ${JSON.stringify(steps.map(([n]) => n))}`);
+  const label = (n) => steps.find(([i]) => i === n)[1];
+  assert.match(label(1), /main checkout/,
+    "step 1 is not: run from the main checkout, which is what leaving the worktree means");
+  assert.match(label(2), /teardown command/, "step 2 is not the repo's own teardown command");
+  assert.match(label(3), /Switch to the default branch/, "step 3 is not the switch");
+  // Measured: with no teardown command, the worktree still holds the branch after the switch, and
+  // both flags refuse. The removal is the step that makes the delete possible in a worktree repo.
+  assert.match(label(4), /Remove the branch's worktree/, "step 4 is not the worktree removal");
+  assert.match(label(5), /Delete the local branch/, "step 5 is not the delete");
   assert.match(sec, /expect `-D` rather than `-d`/,
     "§ Teardown does not say which flag a squashed branch needs, so -d's merged check reads as a"
     + " verification it is not");
 });
 
-test("the clean fixture carries every key the wizard projects", () => {
+test("the clean fixture carries every top-level key the wizard projects", () => {
   // Nothing tied the fixture to project(), so a key added to the projection left it a config no
   // wizard run could write. A16 — the config is the projection of the answers file — is built on
   // this fixture, so the gap would surface inside that work as A16 being broken.
+  //
+  // Top-level by design, and the name says so: the fixture is a different repo's answers, so its
+  // nested values differ legitimately. The shape of the projection is the claim here.
   const { dir, r } = init(answers());
   assert.equal(r.status, 0, r.stderr);
   const projected = Object.keys(JSON.parse(read(dir, ".seam/config.json")));
