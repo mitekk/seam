@@ -156,6 +156,12 @@ it exempts, in `.seam/config.json`. Two places, two rules, and the difference is
   than hypothetical. The enabled set is read by a **refusal** rather than an assertion, because
   A16's own switch lives in the file A16 protects — so flipping it and editing the config in one
   write would otherwise be silent.
+
+  **Upgrading from 0.1.x:** this file did not exist before 0.2.0, so a repo that adopted earlier
+  has a checker that **exits 2 until `seam-init` is re-run**. Regenerating the checker alone is not
+  enough — the checker does not write the record, the wizard does. The refusal names the command.
+  Skipping the check when the record is absent was the obvious alternative and was rejected: it is
+  the same defeat with one extra step, since deleting the file would then buy silence.
 - `.seam/baseline.json` — day-one drift, written by `--write-baseline`.
 - The docs you approved, one per layer, from
   [`skills/seam-docs/templates/`](skills/seam-docs/templates).
