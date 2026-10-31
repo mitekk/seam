@@ -464,6 +464,10 @@ test("a layer-2 row named context.md gets the context template", () => {
   assert.match(flat, /gitignored/i);
   assert.match(flat, /never under `docs\/`/i);
   assert.match(flat, /cannot earn (a row|one)/i);
+  // One directory plus a licence to dispatch in parallel is a collision the doc grants, so the
+  // doc makes it safe: a scoped path per agent, or one handoff silently overwrites another.
+  assert.match(flat, /scoped|its own file|a path of its own/i);
+  assert.match(flat, /\bnever a shared path\b/i);
   // The checker's path reached it from the config rather than being hardcoded.
   assert.ok(t.includes("scripts/check_docs.py"), "the checker path did not substitute");
   assert.ok(!/\{\{[\w.]+\}\}/.test(t), "an unrendered placeholder is left in the doc");

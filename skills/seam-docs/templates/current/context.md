@@ -80,6 +80,11 @@ file a dispatched agent leaves behind: all of it is this session's working state
 whoever picks the thread up and stale after that. A harness that provides a scratch directory of
 its own is the same answer — what matters is that the files are not in git and not under `docs/`.
 
+**One directory, one file per writer.** Where agents run in parallel — which the dispatch rule
+above licenses — each writes a scoped file of its own in here, named for the work it was given and
+never a shared path: two handoffs at one name is one of them silently overwritten, and whoever
+picks the thread up reads the surviving agent's state as though it were both.
+
 Add the line when this file is adopted:
 
 ```gitignore
