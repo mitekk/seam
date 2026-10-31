@@ -63,8 +63,8 @@ round cannot fix it in place. Review is the only gate they get.
 1. **Round one** reads the change. **Fold every finding into the branch in flight** — not filed,
    not deferred, and in the branch's own domain that needs no OK. **Folding in needs no new
    unit:** a round-one finding is about the output of the unit under review, so that unit owns the
-   fix and the start contract in `docs/building.md` is already met. `seam-build` carries the same
-   rule from its side; without it the two mandates collide.
+   fix and the start contract — where the repo has a `docs/building.md` — is already met.
+   `seam-build` carries the same rule from its side; without it the two mandates collide.
 2. **A clean round one ends it there.** With nothing fixed there is no new tree for a second round
    to read.
 3. **Round two** reads the fixes, because the fixes changed the tree round one read. **That is the

@@ -382,6 +382,12 @@ test("a layer-2 row named building.md gets the build template", () => {
   assert.match(flat, /deterministic contract/i);
   // Ceremony scales: a Small change inside an existing unit pays nothing.
   assert.match(flat, /no new unit, no DoD and no ruling/i);
+  // ...and so is a change a document owns: without the carve-out in the Small row a README typo
+  // would earn a plan unit, which is the anti-goal verbatim.
+  assert.match(flat, /\| Small \| one file, no new test \| a unit owns it, or a document does/);
+  // A ruling is written in the layer-3 track's own shape, so the doc never fixes the fields — in a
+  // one-file-per-decision repo a recipe written for the single file reds the checker's own A13.
+  assert.match(flat, /in the shape that layer-3 track already defines/i);
   // A review finding is about the unit under review's output, so that unit already owns the fix.
   assert.match(flat, /unit under review/i);
   // The checker's path reached it from the config rather than being hardcoded.
@@ -390,11 +396,20 @@ test("a layer-2 row named building.md gets the build template", () => {
   rm(dir);
 });
 
-test("the interview proposes building.md, and § Defaults records it as proposed by default", () => {
+test("the interview has a question proposing building.md, and § Defaults records it as proposed", () => {
   const md = readFileSync(join(REPO, "skills/seam-docs/references/interview.md"), "utf8");
-  assert.ok(md.includes("docs/building.md"), "no interview question names docs/building.md");
-  const defaults = md.slice(md.indexOf("### Defaults the program fills"));
-  assert.match(defaults, /\|[^|\n]*building\.md[^|\n]*\|[^|\n]*proposed[^|\n]*\|/i,
+
+  // The two halves are sliced apart, because the doc's name appears in both and a bare
+  // `includes` over the whole file passes when either one is deleted.
+  const qFrom = md.indexOf("### What must be asked, never inferred");
+  const qTo = md.indexOf("### The discipline");
+  assert.ok(qFrom !== -1 && qTo > qFrom, "the question table's headings moved; update this slice");
+  assert.match(md.slice(qFrom, qTo), /^\|[^\n]*docs\/building\.md[^\n]*\|[ \t]*$/m,
+    "no row of the question table proposes docs/building.md");
+
+  const dFrom = md.indexOf("### Defaults the program fills");
+  assert.ok(dFrom !== -1, "the § Defaults heading moved; update this slice");
+  assert.match(md.slice(dFrom), /^\|[^|\n]*building\.md[^|\n]*\|[^|\n]*proposed[^|\n]*\|/mi,
     "§ Defaults has no row recording that building.md is proposed by default");
 });
 

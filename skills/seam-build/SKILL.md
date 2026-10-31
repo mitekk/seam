@@ -41,10 +41,9 @@ plan whose seam this is — what it makes true, the test that proves it, what ma
 then take it through the loop. The row is what the person reads *in place of a diff*, so write it
 plainly enough that a wrong direction is visible in the sentence.
 
-Two things look like a gap and are not. Read the doc for both before writing a row:
-
-- a change the doc says is too small to carry one;
-- a change a document owns rather than a unit.
+One thing looks like a gap and is not: a change a document owns rather than a unit. The doc says
+what to do with it; read it before writing a row. Size sets how much ceremony the owner carries,
+never whether there is one — the doc has the cut.
 
 ## Something turns up mid-task
 
@@ -56,9 +55,9 @@ lost.
 
 ## Review findings
 
-A round-one finding is about the output of the unit under review, so that unit owns the fix and
-the start contract is already met. **Fold it in without writing a new row.** `seam-review`
-§ Run the rounds says the same from its side; the two mandates would collide without it.
+**Fold a round-one finding in without writing a new row**: it is about the output of the unit under
+review, so that unit owns the fix. The doc says why, and `seam-review` § Run the rounds says the
+same from its side; the two mandates would collide without it.
 
 ## Finishing
 
@@ -66,8 +65,9 @@ Run the doc's finish contract clause by clause against the unit, and **read the 
 rather than recalling what it should have said**. Where the output and a stated expectation differ,
 that is a deviation: write the ruling before moving on, and move on — a ruling is not a stop.
 
-**A ruling is short.** One dated entry in the repo's layer-3 file: what was decided, what was
-set aside, and what it costs if wrong. A ruling longer than the deviation it records is ceremony,
-and the doc's proportionality rule is the reason to cut it.
+**Write the ruling the doc's rulings section describes**, in the repo's layer-3 track and in the
+shape that track defines — `adr.format` in `.seam/config.json` says whether that is a dated entry
+in one file or a record of its own. **Keep it short.** A ruling longer than the deviation it
+records is ceremony, and the doc's proportionality rule is the reason to cut it.
 
 The PR's gate is `seam-github`'s, not this file's.

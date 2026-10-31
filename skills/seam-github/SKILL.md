@@ -161,14 +161,15 @@ it is not an issue:
 nothing and is not a plan, so a row there is a record rather than a commitment. A row that later
 blocks the active milestone qualifies on clause 3 and becomes an issue then.
 
-**Then size, which decides fold-in versus not, and nothing else:**
+**Then size, which decides fold-in versus not, and nothing else.** The three sizes — Small,
+Medium, Large — and what puts a change in each are **the repo's `docs/building.md`'s to define**,
+because the same sizes set how much ceremony a change carries; this file only uses them. There is
+one test and it is **blast radius**, not felt effort.
 
-- **Small** — one file, no new test.
-- **Large** — crosses a structural seam: the schema, a state machine, two runtimes.
-- **Medium** — anything in between: a handful of files, existing tests cover it or it needs one.
-
-There is one test and it is **blast radius**, not felt effort. A one-line fix to a sentence in a
-doc is Small; so is a typo in a README.
+If the repo has no `docs/building.md`, say so and offer to write it with `seam-docs`. Until it
+exists, take the sizes from the template it would be written from,
+`$CLAUDE_PLUGIN_ROOT/skills/seam-docs/templates/current/building.md`, rather than inventing a scale
+per session.
 
 **Small or Medium → fold it into the branch in flight** and note it as folded in. That needs an OK
 only when the fold-in is **cross-domain or widens the branch's scope**; a same-domain defect in

@@ -3,8 +3,8 @@
 **Layer 2 — Current.** What is true now about how a change gets written against the plan. When
 this file is wrong, that is a **bug**, so the edit rule is **amend in place**.
 
-Owns: the **start contract**, the **finish contract**, the **test-first rule** and the
-**proportionality rule**. Nothing else may define them. Which units exist is the plans' to say,
+Owns: the **start contract**, the **finish contract**, the **test-first rule**, and the
+**proportionality rule** with the three sizes it is built on. Nothing else may define them. Which units exist is the plans' to say,
 and the PR and the review have their own owners — see the end of this file.
 
 ## The one principle
@@ -18,13 +18,6 @@ That makes it an *ordering* rule and not a gate: the session never stops to ask 
 may be planned, and it never starts building ahead of the plan. It leaves the gates the tracker
 conventions own — pushing and merging — exactly where they were.
 
-**Why order is the rule.** A right implementation of a wrong direction is only caught by someone
-watching the session, and that detector does not survive them stepping away or the session ending;
-the correction lands in a transcript, not in the repo. The direction goes wrong when the code is
-*ahead of the plan*, and sequence is checkable where "is this direction right" never is. A unit
-written first makes a wrong direction visible as a sentence — smaller, earlier and cheaper to
-reverse than a diff.
-
 ## The start contract
 
 **Before touching anything, name the unit that owns it.** A unit is a row in a plan's
@@ -37,8 +30,8 @@ cited by its row.
 - **No unit owns it** → **write the unit, then carry on.** One row, in the plan whose seam this is:
   what it makes true, the test that will prove it, what makes it done. Do not stop to ask whether
   the unit may exist, and do not build until it is written. If no plan covers the area at all,
-  start one from the layer-5 template; a plan is a doc, so it gets a row in `{{table.file}}`'s
-  table like any other.
+  ask for one with the `seam-docs` skill, which writes it from the layer-5 template; a plan is a
+  doc, so it gets a row in `{{table.file}}`'s table like any other.
 - **A document owns it** — an ops change, a decision, a doc fix → a change with no owning unit may
   **name the document that owns it** instead. Units are for building; without this the start
   contract would block work that has no test to write.
@@ -50,9 +43,8 @@ not repeat it.
 
 ## Rulings and direction corrections
 
-**A ruling is written the moment it is taken**, in {{adr.citation}}: dated, saying what was
-decided, what was set aside, and **what it costs if wrong**. Work then continues; the ruling is
-never a reason to stop.
+**A ruling is written the moment it is taken**, in {{adr.citation}}, in the shape that layer-3
+track already defines for an entry. Work then continues; a ruling is never a reason to stop.
 
 A **direction correction** is a decision too. When the person says "not that way", it lands in the
 same place before the work goes on, so it outlives the session. A correction that lives only in a
@@ -88,11 +80,11 @@ around it: the schema the response must parse into, its rejection cases, and the
 not fake a red-green cycle around the model call itself. The unit's `Proves it` names that
 contract's test; how good the output is gets measured and read by a person, not asserted.
 
-**What `{{checker.path}}` reads, and what it does not.** A14 reads the *shape* of a plan's
-`§ The units`: each unit names a test that exists and asserts something. A15, if this repo has
-switched it on, reads from git history that a test arrived before or with the implementation it
-proves. **Neither reads coverage** — whether a unit owns the work being done. That is an in-flight
-judgment, and it is what the start contract is for.
+**What `{{checker.path}}` reads, and what it does not.** Two assertions read the mechanical half,
+each only where this repo has it on. A14 reads the *shape* of a plan's `§ The units`: each unit
+names a test that exists and asserts something. A15 reads from git history that a test arrived
+before or with the implementation it proves. **Neither reads coverage** — whether a unit owns the
+work being done. That is an in-flight judgment, and it is what the start contract is for.
 
 ## Ceremony scales with blast radius
 
@@ -102,18 +94,20 @@ DoD and no ruling.** Run that unit's test and go on.
 
 | Size | What it is | Ceremony |
 |---|---|---|
-| Small | one file, no new test | a unit owns it: none. None does: one row, and still no DoD and no ruling |
-| Medium | a handful of files, or a test that does not exist yet | both contracts; if no unit owns it, write the row |
+| Small | one file, no new test | a unit owns it, or a document does: none. Neither does: one row, and still no DoD and no ruling |
+| Medium | anything in between — a handful of files, or a test that does not exist yet | both contracts; if no unit owns it, write the row |
 | Large | crosses a structural seam — a schema, a state machine, two runtimes | both contracts, and expect rulings: say what each costs if wrong |
 
-Size is **blast radius, not felt effort**, and these are the same three sizes the tracker
-conventions sort follow-ups by.
+**This table is the only copy of the sizes.** The tracker conventions sort follow-ups by the same
+three, and they cite this file for them rather than defining their own. A size is **blast radius,
+not felt effort**: a one-line fix to a sentence in a doc is Small, and so is a typo in a README —
+and a document owns those, so they need no row.
 
 **"A unit covers this" means you can point at the row.** The change sits inside what that row says
 it makes true, or it is a defect in what that row built. A defect in a unit's output belongs to
-that unit, so fixing one is not new work and needs no new row. A Small change that **no** row
-covers is a plan gap like any other, and the cheapest way to meet the start contract is one row —
-a sentence and the existing test that would catch it.
+that unit, so fixing one is not new work and needs no new row. A Small change that **no** row and
+no document covers is a plan gap like any other, and the cheapest way to meet the start contract
+is one row — a sentence and the existing test that would catch it.
 
 **The failure to watch for in this rule itself** is effort that is not worth it at the finish line.
 A unit, a DoD or a ruling that nothing later reads — not the work, not the finish contract — is
