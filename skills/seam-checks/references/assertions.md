@@ -1,6 +1,6 @@
 # The assertions
 
-Fifteen built in, plus whatever the repo invents. Each one says what it reads, what it needs from
+Sixteen built in, plus whatever the repo invents. Each one says what it reads, what it needs from
 `.seam/config.json`, and — the part that matters most — **what it deliberately does not reach**. A
 reader who thinks a check reaches further will trust a green run further than they should.
 
@@ -25,6 +25,7 @@ mean the same thing on a plane as in CI.
 | A13 | ADRs carry a date and a status; PRD versions are indexed | 3, 4 | on iff layer 3 or 4 exists |
 | A14 | Every unit in a plan's `§ The units` names a test that exists and asserts | 5 | on iff a layer-5 doc exists |
 | A15 | A test arrives before, or with, the implementation it proves | — | **off** |
+| A16 | `.seam/config.json` is still the projection of the answers file it was emitted from | — | on iff the answers file is in the repo |
 
 **Off is not passing.** An assertion that needs a repo-specific list is off until the list exists,
 because an empty list that passes reads as evidence the thing is fine. Where an assertion is on
@@ -458,6 +459,71 @@ file contents, so it cannot tell a test that asserts something from one that doe
 for the units table). It reads only the commits on the branch, so a test that already sits on the
 default branch does not count for an implementation added now. And it is only as good as the history:
 a branch squashed before it is checked has one commit, and passes.
+
+## A16 — the config is still the projection of its answers file
+
+The answers file is the **source**; `.seam/config.json` is its **projection**. Editing the
+projection cost two silent reversions in one hour while this layer was designed, one of which
+reached a pushed commit message as a false claim. Prose did not hold it, so this assertion does.
+
+Reads: `.seam/provenance.json`, written by the wizard beside the config in the same run, and the
+bytes of the two files it names. It holds four keys:
+
+```jsonc
+{
+  "seam_version": "0.2.0",
+  "answers": ".seam/answers.json",   // repo-relative, or null when the answers file is outside
+  "answers_sha256": "<64 hex>",      // the answers file as the wizard read it
+  "config_sha256": "<64 hex>"        // .seam/config.json as the wizard wrote it
+}
+```
+
+**Two hashes, and they catch opposite directions.** The `config_sha256` mismatch is the bug this
+assertion exists for: a config edited by hand, which the next regeneration reverts without a word.
+The `answers_sha256` mismatch is the other one: a source that moved with nothing regenerated after
+it, so the config is the projection of an earlier version of the file. **An answers hash alone
+would not catch the first case at all** — editing the config leaves the answers file untouched.
+
+**Hashes, not the projection re-derived here.** The checker is a standalone, stdlib-only script
+emitted in two languages, and it cannot import `bin/seam-init.mjs`. "Re-run the projection and
+compare" therefore means writing `project()` a second time in Python and a third time in Node —
+two more copies of the one function this layer exists to keep single, each able to drift into
+agreeing with a wrong config. Whole-file hashes need no knowledge of how either file was
+serialised, which is exactly the knowledge a re-derivation would have to duplicate.
+
+Needs: nothing in `assertions.A16` beyond `enabled`. The provenance path is fixed, beside the
+config.
+
+**Default: on iff the answers file is inside the repo.** The wizard records `answers` as a
+repo-relative path when it is, and `null` when it is not, and sets `enabled` from that — because a
+comparison against a file no later run can read cannot be made at all. A repo that keeps its
+answers file outside the tree gets A16 **off**, and pays for it by having its config's provenance
+unchecked. That is the cost of keeping the source out of the repo, and it is the reason to commit
+it.
+
+**Fails loudly, as one finding, in five cases** — the comparison named as not made rather than
+passed:
+
+- **no readable `.seam/provenance.json`.** A config emitted before seam recorded its provenance has
+  none, and treating that as "nothing to compare" is an assertion switching itself off. Regenerate
+  to record it, or switch A16 off; off is distinct from passing.
+- **`answers` is absent or null** — the answers file is outside the repo, so nothing here can read
+  it back.
+- **`answers` names a file that is not there.**
+- **either hash missing or not 64 hex characters.**
+- **either file present and unreadable.** A file that cannot be opened is not a missing one, and it
+  must not take the checker down — the same rule A14 follows for a unit's test file.
+
+Does not reach:
+
+- **Whether the projection rule itself is right.** A16 proves the two files are the pair the wizard
+  emitted together, not that `project()` did the correct thing with them. That is
+  `tests/seam-init.test.mjs`'s half.
+- **A config edited and then re-hashed.** Editing the config and rewriting `config_sha256` to match
+  defeats it, as it would defeat any scheme short of re-deriving the projection. The point is that
+  the silent case is loud, not that the determined case is impossible.
+- **An answers file that is valid and wrong.** A16 compares bytes. Whether the answers say what the
+  repo means is the interview's question.
 
 ## Two refusals before anything is checked
 

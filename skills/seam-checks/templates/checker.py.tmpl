@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import errno
 import fnmatch
+import hashlib
 import importlib.util
 import json
 import os
@@ -28,6 +29,8 @@ from pathlib import Path
 
 SEAM_VERSION = "{{SEAM_VERSION}}"
 CONFIG_PATH = "{{CONFIG_PATH}}"
+# Beside the config, and fixed: it is provenance about that file, written by the same run.
+PROVENANCE_PATH = ".seam/provenance.json"
 
 ROOT = Path(__file__).resolve().parent
 while not (ROOT / CONFIG_PATH).exists() and ROOT != ROOT.parent:
@@ -1429,6 +1432,80 @@ def main() -> int:
                     f"the same commit — a test arrives before, or with, the implementation it "
                     f"proves. Reorder the commits so a test comes first, or put one in the commit "
                     f"that adds this file"))
+
+    # ── A16. The config is the projection of the answers file. ─────────────
+    #
+    # The answers file is the source and the config is its projection, so the config is never
+    # hand-edited. What is compared is **two whole-file hashes the wizard recorded at projection
+    # time**, not the projection re-derived here: this script is emitted in two languages and
+    # cannot import the wizard, so re-deriving would mean a second and a third copy of the one
+    # function this whole layer exists to keep single.
+    #
+    # Two hashes, because they catch opposite directions and only one of them is the bug this
+    # assertion is for. The ANSWERS hash catches a source that moved with nothing regenerated
+    # after it — a stale config. The CONFIG hash catches a config edited directly, which an
+    # answers hash cannot see at all, because editing the config leaves the answers file
+    # untouched.
+    if on("A16"):
+        ran += 1
+        is_hex = lambda v: isinstance(v, str) and re.fullmatch(r"[0-9a-f]{64}", v) is not None
+
+        # A file that is there and cannot be opened is not a missing one, and it must not take the
+        # checker down: the same rule A14 follows for a unit's test file.
+        def sha(rel: str) -> str | None:
+            try:
+                return hashlib.sha256((ROOT / rel).read_bytes()).hexdigest()
+            except OSError:
+                return None
+
+        regen = (f"Put the change in the answers file and regenerate "
+                 f"(`seam-init --answers <file> --repo .`), which rewrites {CONFIG_PATH} from it")
+        prov = None
+        try:
+            prov = json.loads((ROOT / PROVENANCE_PATH).read_text())
+        except (OSError, ValueError):
+            prov = None
+        if not isinstance(prov, dict):
+            findings.append(finding("A16", PROVENANCE_PATH, 1, PROVENANCE_PATH,
+                f"assertions.A16 is enabled and there is no readable `{PROVENANCE_PATH}`, so "
+                f"whether {CONFIG_PATH} is still the projection of its answers file was not "
+                f"compared. A config emitted before seam recorded its provenance has none, and "
+                f"\"nothing to compare\" is an assertion switching itself off. Regenerate to "
+                f"record it, or switch A16 off; off is distinct from passing"))
+        elif not isinstance(prov.get("answers"), str) or prov["answers"] == "":
+            findings.append(finding("A16", PROVENANCE_PATH, 1, "answers",
+                f"`{PROVENANCE_PATH}` names no answers file inside this repo, so the comparison "
+                f"was not made — an answers file kept outside the tree cannot be read back from "
+                f"here. Commit it and regenerate, or switch A16 off; off is distinct from "
+                f"passing"))
+        elif not (ROOT / prov["answers"]).exists():
+            findings.append(finding("A16", PROVENANCE_PATH, 1, prov["answers"],
+                f"names `{prov['answers']}` as the answers file this config was projected from, "
+                f"and there is no such file — the comparison was not made. Restore it and "
+                f"regenerate, or switch A16 off; off is distinct from passing"))
+        elif not is_hex(prov.get("answers_sha256")) or not is_hex(prov.get("config_sha256")):
+            findings.append(finding("A16", PROVENANCE_PATH, 1, "sha256",
+                f"`{PROVENANCE_PATH}` carries no usable sha256 hash for the answers file and the "
+                f"config, so neither was compared. Regenerate to record both, or switch A16 off; "
+                f"off is distinct from passing"))
+        else:
+            ans_hash = sha(prov["answers"])
+            cfg_hash = sha(CONFIG_PATH)
+            for rel, got in ((prov["answers"], ans_hash), (CONFIG_PATH, cfg_hash)):
+                if got is not None:
+                    continue
+                findings.append(finding("A16", rel, 1, rel,
+                    f"could not be read, so its hash was not compared with the one "
+                    f"`{PROVENANCE_PATH}` records"))
+            if ans_hash is not None and ans_hash != prov["answers_sha256"]:
+                findings.append(finding("A16", prov["answers"], 1, prov["answers"],
+                    f"has changed since {CONFIG_PATH} was projected from it, so the config is "
+                    f"stale: it is the projection of an earlier version of this file. {regen}"))
+            if cfg_hash is not None and cfg_hash != prov["config_sha256"]:
+                findings.append(finding("A16", CONFIG_PATH, 1, CONFIG_PATH,
+                    f"was edited after it was emitted. The answers file is the source and this "
+                    f"file is its projection, so an edit here is reverted by the next "
+                    f"regeneration without a word — which has happened. {regen}"))
 
     # ── Repo-invented assertions. Discovered, never overwritten. ───────────
     adir = ROOT / ".seam" / "assertions"

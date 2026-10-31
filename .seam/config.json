@@ -59,6 +59,7 @@
     "scripts/bootstrap-tracker.sh"
   ],
   "low_review_paths": [],
+  "teardown_command": "",
   "domains": [
     {
       "name": "wizard"
@@ -181,6 +182,9 @@
       "default_branch": "master",
       "impl_globs": [],
       "test_globs": []
+    },
+    "A16": {
+      "enabled": true
     }
   },
   "baseline": {

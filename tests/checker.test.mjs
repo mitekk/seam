@@ -9,6 +9,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { cpSync, readFileSync, writeFileSync, appendFileSync, existsSync, rmSync, chmodSync, mkdirSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { join, dirname } from "node:path";
 import { execFileSync } from "node:child_process";
 import { scratch, rm, run, REPO } from "./helpers.mjs";
@@ -1738,5 +1739,142 @@ test("A15 with a default_branch that is not a branch name says the comparison wa
   const { dir } = a15Repo([{ "src/hive.ts": IMPL }], { a15: { default_branch: null } });
   const r = both(dir);
   assert.deepEqual(r.findings.map((l) => l.split(" ")[0]), ["src/hive.ts:1:"], r.findings.join("\n"));
+  rm(dir);
+});
+
+// ── A16. The config is the projection of the answers file. ───────────────────
+//
+// The answers file is the source and `.seam/config.json` is its projection. Editing the
+// projection cost two silent reversions in one hour during this layer's design, one of which
+// reached a pushed commit message as a false claim. Prose did not hold it.
+//
+// A16 compares **two whole-file hashes** the wizard records at projection time, rather than
+// re-deriving the projection: the checker is a standalone, stdlib-only script emitted in two
+// languages and cannot import `bin/seam-init.mjs`, so "re-run the projection and compare" means
+// writing `project()` a second and a third time — the copies this whole layer exists to prevent.
+//
+// Two hashes, not one. An answers hash alone catches only the stale direction (the answers moved
+// and nothing regenerated); the config's own hash is what catches the bug A16 is for, because
+// hand-editing the config does not change the answers file at all.
+
+/** Give a fixture an answers file and the provenance sidecar, consistent with each other. */
+function withProvenance(dir, { answers: ansText = null, enabled = true } = {}) {
+  const cfgPath = join(dir, ".seam", "config.json");
+  const cfg = JSON.parse(readFileSync(cfgPath, "utf8"));
+  cfg.assertions.A16 = { enabled };
+  writeFileSync(cfgPath, JSON.stringify(cfg, null, 2) + "\n");
+  const ansPath = join(dir, ".seam", "answers.json");
+  writeFileSync(ansPath, ansText ?? JSON.stringify({
+    table: { file: "CLAUDE.md" },
+    checker: { language: "python", path: "scripts/check_docs.py" },
+  }, null, 2) + "\n");
+  const sha = (p) => createHash("sha256").update(readFileSync(p)).digest("hex");
+  writeFileSync(join(dir, ".seam", "provenance.json"), JSON.stringify({
+    seam_version: cfg.seam_version,
+    answers: ".seam/answers.json",
+    answers_sha256: sha(ansPath),
+    config_sha256: sha(cfgPath),
+  }, null, 2) + "\n");
+}
+
+/** Replace one top-level key of the config, as a hand-edit after emission would. */
+function editConfig(dir, patch) {
+  const p = join(dir, ".seam", "config.json");
+  const cfg = JSON.parse(readFileSync(p, "utf8"));
+  writeFileSync(p, JSON.stringify({ ...cfg, ...patch }, null, 2) + "\n");
+}
+
+test("A16 passes when the config and the answers file are the pair the provenance records", () => {
+  const { dir } = fixture({ mutate: ({ dir }) => withProvenance(dir) });
+  const r = both(dir);
+  assert.equal(r.status, 0, r.py.stderr + r.py.stdout);
+  assert.deepEqual(r.findings, []);
+  // The apparatus has to be running, or every red case below proves nothing.
+  assert.match(r.py.stdout, /15 assertions/);
+  rm(dir);
+});
+
+test("A16 flags a config edited after it was emitted", () => {
+  const { dir } = fixture({ mutate: ({ dir }) => {
+    withProvenance(dir);
+    editConfig(dir, { low_review_paths: ["docs/engineering.md"] });   // the hand-edit
+  } });
+  const r = both(dir);
+  assert.equal(r.status, 1, r.py.stdout);
+  assert.deepEqual(ids(r.findings), ["A16"], r.findings.join("\n"));
+  assert.equal(r.findings.length, 1, r.findings.join("\n"));
+  assert.match(r.findings[0], /^\.seam\/config\.json:1: A16 .*edited/);
+  assert.match(r.findings[0], /answers file is the source/);
+  rm(dir);
+});
+
+test("A16 flags an answers file that moved with no regeneration after it", () => {
+  const { dir } = fixture({ mutate: ({ dir }) => {
+    withProvenance(dir);
+    appendFileSync(join(dir, ".seam", "answers.json"), "\n");
+  } });
+  const r = both(dir);
+  assert.equal(r.status, 1, r.py.stdout);
+  assert.deepEqual(ids(r.findings), ["A16"], r.findings.join("\n"));
+  assert.match(r.findings[0], /^\.seam\/answers\.json:1: A16 .*changed since/);
+  rm(dir);
+});
+
+test("A16 says the comparison was not made when no answers file is committed", () => {
+  const { dir } = fixture({ mutate: ({ dir }) => {
+    withProvenance(dir);
+    rmSync(join(dir, ".seam", "answers.json"));
+  } });
+  const r = both(dir);
+  assert.equal(r.status, 1, r.py.stdout);
+  assert.deepEqual(ids(r.findings), ["A16"], r.findings.join("\n"));
+  assert.match(r.findings[0], /not made/i);
+  assert.match(r.findings[0], /off is distinct from passing/);
+  rm(dir);
+});
+
+test("A16 says so when there is no provenance at all, rather than nothing to compare", () => {
+  // The case a reader would skip: a config emitted by an older seam-init carries no provenance,
+  // and "nothing to compare" is an assertion switching itself off — the defect this branch has
+  // now found sixteen times.
+  const { dir } = fixture({ mutate: ({ dir }) => {
+    withProvenance(dir);
+    rmSync(join(dir, ".seam", "provenance.json"));
+  } });
+  const r = both(dir);
+  assert.equal(r.status, 1, r.py.stdout);
+  assert.deepEqual(ids(r.findings), ["A16"], r.findings.join("\n"));
+  assert.match(r.findings[0], /^\.seam\/provenance\.json:1: A16 /);
+  assert.match(r.findings[0], /regenerat/i);
+  rm(dir);
+});
+
+test("A16 flags a provenance file carrying no usable hash", () => {
+  for (const patch of [{ config_sha256: "nope" }, { answers_sha256: null }, {}]) {
+    const { dir } = fixture({ mutate: ({ dir }) => {
+      withProvenance(dir);
+      const p = join(dir, ".seam", "provenance.json");
+      const prov = JSON.parse(readFileSync(p, "utf8"));
+      for (const k of Object.keys(patch)) prov[k] = patch[k];
+      if (!Object.keys(patch).length) delete prov.config_sha256;
+      writeFileSync(p, JSON.stringify(prov, null, 2) + "\n");
+    } });
+    const r = both(dir);
+    const what = JSON.stringify(patch);
+    assert.equal(r.status, 1, `${what}: ${r.py.stdout}`);
+    assert.deepEqual(ids(r.findings), ["A16"], `${what}: ${r.findings.join("\n")}`);
+    assert.match(r.findings[0], /hash/, what);
+    rm(dir);
+  }
+});
+
+test("A16 off is off: a repo with no provenance and A16 disabled is green", () => {
+  // An adopting repo that keeps its answers file outside the tree cannot make this comparison, so
+  // the wizard leaves A16 off there. Off has to be a clean pass, or the switch is not one.
+  const { dir } = fixture();
+  const r = both(dir);
+  assert.equal(r.status, 0, r.py.stderr + r.py.stdout);
+  assert.deepEqual(r.findings, []);
+  assert.match(r.py.stdout, /14 assertions/);
   rm(dir);
 });

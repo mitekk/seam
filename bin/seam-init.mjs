@@ -17,7 +17,8 @@
 // No dependencies, by the rule in docs/contributing.md § Hard conventions.
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from "node:fs";
-import { join, dirname, basename, sep, relative } from "node:path";
+import { join, dirname, basename, sep, relative, resolve, isAbsolute } from "node:path";
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -36,6 +37,23 @@ const LAYERS = {
 // read by a script, and a script has no use for a sentence it cannot check.
 const PROSE_KEYS = ["purpose", "open_questions", "users", "in_scope", "out_of_scope"];
 const PROSE_SUBKEYS = { docs: ["owns"], domains: ["covers"], milestones: ["green"], agents: ["covers"] };
+
+// Beside the config, written by the same run: the two hashes assertion A16 compares, so that a
+// hand-edited config and a config whose answers file moved under it are both loud rather than
+// silently reverted by the next regeneration. It is provenance ABOUT the projection and not part
+// of it, which is why it is a sidecar: `project()` stays a pure function of the answers, and the
+// config keeps the one-key-namespace property the interview's schema documents.
+const PROVENANCE_PATH = ".seam/provenance.json";
+
+const sha256 = (data) => createHash("sha256").update(data).digest("hex");
+
+/** The answers file's path relative to the repo, or null when it is outside the tree. A16 can
+ *  only compare what a later run can read back, so "outside" is what switches it off. */
+function answersInRepo(repo, answersPath) {
+  const rel = relative(resolve(repo), resolve(answersPath));
+  if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) return null;
+  return rel.split(sep).join("/");
+}
 
 const MARK_START = "<!-- seam:sources-of-truth start -->";
 const MARK_END = "<!-- seam:sources-of-truth end -->";
@@ -310,7 +328,7 @@ function layer5Globs(a) {
   return paths.length === 1 ? paths[0] : paths;
 }
 
-function defaultAssertions(a) {
+function defaultAssertions(a, answersRel) {
   const layers = new Set((a.docs ?? []).map((d) => d.layer));
   const has = (n) => layers.has(n);
   const artifacts = a.artifacts ?? [];
@@ -348,11 +366,16 @@ function defaultAssertions(a) {
       impl_globs: [],
       test_globs: [],
     },
+    // On iff the answers file is inside the repo, because that is the only case where a later
+    // run can read it back and compare. A repo that keeps its answers file elsewhere gets A16
+    // off rather than a permanent red — and pays for it by having its config's provenance
+    // unchecked, which `references/assertions.md` § A16 states as the cost it is.
+    A16: { enabled: answersRel !== null },
   };
 }
 
-function project(a) {
-  const assertions = { ...defaultAssertions(a) };
+function project(a, answersRel = null) {
+  const assertions = { ...defaultAssertions(a, answersRel) };
   for (const [id, override] of Object.entries(a.assertions ?? {})) {
     assertions[id] = { ...(assertions[id] ?? {}), ...override };
   }
@@ -425,7 +448,18 @@ function templateVars(a, cfg) {
     table: cfg.table,
     checker: { path: cfg.checker.path, language: cfg.checker.language },
     adr: { ...cfg.adr, citation: adrCitation },
-    prd: { dir: prdDir, version, next_version: version + 1, current: `${prdDir}/PRD-current.md` },
+    // A citation, like `adr.citation` and `artifact.citation`: a repo with no layer-4 row has no
+    // PRD file, so a backticked path to one is a citation A1 reds on the day the doc is written —
+    // measured on a fresh two-layer adoption, two findings before anyone had typed anything.
+    prd: {
+      dir: prdDir,
+      version,
+      next_version: version + 1,
+      current: `${prdDir}/PRD-current.md`,
+      citation: (a.docs ?? []).some((d) => d.layer === 4)
+        ? `\`${prdDir}/PRD-current.md\``
+        : "wherever this repo writes it down",
+    },
     plans: { dir: planRow ? dirname(planRow.path) : "docs/plans" },
     artifact: {
       citation: artifact ? `\`${artifact.path}\`` : "the code itself (layer 1)",
@@ -669,18 +703,30 @@ function writeDoc(w, a, vars, d) {
 function main() {
   const args = parseArgs(process.argv.slice(2));
   let answers;
+  let answersBytes;
   try {
-    answers = JSON.parse(readFileSync(args.answers, "utf8"));
+    answersBytes = readFileSync(args.answers);
+    answers = JSON.parse(answersBytes.toString("utf8"));
   } catch (e) {
     die(`cannot read ${args.answers}: ${e.message}`);
   }
   validate(answers);
 
-  const cfg = project(answers);
+  const answersRel = answersInRepo(args.repo, args.answers);
+  const cfg = project(answers, answersRel);
   const vars = templateVars(answers, cfg);
   const w = new Writer(args.repo, args.dryRun);
 
-  w.put(".seam/config.json", JSON.stringify(cfg, null, 2) + "\n");
+  const cfgBody = JSON.stringify(cfg, null, 2) + "\n";
+  w.put(".seam/config.json", cfgBody);
+  // Hashed as the bytes on disk, both of them, so the comparison A16 makes needs no knowledge of
+  // how either file was serialised — the trap in asking a second language to re-derive it.
+  w.put(PROVENANCE_PATH, JSON.stringify({
+    seam_version: cfg.seam_version,
+    answers: answersRel,
+    answers_sha256: sha256(answersBytes),
+    config_sha256: sha256(cfgBody),
+  }, null, 2) + "\n");
 
   for (const d of answers.docs) {
     if (d.create === false) {

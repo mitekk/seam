@@ -1385,3 +1385,26 @@ test("a domain or milestone row with no label is refused, not rendered as `undef
     rm(dir);
   }
 });
+
+test("a layer-2 doc cites the PRD only where the repo has a layer-4 row", () => {
+  // Measured on a fresh two-layer adoption while building A16's fixture: `current/doc.md` cited
+  // `docs/prd/PRD-current.md` unconditionally, so the generated checker red A1 twice on a repo
+  // nobody had typed a word into. Same class as the unresolved placeholder above — the wizard
+  // writing a claim about the tree that is false the moment it is written.
+  const ans = answers();
+  ans.docs = ans.docs.filter((d) => d.layer !== 4);
+  const { dir, r } = init(ans);
+  assert.equal(r.status, 0, r.stderr);
+  const t = read(dir, "docs/engineering.md");
+  assert.ok(!t.includes("PRD-current.md"),
+    "a repo with no layer-4 row still has a layer-2 doc citing a PRD file that is not there");
+  assert.match(t, /layer 4, wherever this repo writes it down/);
+  rm(dir);
+
+  // And where there IS a layer-4 row the pointer is still there, or the guard removed the
+  // citation rather than conditioning it.
+  const { dir: withPrd, r: r2 } = init(answers());
+  assert.equal(r2.status, 0, r2.stderr);
+  assert.match(read(withPrd, "docs/engineering.md"), /`docs\/prd\/PRD-current\.md`/);
+  rm(withPrd);
+});

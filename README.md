@@ -33,7 +33,7 @@ It installs that layer into any repo — greenfield, or one that already has doc
 | | |
 |---|---|
 | 📋 **A sources-of-truth table** | In the repo's context file, listing every doc by *what it owns* and which **layer** it belongs to. |
-| 🔍 **A drift checker** | Generated into the repo in its own language — Python 3 or Node, no dependencies either side. Fifteen assertions, plus a baseline so day-one debt is a number rather than a wall. |
+| 🔍 **A drift checker** | Generated into the repo in its own language — Python 3 or Node, no dependencies either side. Sixteen assertions, plus a baseline so day-one debt is a number rather than a wall. |
 | 🏷️ **Tracker conventions** | Scope discipline made visible: one priority, one milestone, one or two domains, and four dispositions for everything you noticed along the way. |
 | 🔬 **A review policy** | Picks its level from what the diff touches rather than from habit, and stops after two rounds for a measured reason. |
 
@@ -147,6 +147,10 @@ it exempts, in `.seam/config.json`. Two places, two rules, and the difference is
   [`skills/seam-docs/references/interview.md`](skills/seam-docs/references/interview.md) § Schema
   is the full key list; the three priorities are not in it, because they are fixed by the method
   and live in the repo's own `docs/taxonomy.md`.
+- `.seam/provenance.json` — the answers file's path and two sha256 hashes, one of that file and
+  one of the config just written. Assertion A16 compares them on every run, because the answers
+  file is the source and the config is its projection: a config edited by hand is reverted by the
+  next regeneration without a word, which is measured rather than hypothetical.
 - `.seam/baseline.json` — day-one drift, written by `--write-baseline`.
 - The docs you approved, one per layer, from
   [`skills/seam-docs/templates/`](skills/seam-docs/templates).
@@ -193,7 +197,7 @@ layer's doc has to take live in exactly one place each, and these are the places
 | The six layers, their edit rules, and which assertions reach which layer | [`skills/seam-docs/references/layers.md`](skills/seam-docs/references/layers.md) |
 | The question set, and `.seam/config.json`'s full schema with every key | [`skills/seam-docs/references/interview.md`](skills/seam-docs/references/interview.md) |
 | Adopting a repo that already has docs, and what the evidence does not reach | [`skills/seam-docs/references/adopt.md`](skills/seam-docs/references/adopt.md) |
-| What each of the fifteen assertions reads, and what it deliberately does not | [`skills/seam-checks/references/assertions.md`](skills/seam-checks/references/assertions.md) |
+| What each of the sixteen assertions reads, and what it deliberately does not | [`skills/seam-checks/references/assertions.md`](skills/seam-checks/references/assertions.md) |
 | Issues, commits, PRs, the four dispositions, the gate | [`skills/seam-github/SKILL.md`](skills/seam-github/SKILL.md) · [`references/templates.md`](skills/seam-github/references/templates.md) |
 | The review level table, the bound, the three triggers | [`skills/seam-review/SKILL.md`](skills/seam-review/SKILL.md) |
 
