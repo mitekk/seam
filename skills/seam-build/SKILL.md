@@ -61,9 +61,10 @@ same from its side; the two mandates would collide without it.
 
 ## Finishing
 
-Run the doc's finish contract clause by clause against the unit, and **read the real output
-rather than recalling what it should have said**. Where the output and a stated expectation differ,
-that is a deviation: write the ruling before moving on, and move on — a ruling is not a stop.
+Run the doc's finish contract clause by clause against the unit — or against the owning document,
+where a document owns the change — and **read the real output rather than recalling what it should
+have said**. Where the output and a stated expectation differ, that is a deviation: write the
+ruling before moving on, and move on — a ruling is not a stop.
 
 **Write the ruling the doc's rulings section describes**, in the repo's layer-3 track and in the
 shape that track defines — `adr.format` in `.seam/config.json` says whether that is a dated entry

@@ -385,6 +385,11 @@ test("a layer-2 row named building.md gets the build template", () => {
   // ...and so is a change a document owns: without the carve-out in the Small row a README typo
   // would earn a plan unit, which is the anti-goal verbatim.
   assert.match(flat, /\| Small \| one file, no new test \| a unit owns it, or a document does/);
+  // The carve-out grants document-owned work no row, so the finish contract's two clauses that
+  // read a row (the named test, `Done when`) must name what satisfies them instead. Without this
+  // the path is granted and cannot be completed.
+  assert.match(flat, /A document-owned change has no test: the document as it now stands is the output/);
+  assert.match(flat, /A document-owned change has no row: what the change claimed to make true is true in the document as it now stands/);
   // Who owns the work is orthogonal to its size, so Medium and Large carry the carve-out too.
   assert.match(flat, /\| Medium \|[^|]*\| [^|]*if no unit or document owns it, write the row \|/);
   assert.match(flat, /\| Large \|[^|]*\| [^|]*if no unit or document owns it, write the row \|/);

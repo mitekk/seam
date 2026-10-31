@@ -54,17 +54,20 @@ transcript is the one the next session makes again.
 ## The finish contract
 
 **Done is a property of the unit** — not of the PR, which has its own gate, and not of the
-milestone. A unit is done when all four hold:
+milestone. A unit — or a change a document owns — is done when all four hold:
 
 1. **The named test ran and its output was read.** The test in the unit's `Proves it` cell, run,
-   with its output read rather than assumed. A green tick nobody opened is not this.
+   with its output read rather than assumed. A green tick nobody opened is not this. A
+   document-owned change has no test: the document as it now stands is the output, and it is read
+   again rather than remembered from before the edit.
 2. **Every stated expectation was compared against real output.** What the unit, the plan or a
    ruling said would happen is set beside what did happen.
 3. **Every deviation has a written ruling.** Where reality differed and the work went on, the
    difference is written down before the next unit starts. A deviation with no ruling is a surprise
    left for whoever reads the diff.
 4. **The unit's `Done when` is satisfied.** That cell is the plan's own words for done; the first
-   three clauses do not stand in for it.
+   three clauses do not stand in for it. A document-owned change has no row: what the change
+   claimed to make true is true in the document as it now stands.
 
 ## Test first, because the plan carries the test
 
