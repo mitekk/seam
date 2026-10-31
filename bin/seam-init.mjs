@@ -536,6 +536,7 @@ function writeDoc(w, a, vars, d) {
         "reviewing.md": "current/reviewing.md",
         "routing.md": "current/routing.md",
         "building.md": "current/building.md",
+        "context.md": "current/context.md",
       };
       const special = named[basename(d.path)];
       w.create(d.path, render(tmpl(special && existsTemplate(special) ? special : "current/doc.md"), v));

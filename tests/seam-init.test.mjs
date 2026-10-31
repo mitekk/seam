@@ -424,6 +424,69 @@ test("the interview has a question proposing building.md, and § Defaults record
     "§ Defaults has no row recording that building.md is proposed by default");
 });
 
+test("a layer-2 row named context.md gets the context template", () => {
+  const ans = answers();
+  ans.docs.push({
+    path: "docs/context.md",
+    layer: 2,
+    owns: "The context budget, and when a subagent is dispatched",
+    enforces: "",
+    create: true,
+  });
+  const { dir, r } = init(ans);
+  assert.equal(r.status, 0, r.stderr);
+  const t = read(dir, "docs/context.md");
+  // The doc is hard-wrapped, so a phrase can break across a line; match on the flattened text.
+  const flat = t.replace(/\s+/g, " ");
+  assert.match(t, /Layer 2/);
+  assert.match(t, /amend in place/i);
+  // The four levels and their bands, measured in another repo rather than re-derived here. A
+  // table missing a level is a session with no action to take in that band.
+  assert.match(flat, /\| \*\*Green\*\* \| 0–50% \|/);
+  assert.match(flat, /\| \*\*Yellow\*\* \| 50–60% \|/);
+  assert.match(flat, /\| \*\*Orange\*\* \| 60–75% \|/);
+  assert.match(flat, /\| \*\*Red\*\* \| 75%\+ \|/);
+  // Every action above Green is one move, which is what makes the table a policy and not a mood.
+  assert.match(flat, /write to disk, and prefer disk over context/i);
+  // What triggers a level: the harness's own indicator first, heuristics only as the fallback,
+  // and the reason the fallback exists — without it the table is unenterable where there is no
+  // indicator to read.
+  assert.match(flat, /budget indicator/i);
+  assert.match(flat, /agents dispatched/i);
+  assert.match(flat, /large reads/i);
+  assert.match(flat, /an unreadable threshold is the same as no threshold/i);
+  // The dispatch rule: two reasons, and the closed list is the rule.
+  assert.match(flat, /\*\*parallel\*\*/);
+  assert.match(flat, /\*\*detached\*\*/);
+  assert.match(flat, /and nothing else/i);
+  // Where session artifacts live, and the reason they are not under `docs/`.
+  assert.match(flat, /`\.seam\/session\/`/);
+  assert.match(flat, /gitignored/i);
+  assert.match(flat, /never under `docs\/`/i);
+  assert.match(flat, /cannot earn (a row|one)/i);
+  // The checker's path reached it from the config rather than being hardcoded.
+  assert.ok(t.includes("scripts/check_docs.py"), "the checker path did not substitute");
+  assert.ok(!/\{\{[\w.]+\}\}/.test(t), "an unrendered placeholder is left in the doc");
+  rm(dir);
+});
+
+test("the interview has a question proposing context.md, and § Defaults records it as proposed", () => {
+  const md = readFileSync(join(REPO, "skills/seam-docs/references/interview.md"), "utf8");
+
+  // The two halves are sliced apart, because the doc's name appears in both and a bare
+  // `includes` over the whole file passes when either one is deleted.
+  const qFrom = md.indexOf("### What must be asked, never inferred");
+  const qTo = md.indexOf("### The discipline");
+  assert.ok(qFrom !== -1 && qTo > qFrom, "the question table's headings moved; update this slice");
+  assert.match(md.slice(qFrom, qTo), /^\|[^\n]*docs\/context\.md[^\n]*\|[ \t]*$/m,
+    "no row of the question table proposes docs/context.md");
+
+  const dFrom = md.indexOf("### Defaults the program fills");
+  assert.ok(dFrom !== -1, "the § Defaults heading moved; update this slice");
+  assert.match(md.slice(dFrom), /^\|[^|\n]*context\.md[^|\n]*\|[^|\n]*proposed[^|\n]*\|/mi,
+    "§ Defaults has no row recording that context.md is proposed by default");
+});
+
 test("a glob row with matching files is not reported missing; one with none is", () => {
   const ans = answers();
   ans.docs.push({ path: "docs/rules/*.md", layer: 2, owns: "The per-topic defaults",
