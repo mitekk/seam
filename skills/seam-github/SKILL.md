@@ -137,9 +137,11 @@ The reason, citing docs by path and §. Not a restatement of the diff.
 Closes #N.
 
 ## Follow-ups
-- <S|M · `domain` — folded in> what was noticed and fixed in this branch
-- <L · `domain` — issue #N> surfaced, not done, passes a qualifier clause — names which
-- <any · `domain` — ledger> true, passes no clause, one row in the findings ledger
+- <S|M · `domain` — folded in> a unit already covered it, and it was done in this branch
+- <S|M · `domain` — planned, then folded in> no unit covered it: the unit was written, then done
+- <L · `domain` — issue #N> no unit covers it and it is genuinely complex, and it passes a
+  qualifier clause — names which
+- <any · `domain` — ledger> true, not worth the time, passes no clause: one findings-ledger row
 - <one-liner · `domain` — on `main`> a one-line fix that belonged elsewhere
 ```
 
@@ -150,37 +152,71 @@ Closes #N.
 Everything you noticed along the way and did not treat as part of the original scope. Each item
 names its **domain**, its **size**, and its **disposition**.
 
-**First the qualifier: does this become an issue at all?** Three clauses, and it is one of them or
-it is not an issue:
+**The order is by ownership, not by size.** Whether a unit of planned work owns the item decides
+*whether* it gets done here; its size decides only how much ceremony that costs. Four
+dispositions, and the first one that fits is the answer:
+
+1. **A unit already covers it → do it now.** The item sits inside what some unit says it makes
+   true, or it is a defect in what that unit built. Nothing new gets written, and the fix lands in
+   this branch.
+2. **No unit covers it and it is worth the time → write the unit, then do it**, in this branch.
+   One row in the plan whose seam this is. **This outranks filing**, and it is not a request for
+   permission: the repo's `docs/building.md` owns what the row carries and the rule that nothing
+   stops while it is written.
+3. **No unit covers it and it is genuinely complex → file an issue**, if it passes the qualifier
+   below. **Filing is for complexity, not for coverage**: covering the corners of the work in
+   front of you *is* that work, and an issue filed to record a corner inflates the board without
+   moving anything.
+4. **True and not worth the time → one row in the findings ledger.**
+
+**A change with no owning unit may name the document that owns it instead** — an ops change, a
+decision, a doc fix. That is the first disposition with the document standing in for the unit: no
+row gets written, and naming the document is what satisfies the start contract. The repo's
+`docs/building.md` carries the carve-out through its start contract, its finish contract and all
+three size rows; this file names the option and nothing more.
+
+**Then the qualifier, asked only of the items that are not being done here: does this become an
+issue at all?** Three clauses, and it is one of them or it is not an issue:
 
 1. **a bug someone outside the repo sees** — a user or an auditor is worse off;
 2. **an exposure on anything in `load_bearing`** — the paths the repo named as carrying weight;
 3. **it blocks the active milestone** — the one `milestones[].active` marks in `.seam/config.json`,
    not how important it feels.
 
-**Everything else is one row in the findings ledger**, committed in the same PR. That file owns
-nothing and is not a plan, so a row there is a record rather than a commitment. A row that later
-blocks the active milestone qualifies on clause 3 and becomes an issue then.
+**Clause 3 reads a field only the wizard enforces.** "Exactly one `true`" is a rule `/seam:init`
+applies to the answers file; a hand-edited `.seam/config.json` can carry none, two, or no `active`
+key at all. **Where it is not exactly one, clause 3 does not fire**: the item qualifies on clause 1
+or 2, or it is a ledger row. Do not pick one of two, and do not infer the active milestone from the
+board. A repo with no milestones yet is the ordinary case of that and needs no fixing; a repo whose
+rows disagree has a broken config, so say so and fix it in `.seam/answers.json`, which is the
+source the config is projected from.
 
-**Then size, which decides fold-in versus not, and nothing else.** The three sizes — Small,
-Medium, Large — and what puts a change in each are **the repo's `docs/building.md`'s to define**,
-because the same sizes set how much ceremony a change carries; this file only uses them.
+**An item that passes no clause is one row in the findings ledger**, committed in the same PR.
+That file owns nothing and is not a plan, so a row there is a record rather than a commitment. A
+row that later blocks the active milestone qualifies on clause 3 and becomes an issue then.
+
+**Size decides how, never whether.** It says what a disposition costs — what the fold-in has to
+carry, what the issue has to say — and it never moves an item from one disposition to another. The
+three sizes — Small, Medium, Large — and what puts a change in each are **the repo's
+`docs/building.md`'s to define**, because the same sizes set how much ceremony a change carries;
+this file only uses them.
 
 If the repo has no `docs/building.md`, say so and offer to write it with `seam-docs`. Until it
 exists, take the sizes from the template it would be written from,
 `$CLAUDE_PLUGIN_ROOT/skills/seam-docs/templates/current/building.md`, rather than inventing a scale
 per session.
 
-**Small or Medium → fold it into the branch in flight** and note it as folded in. That needs an OK
-only when the fold-in is **cross-domain or widens the branch's scope**; a same-domain defect in
-work already inside this branch's scope is the same class of edit the gate already grants for a
-review finding.
+**A fold-in needs an OK only when it is cross-domain or widens the branch's scope** — either of
+the first two dispositions, since writing the unit does not buy scope that the OK would otherwise
+cost. A same-domain defect in work already inside this branch's scope is the same class of edit the
+gate already grants for a review finding.
 
-**An item that is folded in gets no ledger row.** A row records something the repo is *not* doing,
-and a fold-in is the repo doing it. The three dispositions are exclusive — folded in, or filed, or
-ledgered — and the qualifier is only asked about the items that are not folded in.
+**An item that is done here gets no ledger row.** A row records something the repo is *not* doing,
+and doing it — under a unit that existed, or one just written — is the repo doing it. The four
+dispositions are exclusive, and the qualifier is only asked about the items that are not being
+done.
 
-**A review finding left unfixed is none of the three.** It is named **when the commit is offered**,
+**A review finding left unfixed is none of the four.** It is named **when the commit is offered**,
 and nowhere else. The ledger says "this does not matter enough", and a finding left unfixed on
 purpose is the opposite claim: it matters and has not been settled. Say which of three reasons it
 is — **disputed** (argued with in writing, so a reader can disagree), **open** (a judgement the
