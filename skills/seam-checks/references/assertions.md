@@ -488,7 +488,8 @@ projection cost two silent reversions in one hour while this layer was designed,
 reached a pushed commit message as a false claim. Prose did not hold it, so this assertion does.
 
 Reads: `.seam/provenance.json`, written by the wizard beside the config in the same run, and the
-bytes of the two files it names. It holds four keys:
+bytes of the two files it names. The block below is the key list; it is deliberately not preceded
+by a count, because the count is what went stale when `assertions_enabled` was added:
 
 ```jsonc
 {
