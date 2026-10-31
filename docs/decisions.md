@@ -63,27 +63,30 @@ planned work owns is still implementation that got ahead of the plan, and the on
 left for it was an issue — so corners of work already in front of someone went onto the board
 instead of into the branch.
 
-**Settled:** the dispositions are ordered by **whether a unit of planned work owns the item**, and
-size decides only how much ceremony the disposition carries. A unit already covers it → do it now;
-no unit covers it and it is worth the time → **write the unit, then do it**; no unit covers it and
-it is genuinely complex → file an issue, if it passes the qualifier; true and not worth the
-time → one ledger row. The second row is new and it **outranks filing**, in the owner's words:
-*"I'd rather it planned and implemented instead directly go with new issue just because we need to
-cover some corners."* Filing is for genuine complexity; covering corners is part of the work, and an
-issue filed to cover one inflates the board.
+**Settled:** the disposition is decided by **two questions, neither of them the size**. Does a unit
+of planned work cover the item? If none does, is it worth doing at all — and if it is, is the work
+bigger than a unit you could write and finish in the branch in flight? A unit covers it → do it
+now; nothing covers it and it is not worth doing → one ledger row; worth doing and bigger than a
+unit you could finish here → file an issue, if it passes the qualifier; worth doing and not bigger
+than that → **write the unit, then do it**. The four are mutually exclusive, so no precedence
+between them has to be remembered, and "worth doing" is asked once.
 
-A change no unit owns may name the **document** that owns it instead — an ops change, a decision,
-a doc fix — which is the first disposition with the document standing in for the unit. Without it,
-the ordering rule would route work that has no test to write to an issue, which is the move this
-entry reverses.
+That last disposition is new and it **outranks filing**, in the owner's words: *"I'd rather it
+planned and implemented instead directly go with new issue just because we need to cover some
+corners."* Filing is for genuine complexity; covering corners is part of the work, and an issue
+filed to cover one inflates the board. **Complexity is reach, not size** — whether the work is
+bigger than a unit you could write and finish — because a size test in that slot would be the rule
+this entry reverses wearing a different name.
+
+A change no unit owns may name the **document** that owns it instead, which takes the first
+disposition with the document standing in for the unit. Without it the ordering rule would route
+work that has no test to write to an issue, which is the move this entry reverses.
 
 **Rejected:** keeping size in the deciding position, which is what put the corners on the board;
-and a fourth qualifier clause for "no unit owns it", which would have kept them there under
-another name.
-
-**Reverses:** the rule quoted in the first paragraph, in `skills/seam-github/SKILL.md`, and not a
-section of this file — this track begins at D-001, so the reversed rule was never recorded here
-and there is no section to supersede.
+a fourth qualifier clause for "no unit owns it", which would have kept them there under another
+name; and an earlier four-row phrasing of this same order that asked "worth the time" in one row
+and "not worth the time" in another — read with one meaning for the phrase it left the issue row
+reachable only for work not worth doing, so the two questions above replace it.
 
 **Enforced by:** nothing mechanical. No assertion reads a PR body, and which disposition an item
 takes is a judgement made in flight; `skills/seam-github/SKILL.md` § Follow-ups is the procedural

@@ -137,11 +137,11 @@ The reason, citing docs by path and §. Not a restatement of the diff.
 Closes #N.
 
 ## Follow-ups
-- <S|M · `domain` — folded in> a unit already covered it, and it was done in this branch
-- <S|M · `domain` — planned, then folded in> no unit covered it: the unit was written, then done
-- <L · `domain` — issue #N> no unit covers it and it is genuinely complex, and it passes a
-  qualifier clause — names which
-- <any · `domain` — ledger> true, not worth the time, passes no clause: one findings-ledger row
+- <any · `domain` — folded in> a unit covered it, and it was done in this branch
+- <any · `domain` — planned, then folded in> no unit covered it: the unit was written, then done
+- <any · `domain` — issue #N> bigger than a unit this branch could write and finish, and it passes
+  a qualifier clause — names which
+- <any · `domain` — ledger> true and not worth doing: one findings-ledger row
 - <one-liner · `domain` — on `main`> a one-line fix that belonged elsewhere
 ```
 
@@ -152,31 +152,33 @@ Closes #N.
 Everything you noticed along the way and did not treat as part of the original scope. Each item
 names its **domain**, its **size**, and its **disposition**.
 
-**The order is by ownership, not by size.** Whether a unit of planned work owns the item decides
-*whether* it gets done here; its size decides only how much ceremony that costs. Four
-dispositions, and the first one that fits is the answer:
+**The order is two questions, and neither of them is the size.** Does a unit of planned work cover
+the item? If none does, is it worth doing at all — and if it is, is the work bigger than a unit you
+could write and finish in this branch? Four dispositions, one per answer:
 
-1. **A unit already covers it → do it now.** The item sits inside what some unit says it makes
-   true, or it is a defect in what that unit built. Nothing new gets written, and the fix lands in
-   this branch.
-2. **No unit covers it and it is worth the time → write the unit, then do it**, in this branch.
-   One row in the plan whose seam this is. **This outranks filing**, and it is not a request for
-   permission: the repo's `docs/building.md` owns what the row carries and the rule that nothing
-   stops while it is written.
-3. **No unit covers it and it is genuinely complex → file an issue**, if it passes the qualifier
-   below. **Filing is for complexity, not for coverage**: covering the corners of the work in
-   front of you *is* that work, and an issue filed to record a corner inflates the board without
-   moving anything.
-4. **True and not worth the time → one row in the findings ledger.**
+1. **A unit covers it → do it now**, in this branch. A document that owns the change stands in for
+   the unit, so a change a document owns takes this disposition too.
+2. **No unit covers it, and it is not worth doing at all → one row in the findings ledger.**
+3. **Worth doing, and genuinely complex → file an issue**, if it passes the qualifier below.
+   Complexity here is **reach, not size**: the test is whether the work is bigger than a unit you
+   could write and finish in this branch. **Filing is for complexity, not for coverage** —
+   covering the corners of the work in front of you *is* that work, and an issue filed to record a
+   corner inflates the board without moving anything.
+4. **Worth doing and not complex → write the unit, then do it**, in this branch. **This outranks
+   filing**, and the row is not a gate: it gets written and the work goes on.
 
-**A change with no owning unit may name the document that owns it instead** — an ops change, a
-decision, a doc fix. That is the first disposition with the document standing in for the unit: no
-row gets written, and naming the document is what satisfies the start contract. The repo's
-`docs/building.md` carries the carve-out through its start contract, its finish contract and all
-three size rows; this file names the option and nothing more.
+The four are mutually exclusive, so there is no order to try them in — the two questions pick one.
 
-**Then the qualifier, asked only of the items that are not being done here: does this become an
-issue at all?** Three clauses, and it is one of them or it is not an issue:
+**`docs/building.md` is what this section reads for the things this file does not own**: what
+counts as a unit covering a change, what a row written for one carries, the carve-out that lets a
+document own a change instead of a unit, and the three sizes. Read them there rather than settling
+any of them here. If the repo has no such doc, say so and offer to write it with `seam-docs`; until
+it exists, read all four in the template it would be written from,
+`$CLAUDE_PLUGIN_ROOT/skills/seam-docs/templates/current/building.md`, rather than inventing them
+per session.
+
+**Then the qualifier, asked only of an item the third disposition sends to an issue: does it
+become one at all?** Three clauses, and it is one of them or it is not an issue:
 
 1. **a bug someone outside the repo sees** — a user or an auditor is worse off;
 2. **an exposure on anything in `load_bearing`** — the paths the repo named as carrying weight;
@@ -187,34 +189,30 @@ issue at all?** Three clauses, and it is one of them or it is not an issue:
 applies to the answers file; a hand-edited `.seam/config.json` can carry none, two, or no `active`
 key at all. **Where it is not exactly one, clause 3 does not fire**: the item qualifies on clause 1
 or 2, or it is a ledger row. Do not pick one of two, and do not infer the active milestone from the
-board. A repo with no milestones yet is the ordinary case of that and needs no fixing; a repo whose
-rows disagree has a broken config, so say so and fix it in `.seam/answers.json`, which is the
-source the config is projected from.
+board. Then say which state the config is in. **No row marked `true`, or no `active` key on the
+rows at all, is a config that has not chosen yet** — name it and leave it alone, because which
+milestone is being built now is the repo's answer to give and not yours to infer. **Two rows marked
+`true` is broken**, so say so and offer to fix it in `.seam/answers.json`, which is the source the
+config is projected from. **No milestones at all** is neither of those: there is nothing to choose,
+so clause 3 simply never fires.
 
-**An item that passes no clause is one row in the findings ledger**, committed in the same PR.
-That file owns nothing and is not a plan, so a row there is a record rather than a commitment. A
-row that later blocks the active milestone qualifies on clause 3 and becomes an issue then.
+**An item the qualifier turns away is one row in the findings ledger too**, committed in the same
+PR. That file owns nothing and is not a plan, so a row there is a record rather than a commitment.
+A row that later blocks the active milestone qualifies on clause 3 and becomes an issue then.
 
 **Size decides how, never whether.** It says what a disposition costs — what the fold-in has to
-carry, what the issue has to say — and it never moves an item from one disposition to another. The
-three sizes — Small, Medium, Large — and what puts a change in each are **the repo's
-`docs/building.md`'s to define**, because the same sizes set how much ceremony a change carries;
-this file only uses them.
-
-If the repo has no `docs/building.md`, say so and offer to write it with `seam-docs`. Until it
-exists, take the sizes from the template it would be written from,
-`$CLAUDE_PLUGIN_ROOT/skills/seam-docs/templates/current/building.md`, rather than inventing a scale
-per session.
+carry, what the issue has to say — and it never moves an item from one disposition to another.
+Which size a change is, and what each one costs, are `docs/building.md`'s as above; this file only
+reports it.
 
 **A fold-in needs an OK only when it is cross-domain or widens the branch's scope** — either of
-the first two dispositions, since writing the unit does not buy scope that the OK would otherwise
-cost. A same-domain defect in work already inside this branch's scope is the same class of edit the
-gate already grants for a review finding.
+the two dispositions that land work in this branch, since writing the unit does not buy scope that
+the OK would otherwise cost. A same-domain defect in work already inside this branch's scope is
+the same class of edit the gate already grants for a review finding.
 
 **An item that is done here gets no ledger row.** A row records something the repo is *not* doing,
-and doing it — under a unit that existed, or one just written — is the repo doing it. The four
-dispositions are exclusive, and the qualifier is only asked about the items that are not being
-done.
+and doing it — under a unit that covered it, or one written for it — is the repo doing it. The
+qualifier is only asked of the items that are not being done.
 
 **A review finding left unfixed is none of the four.** It is named **when the commit is offered**,
 and nowhere else. The ledger says "this does not matter enough", and a finding left unfixed on
