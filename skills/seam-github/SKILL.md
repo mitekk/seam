@@ -243,8 +243,73 @@ in `load_bearing` includes its doc update in the same PR. This is not tidiness: 
 will red on the next run either way, and the only question is whether the fix is in the commit that
 caused it or in a later one nobody has written.
 
+## Merging, and the steps it is
+
+Merging is **squash by default**: the PR title becomes the default branch's history and the
+branch's intermediate commits do not. Their bodies are not lost — the squash body is the branch's
+commit messages concatenated, in order — so each *why* the branch wrote survives in the one commit
+that lands, which is the other reason a body that restated the diff is worth nothing. The title is
+that squash subject, and § Pull requests is where it is tied to the commit convention.
+
+It is a sequence rather than one command, and § Teardown below is the last step of it:
+
+1. **Squash-merge, deleting the remote branch.** This is the gated action, and **the OK has to see
+   the merge method and what the merge closes.** Neither is in the PR body, and both are what
+   cannot be walked back once it lands.
+2. **Check that the issue actually closed.** A `Closes` trailer that never matched is the exact
+   failure this convention exists to prevent, and it fails quietly: the merge succeeds and the
+   board is left wrong.
+3. **Tear the branch down** — § Teardown below.
+4. **Bring the local default branch up to date**, fast-forward only. The merge happens on the
+   tracker's side, so the checkout the next branch is cut from still points at the commit before
+   it, which is how that branch starts out missing the change that just shipped. A pull that
+   cannot fast-forward is a divergence to look at rather than something to put a merge commit on.
+
+Steps 2 to 4 are **not behind the gate**: they are local and touch nothing outward-facing. Not
+running them is how a wrong board and a stale branch point get left behind, so they are part of
+finishing the work rather than cleanup for later.
+
+### Teardown, the last step and not an optional tidy-up
+
+A merge deletes the **remote** branch and nothing else. The local branch survives, and so does
+whatever the repo built beside it — a worktree, a per-branch database, a container.
+
+1. **Delete the local branch.**
+2. **Run the repo's own teardown command, if `.seam/config.json` names one** in
+   `teardown_command`, with the issue number in place of `<n>`.
+
+**Where that key is empty or absent, deleting the branch is the whole teardown.** Most repos have
+nothing else to take down, so an empty value is a complete answer rather than an unfilled one: do
+not go looking for a script to run, and do not write one.
+
+**Deliberately a convention and not automation.** A wrapper that merged and then tore down would
+bury the merge gate — the one action that needs an explicit OK every time — inside a script, and a
+sweep that reaped every merged branch at once would turn teardown back into periodic cleanup
+instead of the last step of finishing one piece of work.
+
 ## Status reporting
 
 Read it off the log and the board, not off memory. The squash subject's scope is the domain, so
 `git log --oneline` groups by domain for free. Say what merged, what is in flight, and what is
 blocked — and when a milestone's issues are all closed, say so rather than waiting to be asked.
+
+### The owned-row invariant
+
+**Every open issue is either an owned row in a plan, or names the document that owns it instead.**
+Both halves are owners, and the second is the stronger one rather than an exemption: a milestone
+with no plan of its own, and a plan that looked at an issue and deliberately disclaimed it, each
+answer for it more firmly than a row would — so an invariant reading "an owned row or nothing"
+would force a plan to adopt work it had reasoned its way out of adopting. Where the repo keeps no
+plans at all, the document half is the whole invariant. An issue that is neither is on the board on
+nobody's account, which is how a board re-spreads across every milestone with every check green.
+
+**The active milestone is read, never inferred**: it is the one `milestones[].active` marks in
+`.seam/config.json`, which is the field § Follow-ups' qualifier reads in its third clause — that is
+where the two states it can be in are settled, and this section does not repeat them. **Not the
+lowest-numbered milestone with open issues.** Work is correctly filed ahead of the front all the
+time, so that rule returns the wrong milestone the first time someone does it.
+
+**The milestone half is reporting, not a gate.** Filing an issue into a milestone ahead of the
+front violates nothing — decomposing work before its milestone opens is how a plan gets written at
+all. **Ownership** is what the invariant holds; *which* milestone an issue sits in is what this
+section reports.

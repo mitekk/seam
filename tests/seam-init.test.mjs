@@ -950,3 +950,81 @@ test("the clean fixture's milestones are ones the wizard could have produced", (
   assert.ok(cfg.milestones.every((m) => typeof m.active === "boolean"), "a milestone has no boolean active");
   assert.equal(cfg.milestones.filter((m) => m.active).length, 1, "exactly one milestone is active");
 });
+
+// ── teardown_command ──────────────────────────────────────────────────────────
+//
+// `seam-github` § Teardown runs the repo's own teardown command as the last step of a merge, and
+// a skill clause that reads a key no question fills is a clause nothing can satisfy — the defect
+// this branch repaired one layer up, where a template shipped that no question proposed. The key
+// is optional by construction: absent and `""` both mean the branch delete is the whole teardown,
+// which is the common case.
+
+test("teardown_command is optional, and absent means deleting the branch is all of it", () => {
+  const bare = answers();
+  delete bare.teardown_command;
+  const a = init(bare);
+  assert.equal(a.r.status, 0, a.r.stderr);
+  assert.equal(JSON.parse(read(a.dir, ".seam/config.json")).teardown_command, "");
+  rm(a.dir);
+
+  // And a repo that has one gets it at the same key path — one namespace, no translation step.
+  const b = init(answers({ teardown_command: "scripts/rm-worktree.sh <n>" }));
+  assert.equal(b.r.status, 0, b.r.stderr);
+  assert.equal(JSON.parse(read(b.dir, ".seam/config.json")).teardown_command,
+    "scripts/rm-worktree.sh <n>");
+  rm(b.dir);
+});
+
+test("a teardown_command that is not one command string is rejected", () => {
+  // A list would have to be sequenced by whoever ran it, and the skill runs what the key names as
+  // written. Absent and `""` are the two ways to say there is nothing to run.
+  for (const value of [["scripts/rm-worktree.sh <n>"], 5]) {
+    const { dir, r } = init(answers({ teardown_command: value }));
+    assert.equal(r.status, 2, r.stdout);
+    assert.match(r.stderr, /teardown_command/, r.stderr);
+    assert.ok(!has(dir, ".seam/config.json"), "a rejected run still wrote a config");
+    rm(dir);
+  }
+});
+
+test("the interview asks for teardown_command, and § Defaults records what empty means", () => {
+  const tables = interviewTables();
+  const row = tables.questions.split("\n").find((l) => l.includes("`teardown_command`"));
+  assert.ok(row, "the question table has no row naming teardown_command");
+  // Optional by construction, so the row says so and says what an empty answer is. A question
+  // that reads as a requirement gets an invented answer, which is what the discipline forbids.
+  assert.match(row, /optional/i, "the teardown row does not say the key is optional");
+  assert.match(row, /empty answer is complete/i,
+    "the teardown row does not say an empty answer is a complete one");
+  assert.match(tables.defaults, /^\|\s*`teardown_command`\s*\|\s*`""`\s*\|/m,
+    "§ Defaults has no row giving teardown_command's default");
+});
+
+test("every config key seam-github reads is one the interview fills", () => {
+  // The blind scan is the point: every top-level key of a config the wizard actually wrote,
+  // against the skill's own text, so a key added to a clause later cannot pass by being absent
+  // from a hand-written list here.
+  const { dir, r } = init(answers());
+  assert.equal(r.status, 0, r.stderr);
+  const keys = Object.keys(JSON.parse(read(dir, ".seam/config.json")));
+  rm(dir);
+  const skill = readFileSync(join(REPO, "skills/seam-github/SKILL.md"), "utf8");
+  const names = (text, k) => new RegExp("`" + k + "(`|\\[|\\.)").test(text);
+  const reads = keys.filter((k) => names(skill, k)).sort();
+  // Pinned, so a fifth key reaches this test rather than arriving quietly. `docs` is in the set
+  // because the commit-type list writes `docs` in backticks; the key is asked for anyway, so the
+  // collision costs nothing and a blind scan is worth more than a hand-curated one.
+  assert.deepEqual(reads, ["docs", "load_bearing", "milestones", "teardown_command"],
+    "seam-github names a config key this test does not know about, or stopped naming one");
+  const { questions } = interviewTables();
+  for (const k of reads)
+    assert.ok(names(questions, k),
+      `seam-github reads ${k} and no interview question fills it — add the question row, or stop`
+      + ` reading the key in the skill`);
+  // The teardown clause is a real conditional, and the else-branch is stated: a key most repos
+  // leave empty needs one, or "if the config names one" is a requirement in conditional clothing.
+  const flat = skill.replace(/\s+/g, " ");
+  assert.match(flat, /if `\.seam\/config\.json` names one/);
+  assert.ok(flat.includes("Where that key is empty or absent, deleting the branch is the whole"
+    + " teardown"), "the teardown clause states no else-branch for a config that names no command");
+});

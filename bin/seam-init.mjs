@@ -121,6 +121,16 @@ function validate(a) {
     "must be a list of paths, or absent, which means empty — and empty is the right answer for"
     + " most repos");
 
+  // Optional by construction. Most repos have nothing to take down after a merge beyond the
+  // branch itself, so absent and "" both mean "deleting the branch is the whole teardown", and an
+  // empty answer is a complete one rather than a key nobody filled in. A non-string is the one
+  // answer that can mean neither: a list would have to be sequenced by whoever ran it, and the
+  // skill runs what this key names, as written.
+  need(a.teardown_command === undefined || typeof a.teardown_command === "string",
+    "teardown_command",
+    `must be one shell command as a string, not ${JSON.stringify(a.teardown_command)} — or absent,`
+    + ` which means the repo has no teardown step beyond deleting the branch`);
+
   // A15 compares two lists, and one without the other is a comparison with one side empty: it
   // could only ever fail, or only ever pass. The checker reports an enabled A15 with an empty
   // list; this catches the half-answered interview before a config is written at all.
@@ -307,6 +317,9 @@ function project(a) {
     docs: stripProse(a.docs, PROSE_SUBKEYS.docs),
     load_bearing: a.load_bearing ?? [],
     low_review_paths: a.low_review_paths ?? [],
+    // Always present, so the skill's conditional has something to read either way: "" is the
+    // repo saying the branch delete is the whole teardown, not a key the interview skipped.
+    teardown_command: a.teardown_command ?? "",
     domains: stripProse(a.domains ?? [], PROSE_SUBKEYS.domains),
     milestones: stripProse(a.milestones ?? [], PROSE_SUBKEYS.milestones),
     agents: stripProse(a.agents ?? [], PROSE_SUBKEYS.agents),

@@ -57,6 +57,7 @@ rather than asking open questions about them.
 | 18 | Should the review policy be written down — which level a diff takes from what it touches, how many rounds a review gets, and what it leaves outstanding? | `docs[]` — a layer-2 row, `docs/reviewing.md` | **Proposed by default; ask it as a proposal, not an open question.** A yes writes `{ "path": "docs/reviewing.md", "layer": 2, "owns": "…", "enforces": "", "create": true }`, and the wizard picks the review template from the file name. "No" is a complete answer: leave the row out and record nothing. The template's level table reads `load_bearing` (question 4) and `low_review_paths` (question 9), so those two answers are what make it a policy rather than one level for every diff. |
 | 19 | Should model and effort be pinned per phase — which artifact owns each phase of the work, and what that artifact runs at? | `docs[]` — a layer-2 row, `docs/routing.md` | **Proposed by default; ask it as a proposal, not an open question.** A yes writes `{ "path": "docs/routing.md", "layer": 2, "owns": "…", "enforces": "", "create": true }`, and the wizard picks the routing template from the file name. "No" is a complete answer: leave the row out and record nothing. The rows are this repo's own phases, and an owning artifact may be a skill or plugin the repo installs rather than a file in the tree — so ask which phases run on something this repo does not own. The agents from question 12 arrive as rows already: the program writes one Implement row per agent, with the model and effort that agent is pinned to. |
 | 20 | Should the domain labels, the three priorities and the build order live in one doc? | `docs[]` — a layer-2 row, `docs/taxonomy.md` | **Proposed by default; ask it as a proposal, not an open question.** A yes writes `{ "path": "docs/taxonomy.md", "layer": 2, "owns": "…", "enforces": "", "create": true }`, and the wizard picks the taxonomy template from the file name. "No" is a complete answer: leave the row out and record nothing. The answers still carry `domains[]` and `milestones[]` into `.seam/config.json`, and this is the only doc that renders either as a table — so a no is worth one more question: where is a reader meant to look a label up? |
+| 21 | Is there one command that tears a finished branch down once its PR has merged? | `teardown_command` | **Optional, and an empty answer is complete** — most repos have nothing to take down beyond the branch itself, which the tracker conventions delete without being told, so absent and `""` both mean exactly that. Read the tree first and state what it shows for correction: a script that removes a worktree, drops a per-branch database or stops a container is a **candidate**, never the answer — whether it is the teardown is the user's to say, and a script found and assumed is the invented answer the discipline below rules out. One shell command, run from the repo root, with the issue number written `<n>` where it takes one. |
 
 ### The discipline
 
@@ -94,6 +95,7 @@ rather than asking open questions about them.
 
   "load_bearing":     ["db/schema.sql"],
   "low_review_paths": [],
+  "teardown_command": "",            // "" or absent: deleting the branch is the whole teardown
   "domains":    [ { "name": "hives", "covers": "Hive state and scheduling" } ],
   "milestones": [ { "n": 1, "title": "Queenless list", "green": "the list renders",
                     "active": true } ],            // exactly one true when any milestone exists
@@ -131,6 +133,7 @@ rather than asking open questions about them.
 | `docs/taxonomy.md` row | **proposed by default** | Every other row here is a default because its rule needs a home. This one is a default because questions 10 and 11 are asked regardless: the interview collects a taxonomy whether or not anything renders it, and a collected answer with no document is what the default avoids. Declining is leaving the row out, as above. |
 | `low_review_paths` | `[]` | `low` is hunk-local and cannot verify a claim a document makes about the tree. Absent means empty. |
 | `load_bearing` | `[]` | Absent means empty, which is the honest answer for a repo where nothing enforces anything yet. |
+| `teardown_command` | `""` | Absent means empty, and empty means deleting the branch is the whole teardown — the common case, because most repos have nothing else to take down. A value here is the repo's own command, and the tracker conventions run it as the last step of a merge rather than when someone notices later. |
 | `checker.path` | from the language | `scripts/check_docs.py` or `scripts/check_docs.mjs`. |
 | `assertions.A4.not_fields` | a built-in list of extensions and TLDs, **plus** whatever you add | So a repo cannot blind A4 by naming one exemption of its own. `not_fields_override` replaces the list outright, for the repo whose column really is called `html`. |
 | `checker.language` | asked, no default | |
@@ -151,6 +154,7 @@ are not there. Each failure names the key path:
 - `adr.format` not `madr` or `single`, or the matching `dir`/`file` missing
 - `docs` empty, or a row with no `path`, no `owns`, or a `layer` outside 1..6
 - `load_bearing` or `low_review_paths` present and not a list (absent is fine — both mean empty)
+- `teardown_command` present and not a string (absent is fine, and so is `""` — both mean none)
 - a glob row with `"create": true` outside layers 3 and 4 — a glob names a form, not a file
 - `artifacts[N].path` absent from `load_bearing`
 - `assertions.A15.impl_globs` or `assertions.A15.test_globs` given without the other, or not a list; `assertions.A15.default_branch` given and not a branch name

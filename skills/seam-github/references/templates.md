@@ -176,3 +176,34 @@ What that shows:
 - a round that found something is not a refusal; the findings were folded in and round two read
   the fixes;
 - the one thing left unfixed is **named at the offer**, with which of the three reasons it is.
+
+---
+
+## A merge, in a session
+
+The example repo's `.seam/config.json` names one teardown command, `scripts/rm-worktree.sh <n>`.
+
+```
+> #12 is approved — merge it
+
+Here is what the merge would do:
+
+  method:  squash — the PR title becomes `main`'s history
+  title:   feat(hives): filter the queenless list on hive state
+  closes:  #12
+
+That one needs your OK. Three local steps follow it and do not: check that #12 actually closed,
+tear the branch down — `git branch -d 12-queenless-filter`, then `scripts/rm-worktree.sh 12` —
+and `git pull --ff-only`, so the next branch is cut from the merge rather than from the commit
+before it.
+```
+
+What that shows:
+
+- the OK sees the **method** and **what it closes**, which is what the merge adds to what the PR
+  body already said;
+- the three local steps are named **in the same breath**, because they are the rest of the
+  sequence rather than cleanup to come back to;
+- the teardown is two steps here, and the second exists only because this repo's config names a
+  command. A repo whose `teardown_command` is empty stops after `git branch -d`, and that is the
+  common case rather than a gap.
