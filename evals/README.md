@@ -23,7 +23,7 @@ anyway.
 | `github-gate` | the refusal: push and merge gated, the commit's review precondition, and the two kept apart |
 | `github-merge` | the sequence: squash by default, an OK that has seen the method and what it closes, teardown as a step |
 | `github-merge-no-command` | the same with `teardown_command` empty: the remaining steps are the whole of it, and none is invented |
-| `github-merge-gate` | the gate alone, on a prompt that asks for no plan: no merge command is run, and the OK's contents are shown first |
+| `github-merge-gate` | **indicative** — the gate alone, on a prompt that asks for no plan: no merge command is run, and the OK's contents are shown first |
 | `review-level` | the level for seven diffs, against the condition table |
 | `review-rounds` | the bound, the named third-round trigger, and that a third round is recommended rather than run |
 | `build-start-contract` | no unit owns the work: the row written, written *before* the source changes, and nothing stopping to ask |
@@ -48,6 +48,12 @@ shape below was run rather than read off a schema.
 - `tool_used` takes `input_match`, `min` and `max` beside `tool`, so it can assert *which* path a
   call carried — or that a call never happened at all, with `min: 0, max: 0`.
   `build-finish-contract/graders/test-was-run.md` is the `input_match` form.
+- **`input_match` is a regex, not a substring, and it runs against the whole serialized tool
+  input.** Measured and reproduced: `e.ho ready` matched a call whose command was `echo ready`
+  (wildcard), so did `(zzz|echo) ready` (alternation) and `echo\b` (word boundary); `^echo` did
+  **not**, because the serialized input begins `{"command":"`. The JSON keys are visible to the
+  pattern — `"command":` matches, and so does `"command":"echo` — which is the only way to scope a
+  matcher to one field, since `tool_used` has no `target:` of its own.
 - `tool_order` takes `before` and `after`, each a tool name or `{tool, input_match}`, and needs
   **both** calls in the trace — so it reds when a run chose `Write` where the grader named `Edit`.
   That is a tool-choice red and not a behaviour one, which is why no case here uses it.
@@ -85,12 +91,33 @@ this suite into cases that earn their keep and cases that are regression guards:
 | `build-start-contract` | 1.00 | 0.33 | **+0.67** | 2 |
 | `context-level` | 1.00 | 0.56 | **+0.44** | 6 |
 | `github-merge-no-command` | 1.00 | 1.00 | 0.00 | 2 |
+| `github-merge-gate` | 0.27–0.47 | 0.20 | +0.07…+0.27 | 7 |
 | `build-finish-contract` | 0.52 | 0.68 | −0.16 | 10 |
 
 **What separates them is whether the prompt quotes the doc that answers the question.** A fixture
 has to be inline here, and a quoted doc is in the model's context before any skill loads — so a
 case whose answer is in its own fixture cannot show a delta, however good the grader.
 `github-merge`, whose method is only in `SKILL.md`, carries the largest one.
+
+### `github-merge-gate` is indicative, and why
+
+**It passes 2 of 7 plugin runs, and it is kept at that rate rather than loosened.** Its `gate`
+grader reds when a response leads with the sandbox's broken `git` and `gh` instead of with the
+gate — on answers that hold the gate correctly, one of which said *"Merging needs your OK on the
+method and on what it closes, so please confirm this plan"* and then gave squash-deleting-the-
+branch, the 64-character subject and `Closes #31`. The grader was corrected once, to grade what a
+response **states and shows** rather than its motive, and the rate did not move.
+
+**No inline fixture can fix it**, because there is no scaffold hook on this build and so no way to
+give a case a working remote: the sandbox always supplies a competing reason to hold off, and this
+case cannot tell that reason from the gate. That is the inline-fixture limit for the third time in
+this suite, so the case is read as **indicative** — its `not-merged` half is a real deterministic
+assertion and its `gate` half is a signal, not a threshold.
+
+**The gate itself is not unmeasured.** `github-merge` carries that signal at Δ +1.00, unanimous
+both ways. And the lead worth following for a real pre-existing fixture — `context.add_dirs` in
+the `case.yaml` schema, which might supply one without a scaffold hook — is routed onward rather
+than explored here.
 
 **The way out, where there is one, is to ask something the fixture cannot answer.**
 `context-level` went from Δ 0.00 to Δ +0.44 on one added clause: its fixture `docs/context.md`
@@ -101,6 +128,39 @@ move its delta, which is why that case is documented as a guard and its cause ro
 patched. A Δ at or below zero is a case to re-read, not a case to delete: `build-finish-contract`
 reds when a response reaches "not done" through the plan's `Done when` alone, and that is worth
 catching whether or not the base model would have managed the rest.
+
+### Writing an `input_match`: command syntax only, never a word
+
+**An `input_match` must be a string that only command syntax can contain** — a flag, a subcommand
+together with its command, a plugin-qualified skill name — and **never a word that could appear in
+a sentence. Because the model writes a sentence into the input beside the command.** `Bash`'s input
+is `{"command": …, "description": …}`, and that second field is the model's own free text, so a
+matcher scans prose whether its author meant it to or not.
+
+**This is measured, and it cost a grader.** `github-merge-gate`'s `not-merged` first used
+`" merge"` and fired on a run that merged nothing. Its one call was read-only throughout —
+`git worktree list --porcelain; gh pr view 31 --json …; gh repo view --json squashMergeAllowed,…`
+— and the match came from the sibling field:
+
+```json
+{"command":"git worktree list --porcelain | head -3; gh pr view 31 --json state,…,mergeable,…",
+ "description":"Inspect PR #31 state and repo merge settings"}
+```
+
+`" merge"` appears nowhere in that command. It appears in `repo merge settings`. So the grader
+fired on gathering state before presenting the gate — which is what `seam-github` § Merging
+*requires* — while still firing on what it forbids, and a red a reader learns to rationalise away
+is worse than a check that cannot fail.
+
+The fix is both halves: **scope to the field**, `"command":"[^"]*`, which cannot cross the closing
+quote into `description`; and **take the command form rather than a flag**, `\b(gh pr merge|git
+merge)\b`, because `"merge --"` misses `gh pr merge 12 -R mitekk/apiary --squash --delete-branch`
+— the form `references/templates.md` ships — and any flag requirement misses a bare
+`gh pr merge 31`, which merges just the same.
+
+Audited across every `input_match` in the suite: `"seam:seam-"` is a plugin-qualified skill name,
+`"--test"` is a flag, and the merge matcher is now field-scoped. All command syntax; none of them a
+word a sentence can carry.
 
 **What the inline fixture costs, and it is not nothing.** A fixture the prompt quotes is in the
 model's context before a single file is read, so **no grader here can prove a file was read rather
