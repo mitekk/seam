@@ -598,11 +598,70 @@ async function main() {
     return 2;
   }
 
+  // ── The integrity precondition ──────────────────────────────────────────
+  //
+  // A16 compares this config with the answers file it was projected from, and **A16's own switch
+  // lives in this config**. Setting `assertions.A16.enabled` to false and editing the config in
+  // the same write was therefore silent: the only trace was the assertion count falling by one.
+  //
+  // So this is not an assertion. An assertion can be switched off, which is the problem. It runs
+  // here — before the loop, independent of every switch — and exits 2, because "the comparison
+  // could not be trusted" is a different claim from "a doc is wrong".
+  //
+  // The boundary, stated rather than implied: editing the config AND this record together still
+  // defeats it, the same way re-hashing defeats A16. What is closed is the silent single edit.
+  let prov = null;
+  try {
+    prov = JSON.parse(readFileSync(join(ROOT, PROVENANCE_PATH), "utf8"));
+  } catch { /* handled below */ }
+  const regenerate = `Write it with the wizard: \`seam-init --answers <file> --repo .\`, which`
+    + ` rewrites ${CONFIG_PATH} and this record together.`;
+  if (prov === null || typeof prov !== "object" || Array.isArray(prov)) {
+    process.stderr.write(`seam: no readable ${PROVENANCE_PATH}, so there is no record of which`
+      + ` assertions were enabled when this checker was emitted — and a switch flipped in`
+      + ` ${CONFIG_PATH} is a silent change to what is measured, A16's own switch included.`
+      + ` ${regenerate}\n`);
+    return 2;
+  }
+  const recorded = prov.assertions_enabled;
+  if (!Array.isArray(recorded) || recorded.some((x) => typeof x !== "string")) {
+    process.stderr.write(`seam: ${PROVENANCE_PATH} has no \`assertions_enabled\` list, so the`
+      + ` enabled set could not be compared with the one on record. An absent list is not "none`
+      + ` enabled". ${regenerate}\n`);
+    return 2;
+  }
+  const live = enabledIds.slice().sort();
+  const want = recorded.slice().sort();
+  if (live.join(",") !== want.join(",")) {
+    const only = (a, b) => a.filter((x) => !b.includes(x));
+    const added = only(live, want);
+    const gone = only(want, live);
+    process.stderr.write(`seam: ${CONFIG_PATH} does not enable the assertions`
+      + ` ${PROVENANCE_PATH} records.`
+      + (added.length ? ` Enabled here and not on record: ${added.join(", ")}.` : "")
+      + (gone.length ? ` On record and not enabled here: ${gone.join(", ")}.` : "")
+      + ` The answers file is the source and the config is its projection, so a switch flipped by`
+      + ` hand is a silent change to what this checker measures — which is why this is a refusal`
+      + ` and not an assertion. ${regenerate}\n`);
+    return 2;
+  }
+
   // An allow-list entry means "this will never be fixed", so the method requires a written
   // reason. Nothing read the field, which made the requirement a sentence.
+  //
+  // And it requires a PATH, because an exemption that names nothing cannot exempt anything. The
+  // three readers of that field disagreed about what a missing one was — a Python `KeyError`, a
+  // Node `undefined`, and `"None"` against `""` in the obsolescence message, whose text is part
+  // of a finding's baseline key — so it is refused here, once, before anything reads it.
   for (const aid of Object.keys(A).sort()) {
     const list = A[aid]?.allow ?? [];
     for (let i = 0; i < list.length; i++) {
+      if (typeof list[i]?.path !== "string" || list[i].path === "") {
+        process.stderr.write(`seam: ${CONFIG_PATH} assertions.${aid}.allow[${i}].path is not a `
+          + `path. An allow-list entry exempts one path from one assertion, so an entry naming `
+          + `none exempts nothing — write the path, or delete the entry.\n`);
+        return 2;
+      }
       if (!String(list[i]?.reason ?? "").trim()) {
         process.stderr.write(`seam: ${CONFIG_PATH} assertions.${aid}.allow[${i}] exempts `
           + `'${list[i]?.path ?? "<no path>"}' with no reason. An allow-list entry means "this `
@@ -655,7 +714,7 @@ async function main() {
     }
     // An empty allow-list is not a finding: nothing is exempted, so nothing stopped doing work.
     for (const e of allowList) {
-      const p = String(e?.path ?? "");
+      const p = e.path;                       // a string, or the run was refused above
       if (usedAllow.has(p)) continue;
       const why = p.includes("*")
         ? "a glob, which A1 never consults — a cited path containing `*` names a form and is "
@@ -1464,16 +1523,9 @@ async function main() {
     };
     const regen = `Put the change in the answers file and regenerate`
       + ` (\`seam-init --answers <file> --repo .\`), which rewrites ${CONFIG_PATH} from it`;
-    let prov = null;
-    try { prov = JSON.parse(readFileSync(join(ROOT, PROVENANCE_PATH), "utf8")); } catch { /* none */ }
-    if (prov === null || typeof prov !== "object" || Array.isArray(prov)) {
-      findings.push(finding("A16", PROVENANCE_PATH, 1, PROVENANCE_PATH,
-        `assertions.A16 is enabled and there is no readable \`${PROVENANCE_PATH}\`, so whether `
-        + `${CONFIG_PATH} is still the projection of its answers file was not compared. A config `
-        + `emitted before seam recorded its provenance has none, and "nothing to compare" is an `
-        + `assertion switching itself off. Regenerate to record it, or switch A16 off; off is `
-        + `distinct from passing`));
-    } else if (typeof prov.answers !== "string" || prov.answers === "") {
+    // `prov` is a readable object here, or the integrity precondition above refused the run: a
+    // config with no record of what it enabled is not a config this checker trusts at all.
+    if (typeof prov.answers !== "string" || prov.answers === "") {
       findings.push(finding("A16", PROVENANCE_PATH, 1, "answers",
         `\`${PROVENANCE_PATH}\` names no answers file inside this repo, so the comparison was `
         + `not made — an answers file kept outside the tree cannot be read back from here. Commit `
@@ -1491,8 +1543,7 @@ async function main() {
     } else {
       const ansHash = sha(prov.answers);
       const cfgHash = sha(CONFIG_PATH);
-      for (const [rel, got, want] of [[prov.answers, ansHash, prov.answers_sha256],
-        [CONFIG_PATH, cfgHash, prov.config_sha256]]) {
+      for (const [rel, got] of [[prov.answers, ansHash], [CONFIG_PATH, cfgHash]]) {
         if (got !== null) continue;
         findings.push(finding("A16", rel, 1, rel,
           `could not be read, so its hash was not compared with the one `

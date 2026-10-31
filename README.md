@@ -117,8 +117,10 @@ lives in the config, never edited into the script" true, and therefore what make
 always safe. A repo's own assertions live in `.seam/assertions/*`, which the checker discovers and
 a regeneration never overwrites.
 
-Two things make it refuse to run at all, because the alternative is a check that looks like a pass:
-a config with no assertion enabled, and an allow-list entry with no written reason.
+Three things make it refuse to run at all, because the alternative is a check that looks like a
+pass: a config with no assertion enabled, an allow-list entry with no written reason or no path,
+and an enabled set that is not the one `.seam/provenance.json` records — the last so that a switch
+flipped by hand, A16's own included, cannot quietly change what is measured.
 
 ### The baseline
 
@@ -147,10 +149,13 @@ it exempts, in `.seam/config.json`. Two places, two rules, and the difference is
   [`skills/seam-docs/references/interview.md`](skills/seam-docs/references/interview.md) § Schema
   is the full key list; the three priorities are not in it, because they are fixed by the method
   and live in the repo's own `docs/taxonomy.md`.
-- `.seam/provenance.json` — the answers file's path and two sha256 hashes, one of that file and
-  one of the config just written. Assertion A16 compares them on every run, because the answers
-  file is the source and the config is its projection: a config edited by hand is reverted by the
-  next regeneration without a word, which is measured rather than hypothetical.
+- `.seam/provenance.json` — the answers file's path, two sha256 hashes (that file, and the config
+  just written), and the set of assertions this run enabled. Assertion A16 compares the hashes on
+  every run, because the answers file is the source and the config is its projection: a config
+  edited by hand is reverted by the next regeneration without a word, which is measured rather
+  than hypothetical. The enabled set is read by a **refusal** rather than an assertion, because
+  A16's own switch lives in the file A16 protects — so flipping it and editing the config in one
+  write would otherwise be silent.
 - `.seam/baseline.json` — day-one drift, written by `--write-baseline`.
 - The docs you approved, one per layer, from
   [`skills/seam-docs/templates/`](skills/seam-docs/templates).

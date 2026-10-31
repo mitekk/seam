@@ -16,13 +16,35 @@ import { scratch, rm, run, REPO } from "./helpers.mjs";
 
 const CLEAN = join(REPO, "tests", "fixtures", "clean");
 
+/** The sidecar the wizard writes, rebuilt from the files as they now stand. `patch` perturbs it
+ *  for the tests that need it wrong. */
+function writeProvenance(dir, patch = null) {
+  const cfgPath = join(dir, ".seam", "config.json");
+  const cfg = JSON.parse(readFileSync(cfgPath, "utf8"));
+  const ansPath = join(dir, ".seam", "answers.json");
+  const sha = (p) => createHash("sha256").update(readFileSync(p)).digest("hex");
+  const here = existsSync(ansPath);
+  const prov = {
+    seam_version: cfg.seam_version,
+    answers: here ? ".seam/answers.json" : null,
+    answers_sha256: here ? sha(ansPath) : null,
+    config_sha256: sha(cfgPath),
+    assertions_enabled: Object.keys(cfg.assertions ?? {})
+      .filter((k) => cfg.assertions[k]?.enabled).sort(),
+  };
+  const body = { ...prov, ...(patch ?? {}) };
+  for (const k of Object.keys(body)) if (body[k] === undefined) delete body[k];
+  writeFileSync(join(dir, ".seam", "provenance.json"), JSON.stringify(body, null, 2) + "\n");
+  return prov;
+}
+
 /** Whether this process can open the file: false is what a mode-000 file looks like to a user. */
 function canRead(p) {
   try { readFileSync(p); return true; } catch { return false; }
 }
 
 /** A copy of the clean fixture as a git repo with one commit, plus both checkers generated. */
-function fixture({ mutate = null, commitAfter = false } = {}) {
+function fixture({ mutate = null, commitAfter = false, provenance = true } = {}) {
   const dir = scratch("seam-checker-");
   cpSync(CLEAN, dir, { recursive: true });
   const git = (...args) => execFileSync("git", args, { cwd: dir, stdio: "pipe" });
@@ -45,10 +67,15 @@ function fixture({ mutate = null, commitAfter = false } = {}) {
         writeFileSync(join(dir, rel), body);
       },
     });
-    if (commitAfter) {
-      git("add", "-A");
-      git("commit", "-m", "mutated");
-    }
+  }
+  // Written AFTER the mutation and BEFORE the commit: the integrity precondition compares the
+  // config's enabled set against this file and refuses to run on a mismatch, so a fixture that
+  // switches an assertion off is a fixture whose record has to say so — the same thing a
+  // regeneration does. `provenance: false` is for the tests that break it on purpose.
+  if (provenance) writeProvenance(dir, typeof provenance === "object" ? provenance : null);
+  if (mutate && commitAfter) {
+    git("add", "-A");
+    git("commit", "-m", "mutated");
   }
 
   for (const [language, out] of [["python", "scripts/check_docs.py"], ["node", "scripts/check_docs.mjs"]]) {
@@ -1757,24 +1784,17 @@ test("A15 with a default_branch that is not a branch name says the comparison wa
 // and nothing regenerated); the config's own hash is what catches the bug A16 is for, because
 // hand-editing the config does not change the answers file at all.
 
-/** Give a fixture an answers file and the provenance sidecar, consistent with each other. */
+/** Give a fixture an answers file and A16, then record the sidecar for both. */
 function withProvenance(dir, { answers: ansText = null, enabled = true } = {}) {
   const cfgPath = join(dir, ".seam", "config.json");
   const cfg = JSON.parse(readFileSync(cfgPath, "utf8"));
   cfg.assertions.A16 = { enabled };
   writeFileSync(cfgPath, JSON.stringify(cfg, null, 2) + "\n");
-  const ansPath = join(dir, ".seam", "answers.json");
-  writeFileSync(ansPath, ansText ?? JSON.stringify({
+  writeFileSync(join(dir, ".seam", "answers.json"), ansText ?? JSON.stringify({
     table: { file: "CLAUDE.md" },
     checker: { language: "python", path: "scripts/check_docs.py" },
   }, null, 2) + "\n");
-  const sha = (p) => createHash("sha256").update(readFileSync(p)).digest("hex");
-  writeFileSync(join(dir, ".seam", "provenance.json"), JSON.stringify({
-    seam_version: cfg.seam_version,
-    answers: ".seam/answers.json",
-    answers_sha256: sha(ansPath),
-    config_sha256: sha(cfgPath),
-  }, null, 2) + "\n");
+  writeProvenance(dir);
 }
 
 /** Replace one top-level key of the config, as a hand-edit after emission would. */
@@ -1785,7 +1805,7 @@ function editConfig(dir, patch) {
 }
 
 test("A16 passes when the config and the answers file are the pair the provenance records", () => {
-  const { dir } = fixture({ mutate: ({ dir }) => withProvenance(dir) });
+  const { dir } = fixture({ provenance: false, mutate: ({ dir }) => withProvenance(dir) });
   const r = both(dir);
   assert.equal(r.status, 0, r.py.stderr + r.py.stdout);
   assert.deepEqual(r.findings, []);
@@ -1795,7 +1815,7 @@ test("A16 passes when the config and the answers file are the pair the provenanc
 });
 
 test("A16 flags a config edited after it was emitted", () => {
-  const { dir } = fixture({ mutate: ({ dir }) => {
+  const { dir } = fixture({ provenance: false, mutate: ({ dir }) => {
     withProvenance(dir);
     editConfig(dir, { low_review_paths: ["docs/engineering.md"] });   // the hand-edit
   } });
@@ -1809,7 +1829,7 @@ test("A16 flags a config edited after it was emitted", () => {
 });
 
 test("A16 flags an answers file that moved with no regeneration after it", () => {
-  const { dir } = fixture({ mutate: ({ dir }) => {
+  const { dir } = fixture({ provenance: false, mutate: ({ dir }) => {
     withProvenance(dir);
     appendFileSync(join(dir, ".seam", "answers.json"), "\n");
   } });
@@ -1821,7 +1841,7 @@ test("A16 flags an answers file that moved with no regeneration after it", () =>
 });
 
 test("A16 says the comparison was not made when no answers file is committed", () => {
-  const { dir } = fixture({ mutate: ({ dir }) => {
+  const { dir } = fixture({ provenance: false, mutate: ({ dir }) => {
     withProvenance(dir);
     rmSync(join(dir, ".seam", "answers.json"));
   } });
@@ -1833,25 +1853,85 @@ test("A16 says the comparison was not made when no answers file is committed", (
   rm(dir);
 });
 
-test("A16 says so when there is no provenance at all, rather than nothing to compare", () => {
-  // The case a reader would skip: a config emitted by an older seam-init carries no provenance,
-  // and "nothing to compare" is an assertion switching itself off — the defect this branch has
-  // now found sixteen times.
-  const { dir } = fixture({ mutate: ({ dir }) => {
+// ── The integrity precondition, which A16 cannot be ─────────────────────────
+//
+// A16's own switch lives in the file A16 protects. Measured: setting `assertions.A16.enabled` to
+// false and hand-editing the config in the SAME write gave `9 assertions, 9 docs, 0 violations`
+// and exit 0 — the only trace was the count falling by one. That is the cheapest defeat there is
+// and the first thing a person tries when A16 reds them.
+//
+// The repair cannot be another assertion, because an assertion can be switched off. It is a
+// precondition in the shape the allow-entry refusals already use: before the assertion loop,
+// independent of every switch, exit **2** — "the comparison could not be trusted", not "a doc is
+// wrong". The sidecar records the enabled set; the checker refuses to run when the live set is
+// not that set.
+
+test("the checker refuses to run when the enabled set is not the one recorded", () => {
+  // The reviewer's exact measurement, as one write: A16 off and the config edited together.
+  const { dir } = fixture({ provenance: false, mutate: ({ dir }) => {
     withProvenance(dir);
-    rmSync(join(dir, ".seam", "provenance.json"));
+    const p = join(dir, ".seam", "config.json");
+    const cfg = JSON.parse(readFileSync(p, "utf8"));
+    cfg.assertions.A16.enabled = false;
+    cfg.low_review_paths = ["docs/engineering.md"];
+    writeFileSync(p, JSON.stringify(cfg, null, 2) + "\n");
+  } });
+  for (const lang of ["python", "node"]) {
+    const res = check(dir, lang);
+    assert.equal(res.status, 2, `${lang}: ${res.stdout}${res.stderr}`);
+    assert.match(res.stderr, /A16/, `${lang}: the refusal does not name the switch that moved`);
+    assert.match(res.stderr, /provenance\.json/, lang);
+  }
+  assert.equal(check(dir, "python").stderr, check(dir, "node").stderr,
+    "the two checkers refuse differently");
+  rm(dir);
+});
+
+test("the checker refuses to run with no record of what was enabled", () => {
+  // The case a reader would skip: a config emitted before seam recorded its provenance has none,
+  // and treating that as "nothing to compare" is the switch-off defeat with an extra step.
+  const { dir } = fixture({ provenance: false });
+  for (const lang of ["python", "node"]) {
+    const res = check(dir, lang);
+    assert.equal(res.status, 2, `${lang}: ${res.stdout}${res.stderr}`);
+    assert.match(res.stderr, /provenance\.json/, lang);
+    assert.match(res.stderr, /seam-init/, `${lang}: the refusal does not say what to run`);
+  }
+  rm(dir);
+});
+
+test("the precondition does not fire on a legitimate regeneration", () => {
+  // Switching an assertion off is a change to the answers file, which rewrites both files — so
+  // the record agrees and the run proceeds. A precondition that could not tell that apart from a
+  // hand-edit would make every config change a refusal, and get switched off itself.
+  const { dir } = fixture({ mutate: ({ dir: d }) => {
+    const p = join(d, ".seam", "config.json");
+    const cfg = JSON.parse(readFileSync(p, "utf8"));
+    cfg.assertions.A4.enabled = false;
+    writeFileSync(p, JSON.stringify(cfg, null, 2) + "\n");
   } });
   const r = both(dir);
-  assert.equal(r.status, 1, r.py.stdout);
-  assert.deepEqual(ids(r.findings), ["A16"], r.findings.join("\n"));
-  assert.match(r.findings[0], /^\.seam\/provenance\.json:1: A16 /);
-  assert.match(r.findings[0], /regenerat/i);
+  assert.equal(r.status, 0, r.py.stderr + r.py.stdout);
+  assert.match(r.py.stdout, /13 assertions/);
   rm(dir);
+});
+
+test("a record that names no assertion set is refused, not read as none enabled", () => {
+  for (const patch of [{ assertions_enabled: undefined }, { assertions_enabled: "A1" },
+    { assertions_enabled: [1, 2] }]) {
+    const { dir } = fixture({ provenance: patch });
+    for (const lang of ["python", "node"]) {
+      const res = check(dir, lang);
+      assert.equal(res.status, 2, `${JSON.stringify(patch)} (${lang}): ${res.stdout}${res.stderr}`);
+      assert.match(res.stderr, /assertions_enabled/, lang);
+    }
+    rm(dir);
+  }
 });
 
 test("A16 flags a provenance file carrying no usable hash", () => {
   for (const patch of [{ config_sha256: "nope" }, { answers_sha256: null }, {}]) {
-    const { dir } = fixture({ mutate: ({ dir }) => {
+    const { dir } = fixture({ provenance: false, mutate: ({ dir }) => {
       withProvenance(dir);
       const p = join(dir, ".seam", "provenance.json");
       const prov = JSON.parse(readFileSync(p, "utf8"));
@@ -2045,4 +2125,29 @@ test("this repo's committed checker is what the template now emits", () => {
     `${checker.path} is not what \`node bin/generate-checker.mjs --repo .\` emits today. The`
     + ` committed file is what CI runs, so regenerate it in the same commit as the template.`);
   rm(dir);
+});
+
+test("an allow-list entry with no usable path is refused, in both languages", () => {
+  // The entry's path reached three places that read it differently: `allowed = {e["path"] …}`
+  // raised KeyError in Python for a pathless entry where Node yielded `undefined`, and the
+  // obsolescence arm stringified `null` to `"None"` in Python and `""` in Node — two findings
+  // whose text differed, which `both()` compares. Refusing the entry outright kills all three:
+  // an exemption that names nothing cannot exempt anything, and the no-reason refusal is the
+  // same shape and the same exit.
+  for (const [what, allow] of [
+    ["no path key", [{ reason: "generated by the build" }]],
+    ["a null path", [{ path: null, reason: "generated by the build" }]],
+    ["an empty path", [{ path: "", reason: "generated by the build" }]],
+    ["a non-string path", [{ path: 12, reason: "generated by the build" }]],
+  ]) {
+    const { dir } = fixture({ mutate: ({ dir: d }) => patchA1(d, { allow }) });
+    for (const lang of ["python", "node"]) {
+      const res = check(dir, lang);
+      assert.equal(res.status, 2, `${what} (${lang}): ${res.stdout}${res.stderr}`);
+      assert.match(res.stderr, /assertions\.A1\.allow\[0\]\.path/, `${what} (${lang})`);
+    }
+    // Identical message, not merely the same exit: the text is what a reader acts on.
+    assert.equal(check(dir, "python").stderr, check(dir, "node").stderr, what);
+    rm(dir);
+  }
 });

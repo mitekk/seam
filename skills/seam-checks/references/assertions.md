@@ -495,7 +495,8 @@ bytes of the two files it names. It holds four keys:
   "seam_version": "0.2.0",
   "answers": ".seam/answers.json",   // repo-relative, or null when the answers file is outside
   "answers_sha256": "<64 hex>",      // the answers file as the wizard read it
-  "config_sha256": "<64 hex>"        // .seam/config.json as the wizard wrote it
+  "config_sha256": "<64 hex>",       // .seam/config.json as the wizard wrote it
+  "assertions_enabled": ["A1", …]    // read by the refusal below, NOT by A16
 }
 ```
 
@@ -522,12 +523,9 @@ answers file outside the tree gets A16 **off**, and pays for it by having its co
 unchecked. That is the cost of keeping the source out of the repo, and it is the reason to commit
 it.
 
-**Fails loudly, as one finding, in five cases** — the comparison named as not made rather than
+**Fails loudly, as one finding, in four cases** — the comparison named as not made rather than
 passed:
 
-- **no readable `.seam/provenance.json`.** A config emitted before seam recorded its provenance has
-  none, and treating that as "nothing to compare" is an assertion switching itself off. Regenerate
-  to record it, or switch A16 off; off is distinct from passing.
 - **`answers` is absent or null** — the answers file is outside the repo, so nothing here can read
   it back.
 - **`answers` names a file that is not there.**
@@ -535,28 +533,53 @@ passed:
 - **either file present and unreadable.** A file that cannot be opened is not a missing one, and it
   must not take the checker down — the same rule A14 follows for a unit's test file.
 
+A missing or unreadable sidecar is **not** one of them: it is a refusal, below, because without it
+nothing can be trusted — A16's own switch included.
+
+**A16 cannot police its own switch, and a refusal does.** `assertions.A16.enabled` lives in the
+file A16 protects, so setting it to `false` and editing the config in the same write was silent:
+the only trace was the assertion count falling by one. The repair cannot be another assertion,
+since an assertion can be switched off. It is § The refusals' third entry, which reads
+`assertions_enabled` from the same sidecar and refuses to run on a mismatch, before any assertion
+runs and independent of every switch.
+
 Does not reach:
 
 - **Whether the projection rule itself is right.** A16 proves the two files are the pair the wizard
   emitted together, not that `project()` did the correct thing with them. That is
   `tests/seam-init.test.mjs`'s half.
-- **A config edited and then re-hashed.** Editing the config and rewriting `config_sha256` to match
-  defeats it, as it would defeat any scheme short of re-deriving the projection. The point is that
-  the silent case is loud, not that the determined case is impossible.
+- **A config edited and then re-hashed**, and equally a switch flipped in the config *and* in
+  `assertions_enabled` together. **That is the boundary, stated rather than implied:** what both
+  mechanisms close is the silent **single** edit. Editing the config and its record in one pass
+  defeats them, as it would defeat any scheme short of re-deriving the projection in both
+  languages — which is the duplication this design exists to avoid. The point is that the cheap
+  path is loud, not that the determined path is impossible.
 - **An answers file that is valid and wrong.** A16 compares bytes. Whether the answers say what the
   repo means is the interview's question.
 
-## Two refusals before anything is checked
+## Three refusals before anything is checked
 
-Both are exit 2, and both exist because the alternative is a check that looks like a pass:
+All three are exit 2, and all three exist because the alternative is a check that looks like a
+pass:
 
 - **No assertion enabled.** A config with no `assertions` block, or one with every switch off,
   would emit a checker that measures nothing and exits 0. That cannot be told apart from passing,
   which is the thing this whole layer exists to prevent. A repo that genuinely wants none should
   not have a checker.
-- **An allow-list entry with no reason.** An entry means "this will never be fixed", and the
-  method says it requires a written reason. Nothing read the field until this refusal existed,
-  which made the requirement a sentence.
+- **An allow-list entry with no reason, or with no path.** An entry means "this will never be
+  fixed", and the method says it requires a written reason. Nothing read the field until this
+  refusal existed, which made the requirement a sentence. The **path** is refused for a different
+  reason: an exemption that names nothing cannot exempt anything, and the three readers of that
+  field disagreed about what a missing one was — a Python `KeyError`, a Node `undefined`, and
+  `"None"` against `""` in a finding's text, which is part of its baseline key.
+- **The enabled set is not the one `.seam/provenance.json` records**, or there is no readable
+  sidecar at all. The sidecar is written by the wizard beside the config, in the same run, and it
+  names the assertions that were enabled then. A switch flipped in the config by hand is a silent
+  change to what the checker measures — **including A16's own switch, which lives in the file A16
+  protects**, so no assertion can police it. The refusal names which ids moved in which direction.
+  A legitimate change goes through the answers file, which rewrites both and agrees; an absent
+  sidecar is refused rather than skipped, because "no record" would otherwise be the switch-off
+  defeat with one extra step.
 
 An entry that is no longer *needed* is not a refusal: it is an ordinary A1 finding, because it is
 about the tree rather than about the config being readable. See § A1.

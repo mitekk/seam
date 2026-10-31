@@ -130,7 +130,7 @@ file is not a document.
 - **Which model and which effort a dispatched agent runs at.** Pinned per artifact, by the doc that
   owns routing where this repo has one. This file decides *whether* to dispatch; that one decides
   what fires.
-- **What the dispatched work is.** A unit of work is a plan's row — layer 5, under `{{plans.dir}}`.
+- **What the dispatched work is.** A unit of work is a plan's row — layer 5, {{plans.citation}}.
 - **Whether what comes back is reviewed, and how deeply.** The review policy's, and it does not
   care that an agent wrote the diff.
 - **Why any of this is the rule here.** That is layer 3, {{adr.citation}}.

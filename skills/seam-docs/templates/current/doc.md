@@ -15,7 +15,7 @@ Where this file and {{artifact.citation}} disagree, the artifact wins and the dr
 
 - **Why** anything here was chosen. That is layer 3, {{adr.citation}}.
 - **What we are trying to build.** That is layer 4, {{prd.citation}}.
-- **Which units of work build it, in what order.** That is layer 5, under `{{plans.dir}}`.
+- **Which units of work build it, in what order.** That is layer 5, {{plans.citation}}.
 
 ## Open questions
 

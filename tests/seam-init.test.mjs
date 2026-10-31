@@ -1426,3 +1426,34 @@ test("an empty milestones list and a one-row active list are both accepted", () 
     [{ n: 1, title: "Green or brown field", active: true }]);
   rm(one.dir);
 });
+
+test("a layer-2 doc names every layer-5 directory, not whichever row came first", () => {
+  // `plans.dir` was `dirname` of the FIRST layer-5 row, so a repo with two of them — specs and
+  // plans, which is this repo's own shape — got a doc naming one directory and omitting the
+  // other. A1 is blind to it: it is a directory, not a `*.md` citation. `layer5Globs` in the same
+  // file already returned all of them, so the wizard held both the right idea and the wrong one.
+  //
+  // Two rows, in the order that reproduces it: one row passes either way.
+  const ans = answers();
+  ans.docs = ans.docs.filter((d) => d.layer !== 5);
+  ans.docs.push(
+    { path: "docs/superpowers/specs/*.md", layer: 5, owns: "Nothing — dated designs", enforces: "", create: false },
+    { path: "docs/superpowers/plans/*.md", layer: 5, owns: "Nothing — implementation plans", enforces: "", create: false },
+  );
+  const { dir, r } = init(ans, [], (d) => {
+    write(d, "docs/superpowers/specs/a-design.md", "# A design\n");
+    write(d, "docs/superpowers/plans/a-plan.md", "# A plan\n");
+  });
+  assert.equal(r.status, 0, r.stderr);
+  const t = read(dir, "docs/engineering.md");
+  assert.ok(t.includes("`docs/superpowers/specs`") && t.includes("`docs/superpowers/plans`"),
+    `a layer-2 doc names only some of the layer-5 directories:\n`
+    + t.split("\n").filter((l) => l.includes("layer 5")).join("\n"));
+  rm(dir);
+
+  // One layer-5 row still reads as one directory, with no list punctuation.
+  const { dir: one, r: r1 } = init(answers());
+  assert.equal(r1.status, 0, r1.stderr);
+  assert.match(read(one, "docs/engineering.md"), /layer 5, under `docs\/plans`\./);
+  rm(one);
+});

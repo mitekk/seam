@@ -670,10 +670,65 @@ def main() -> int:
               f"be told apart from passing. Enable at least one.", file=sys.stderr)
         return 2
 
+    # ── The integrity precondition ──────────────────────────────────────────
+    #
+    # A16 compares this config with the answers file it was projected from, and **A16's own switch
+    # lives in this config**. Setting `assertions.A16.enabled` to false and editing the config in
+    # the same write was therefore silent: the only trace was the assertion count falling by one.
+    #
+    # So this is not an assertion. An assertion can be switched off, which is the problem. It runs
+    # here — before the loop, independent of every switch — and exits 2, because "the comparison
+    # could not be trusted" is a different claim from "a doc is wrong".
+    #
+    # The boundary, stated rather than implied: editing the config AND this record together still
+    # defeats it, the same way re-hashing defeats A16. What is closed is the silent single edit.
+    prov = None
+    try:
+        prov = json.loads((ROOT / PROVENANCE_PATH).read_text())
+    except (OSError, ValueError):
+        prov = None
+    regenerate = (f"Write it with the wizard: `seam-init --answers <file> --repo .`, which "
+                  f"rewrites {CONFIG_PATH} and this record together.")
+    if not isinstance(prov, dict):
+        print(f"seam: no readable {PROVENANCE_PATH}, so there is no record of which assertions "
+              f"were enabled when this checker was emitted — and a switch flipped in "
+              f"{CONFIG_PATH} is a silent change to what is measured, A16's own switch included. "
+              f"{regenerate}", file=sys.stderr)
+        return 2
+    recorded = prov.get("assertions_enabled")
+    if not isinstance(recorded, list) or not all(isinstance(x, str) for x in recorded):
+        print(f"seam: {PROVENANCE_PATH} has no `assertions_enabled` list, so the enabled set "
+              f"could not be compared with the one on record. An absent list is not \"none "
+              f"enabled\". {regenerate}", file=sys.stderr)
+        return 2
+    live = sorted(enabled)
+    want = sorted(recorded)
+    if live != want:
+        added = [x for x in live if x not in want]
+        gone = [x for x in want if x not in live]
+        print(f"seam: {CONFIG_PATH} does not enable the assertions {PROVENANCE_PATH} records."
+              + (f" Enabled here and not on record: {', '.join(added)}." if added else "")
+              + (f" On record and not enabled here: {', '.join(gone)}." if gone else "")
+              + f" The answers file is the source and the config is its projection, so a switch "
+                f"flipped by hand is a silent change to what this checker measures — which is why "
+                f"this is a refusal and not an assertion. {regenerate}", file=sys.stderr)
+        return 2
+
     # An allow-list entry means "this will never be fixed", so the method requires a written
     # reason. Nothing read the field, which made the requirement a sentence.
+    #
+    # And it requires a PATH, because an exemption that names nothing cannot exempt anything. The
+    # three readers of that field disagreed about what a missing one was — a Python `KeyError`, a
+    # Node `undefined`, and `"None"` against `""` in the obsolescence message, whose text is part
+    # of a finding's baseline key — so it is refused here, once, before anything reads it.
     for aid, conf in sorted(A.items()):
         for i, e in enumerate(conf.get("allow", []) or []):
+            if not isinstance(e.get("path"), str) or e["path"] == "":
+                print(f"seam: {CONFIG_PATH} assertions.{aid}.allow[{i}].path is not a path. An "
+                      f"allow-list entry exempts one path from one assertion, so an entry naming "
+                      f"none exempts nothing — write the path, or delete the entry.",
+                      file=sys.stderr)
+                return 2
             if not str(e.get("reason", "")).strip():
                 print(f"seam: {CONFIG_PATH} assertions.{aid}.allow[{i}] exempts "
                       f"{e.get('path', '<no path>')!r} with no reason. An allow-list entry means "
@@ -727,7 +782,7 @@ def main() -> int:
         # An empty allow-list is not a finding: nothing is exempted, so nothing stopped doing
         # work.
         for e in allow_list:
-            path = str(e.get("path", ""))
+            path = e["path"]                  # a string, or the run was refused above
             if path in used_allow:
                 continue
             if "*" in path:
@@ -1516,19 +1571,9 @@ def main() -> int:
 
         regen = (f"Put the change in the answers file and regenerate "
                  f"(`seam-init --answers <file> --repo .`), which rewrites {CONFIG_PATH} from it")
-        prov = None
-        try:
-            prov = json.loads((ROOT / PROVENANCE_PATH).read_text())
-        except (OSError, ValueError):
-            prov = None
-        if not isinstance(prov, dict):
-            findings.append(finding("A16", PROVENANCE_PATH, 1, PROVENANCE_PATH,
-                f"assertions.A16 is enabled and there is no readable `{PROVENANCE_PATH}`, so "
-                f"whether {CONFIG_PATH} is still the projection of its answers file was not "
-                f"compared. A config emitted before seam recorded its provenance has none, and "
-                f"\"nothing to compare\" is an assertion switching itself off. Regenerate to "
-                f"record it, or switch A16 off; off is distinct from passing"))
-        elif not isinstance(prov.get("answers"), str) or prov["answers"] == "":
+        # `prov` is a readable dict here, or the integrity precondition above refused the run:
+        # a config with no record of what it enabled is not a config this checker trusts at all.
+        if not isinstance(prov.get("answers"), str) or prov["answers"] == "":
             findings.append(finding("A16", PROVENANCE_PATH, 1, "answers",
                 f"`{PROVENANCE_PATH}` names no answers file inside this repo, so the comparison "
                 f"was not made — an answers file kept outside the tree cannot be read back from "

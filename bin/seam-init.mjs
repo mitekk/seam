@@ -436,7 +436,12 @@ function templateVars(a, cfg) {
     : `\`${a.adr.file}\``;
   const prdDir = cfg.prd.dir;
   const version = cfg.prd.version ?? 1;
-  const planRow = (a.docs ?? []).find((d) => d.layer === 5);
+  // EVERY layer-5 directory, deduped, in row order — not the first row's. A repo with two layer-5
+  // rows (a specs track and a plans track, which is this repo's own shape) got a doc naming
+  // whichever came first and omitting the other, and A1 cannot see it: it is a directory, not a
+  // `*.md` citation. `layer5Globs` above already reads all of them.
+  const planDirs = [...new Set((a.docs ?? []).filter((d) => d.layer === 5)
+    .map((d) => dirname(d.path)))];
   const artifact = (a.artifacts ?? [])[0];
   const agents = a.agents ?? [];
   // Every agent row carries both levels or the run was refused (`validate`), so there is no
@@ -460,7 +465,14 @@ function templateVars(a, cfg) {
         ? `\`${prdDir}/PRD-current.md\``
         : "wherever this repo writes it down",
     },
-    plans: { dir: planRow ? dirname(planRow.path) : "docs/plans" },
+    // A phrase, not a path, for the same reason `adr.citation` is one: with several directories
+    // there is nothing for a template's own pair of backticks to wrap, and with none there is no
+    // directory to name at all.
+    plans: {
+      citation: planDirs.length
+        ? "under " + planDirs.map((x) => `\`${x}\``).join(" and ")
+        : "wherever this repo writes its plans down",
+    },
     artifact: {
       citation: artifact ? `\`${artifact.path}\`` : "the code itself (layer 1)",
       path: artifact?.path ?? "",
@@ -726,6 +738,13 @@ function main() {
     answers: answersRel,
     answers_sha256: sha256(answersBytes),
     config_sha256: sha256(cfgBody),
+    // The set the emitted checker refuses to run without agreeing with. A16's own switch lives in
+    // the file A16 protects, so flipping it and editing the config in one write was silent — the
+    // cheapest defeat there is. This is the record the checker's integrity precondition compares
+    // against, and a precondition rather than an assertion precisely because an assertion can be
+    // switched off.
+    assertions_enabled: Object.keys(cfg.assertions)
+      .filter((k) => cfg.assertions[k]?.enabled).sort(),
   }, null, 2) + "\n");
 
   for (const d of answers.docs) {
