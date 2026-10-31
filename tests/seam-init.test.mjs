@@ -7,7 +7,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { join } from "node:path";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { scratch, rm, write, read, has, run, answers, REPO } from "./helpers.mjs";
 
 /** Write an answers file into a fresh scratch repo and run the wizard against it. */
@@ -348,9 +348,25 @@ test("a layer-2 row named routing.md gets the routing template", () => {
   const { dir, r } = init(ans);
   assert.equal(r.status, 0, r.stderr);
   const t = read(dir, "docs/routing.md");
+  // The doc is hard-wrapped, so a phrase can break across a line; match on the flattened text.
+  const flat = t.replace(/\s+/g, " ");
   assert.match(t, /Layer 2/);
   assert.match(t, /This table is the only copy/);
   assert.match(t, /review depth, not model effort/i);
+  // The two phases the other two layer-2 docs create. Neither has a row anywhere else, so an
+  // unnamed phase runs at whatever the session happened to be set to.
+  assert.match(flat, /\| Planning [^|]*writing the unit \|/);
+  assert.match(flat, /\| Dispatched subagent \|/);
+  assert.match(flat, /come from another layer-2 doc/i);
+  // An owning artifact may be a skill the repo installed rather than a file in its tree — which
+  // is how a real repo routes planning and review — and the method bundles none of them.
+  assert.match(flat, /may be something this repo does not own/i);
+  assert.match(flat, /Nothing third-party is bundled with this method/);
+  assert.match(flat, /only lets a repo name what it already installed/);
+  // The two seams with the docs that create those phases, each stated from this side too.
+  assert.match(flat, /decides \*whether\* to dispatch/);
+  assert.match(flat, /what done means/i);
+  assert.ok(!/\{\{[\w.]+\}\}/.test(t), "an unrendered placeholder is left in the doc");
   rm(dir);
 });
 
@@ -513,6 +529,60 @@ test("the interview has a question proposing context.md, and § Defaults records
   assert.ok(dFrom !== -1, "the § Defaults heading moved; update this slice");
   assert.match(md.slice(dFrom), /^\|[^|\n]*context\.md[^|\n]*\|[^|\n]*proposed[^|\n]*\|/mi,
     "§ Defaults has no row recording that context.md is proposed by default");
+});
+
+// The class behind the two tests above. A layer-2 template the wizard has but no question
+// proposes is a template nothing ever writes, which is how `routing.md` shipped. The set is the
+// templates, never the questions: a loop over the questions passes vacuously for the template
+// nobody wrote one for, which is the only case this test exists to catch.
+test("every named layer-2 template is proposed by a question, and § Defaults records it", () => {
+  const src = readFileSync(join(REPO, "bin/seam-init.mjs"), "utf8");
+  const md = readFileSync(join(REPO, "skills/seam-docs/references/interview.md"), "utf8");
+  const dir = "skills/seam-docs/templates/current";
+
+  // The map is parsed out of the wizard's source, because that is the one place a template
+  // becomes selectable. The parse is pinned to `const named = {`, so a renamed map fails here
+  // rather than returning nothing — an empty set would pass every assertion below at once.
+  const map = src.match(/\bconst named = \{\n([\s\S]*?)\n\s*\};/);
+  assert.ok(map, "bin/seam-init.mjs has no `const named = {` map — this test's parse is stale");
+  const named = [...map[1].matchAll(/^\s*"([^"]+\.md)":\s*"(current\/[^"]+\.md)",?$/gm)]
+    .map(([, base, rel]) => ({ base, rel }));
+
+  // The generic template is selected by nothing being named, so it is in neither the map nor the
+  // set. Pinning both halves keeps a map entry for it from shrinking the set without saying so.
+  const onDisk = readdirSync(join(REPO, dir)).filter((f) => f.endsWith(".md")).sort();
+  assert.ok(onDisk.includes("doc.md"), `${dir}/doc.md is gone, and it is the generic fallback`);
+  assert.ok(!named.some((n) => n.base === "doc.md"),
+    "the named map names doc.md, which is the fallback and not a named template");
+
+  // Non-empty and the size expected: an iteration set that quietly emptied would pass.
+  assert.equal(named.length, 5, "expected 5 named layer-2 templates — a new one needs its own "
+    + "interview question, its § Defaults row, and this count raised");
+  assert.deepEqual(named.map((n) => n.base).sort(), onDisk.filter((f) => f !== "doc.md"),
+    `the map and ${dir} name different templates; one nothing names is never written`);
+  for (const { base, rel } of named)
+    assert.ok(existsSync(join(REPO, "skills/seam-docs/templates", rel)),
+      `the map sends ${base} to ${rel}, which is not there — writeDoc falls back to doc.md`);
+
+  // The interview's two halves are sliced apart, because a name appears in both and a bare
+  // `includes` over the whole file passes when either one is deleted.
+  const qFrom = md.indexOf("### What must be asked, never inferred");
+  const qTo = md.indexOf("### The discipline");
+  assert.ok(qFrom !== -1 && qTo > qFrom, "the question table's headings moved; update this slice");
+  const dFrom = md.indexOf("### Defaults the program fills");
+  assert.ok(dFrom !== -1, "the § Defaults heading moved; update this slice");
+  const esc = (s) => s.replace(/\./g, "\\.");
+
+  for (const { base } of named) {
+    // The row has to carry the row it writes, not merely mention the file: a question that names
+    // a doc in passing proposes nothing, and `"create": true` is what writes it.
+    const q = `"path": "docs/${esc(base)}"[^\\n]*"create": true`;
+    assert.match(md.slice(qFrom, qTo), new RegExp(`^\\|[^\\n]*${q}[^\\n]*\\|[ \\t]*$`, "m"),
+      `no row of the question table proposes docs/${base} with "create": true`);
+    assert.match(md.slice(dFrom),
+      new RegExp(`^\\|[^|\\n]*${esc(base)}[^|\\n]*\\|[^|\\n]*proposed[^|\\n]*\\|`, "mi"),
+      `§ Defaults has no row recording that ${base} is proposed`);
+  }
 });
 
 test("a glob row with matching files is not reported missing; one with none is", () => {
