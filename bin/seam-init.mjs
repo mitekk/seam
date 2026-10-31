@@ -162,7 +162,8 @@ function validate(a) {
     const got = m?.active === undefined ? "missing" : JSON.stringify(m.active);
     need(typeof m?.active === "boolean", `milestones[${i}].active`,
       `must be true or false, not ${got} — exactly one milestone is active, and every row says`
-      + ` whether it is`);
+      + ` whether it is. Mark the one being built now with "active": true and every other row`
+      + ` "active": false`);
   });
   if (ms.length && ms.every((m) => typeof m?.active === "boolean")) {
     const on = ms.flatMap((m, i) => (m.active ? [i] : []));

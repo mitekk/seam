@@ -628,6 +628,9 @@ test("every milestone says whether it is active, as a boolean", () => {
     const { dir, r } = init(answers({ milestones: ms }));
     assert.equal(r.status, 2, `${JSON.stringify(ms)}: ${r.stdout}`);
     assert.match(r.stderr, new RegExp(`milestones\\[${at}\\]\\.active`), r.stderr);
+    // The missing-key message is the one an adopter with a pre-`active` answers file hits first,
+    // so it says what to write, as the none-active message does.
+    assert.match(r.stderr, /"active": true.*"active": false/, r.stderr);
     assert.ok(!has(dir, ".seam/config.json"), "a rejected run still wrote a config");
     rm(dir);
   }
@@ -676,5 +679,34 @@ test("no milestones is still valid, and the taxonomy table stays rectangular", (
   const rows = milestoneRows(read(dir, "docs/taxonomy.md"));
   assert.ok(rows.length >= 3, "the empty-state row is missing");
   for (const cells of rows) assert.equal(cells.length, rows[0].length, `ragged row: ${cells}`);
+  // The paragraph under the table points at the `yes` row, and in this state there is none, so
+  // what it says has to be conditional on there being milestones.
+  assert.ok(!rows.some((cells) => cells.at(-1) === "yes"), "the empty state has a yes row");
+  assert.match(read(dir, "docs/taxonomy.md"), /once\s+there\s+are\s+milestones/i,
+    "the paragraph points at a `yes` row the empty table does not have");
   rm(dir);
+});
+
+test("the interview says what to record when the user never names the active milestone", () => {
+  const md = readFileSync(join(REPO, "skills/seam-docs/references/interview.md"), "utf8");
+  const qFrom = md.indexOf("### What must be asked, never inferred");
+  const qTo = md.indexOf("### The discipline");
+  assert.ok(qFrom !== -1 && qTo > qFrom, "the question table's headings moved; update this slice");
+  const row = md.slice(qFrom, qTo).split("\n").find((l) => /^\| 11 \|/.test(l));
+  assert.ok(row, "the question table has no row 11");
+  // The wizard refuses an active-less list, so "listed but unanswered" has one consistent
+  // outcome, and it is the same one the discipline section gives every undetermined fact.
+  assert.match(row, /milestones: \[\]/, "row 11 does not say to record an empty list");
+  assert.match(row, /open question/i, "row 11 does not say to record an open question");
+});
+
+test("the clean fixture's milestones are ones the wizard could have produced", () => {
+  // It is the canonical post-wizard config, and every checker mutation starts from it. One whose
+  // milestones break the invariant is a config no wizard run can write, and a test reading
+  // `milestones[].active` from it would get `undefined` — falsy, so a negative test would pass
+  // for the wrong reason.
+  const cfg = JSON.parse(readFileSync(join(REPO, "tests/fixtures/clean/.seam/config.json"), "utf8"));
+  assert.ok(cfg.milestones.length > 0, "the fixture no longer has a milestone to check");
+  assert.ok(cfg.milestones.every((m) => typeof m.active === "boolean"), "a milestone has no boolean active");
+  assert.equal(cfg.milestones.filter((m) => m.active).length, 1, "exactly one milestone is active");
 });

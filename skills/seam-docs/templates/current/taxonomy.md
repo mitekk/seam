@@ -4,8 +4,8 @@
 **bug**, so the edit rule is **amend in place**.
 
 Owns: the **domain labels**, the **three priorities**, and the **milestones**. Nothing else may
-define them — `.seam/config.json` carries the machine mirror, and the checker asserts the two
-agree.
+define them — `.seam/config.json` carries the machine mirror. The two are kept in step by hand:
+no checker assertion compares them, so a drift between them is not caught.
 
 ## Domains
 
@@ -46,8 +46,8 @@ The build order. Each ends green before the next starts, and each produces a rev
 |---|---|---|---|
 {{milestones_table}}
 
-**The active milestone is the one the priority rule reads**, so it has to be unambiguous: exactly
-one milestone is active at a time — the `yes` above, `milestones[].active` in
+**The active milestone is the one the priority rule reads**, so it has to be unambiguous: once
+there are milestones, exactly one is active — the row marked `yes` above, `milestones[].active` in
 `.seam/config.json` — and clause 3 of the follow-up qualifier, "blocks the active milestone", is
 answered from it rather than from how important something feels.
 
