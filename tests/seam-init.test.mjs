@@ -1464,6 +1464,67 @@ test("the size vocabulary is the same set in the template and in seam-github", (
     + ` the skill names the members; a size added to one side belongs on both.`);
 });
 
+test("the review level table is the same ordered rows in the skill and the template", () => {
+  // I5, and the identical class to the size vocabulary above — which got its test only AFTER it
+  // bit this branch. `skills/seam-review/SKILL.md` and
+  // `skills/seam-docs/templates/current/reviewing.md` carry the same seven ordered rows, and
+  // **the order is load-bearing**: both spend a paragraph on "`low` is the sixth row, and that
+  // is deliberate", because a path on `low_review_paths` that also matches a `high` or `medium`
+  // row above has to take the higher level. Nothing compared them, so a row added to one side,
+  // or two rows swapped in one, drifted in silence.
+  //
+  // What is compared is each row's **subject** — the clause before the em dash — and its level,
+  // in order. The detail after the em dash legitimately differs: the template writes
+  // `{{checker.path}}` and `{{table.file}}` where the skill says "the checker" and "the table's
+  // host", because one is rendered into a repo and the other is read beside one. So a change to
+  // a row's detail on one side only is outside this test's reach, and the ordered row list is
+  // not.
+  const sides = [
+    ["skills/seam-review/SKILL.md", "Pick the level from what the diff touches"],
+    ["skills/seam-docs/templates/current/reviewing.md", "The level, by what the diff touches"],
+  ].map(([rel, heading]) => {
+    const body = readFileSync(join(REPO, rel), "utf8");
+    // Pinned to the heading, so a renamed section fails here rather than returning nothing — an
+    // empty row list would pass every set comparison below at once.
+    const sec = body.split(/^## /m).find((s) => s.startsWith(heading));
+    assert.ok(sec, `${rel} has no § ${heading} to read the level table from`);
+    const rows = [];
+    for (const line of sec.split("\n")) {
+      const m = /^\|\s*([^|]+?)\s*\|\s*`([a-z]+)`\s*\|\s*$/.exec(line);
+      if (!m) continue;                                  // header, separator, and prose
+      // The subject is the clause before the em dash, normalised for the determiners the two
+      // registers differ on: the skill speaks of "the repo's" list and the template of "this
+      // repo's".
+      const subject = m[1].split(" — ")[0]
+        .replace(/`/g, "").toLowerCase().trim()
+        .split(/\s+/).filter((w) => !["a", "an", "the", "this"].includes(w)).join(" ");
+      rows.push([subject, m[2]]);
+    }
+    return { rel, rows };
+  });
+
+  // Both parses have to have found a table, or `deepEqual` passes on two empty lists — the
+  // comparison that was never made. A floor rather than the count, so that the two sides are
+  // compared BEFORE the number is: a row added to one side has to fail as the drift it is, not
+  // as a parse this test can no longer read.
+  for (const { rel, rows } of sides)
+    assert.ok(rows.length >= 5, `parsed ${rows.length} level rows from ${rel}, expected at`
+      + ` least five — the heading matched but the row regex did not`);
+
+  assert.deepEqual(sides[0].rows, sides[1].rows,
+    `the review level table has drifted between its two copies.\n`
+    + `${sides[0].rel}:\n  ${sides[0].rows.map((r) => r.join(" -> ")).join("\n  ")}\n`
+    + `${sides[1].rel}:\n  ${sides[1].rows.map((r) => r.join(" -> ")).join("\n  ")}\n`
+    + `Both carry the same seven rows in the same order, and the order is what decides a level.`);
+
+  // The tripwire, and the one claim both files make in prose: `low` is the sixth row. A row
+  // added or reordered on BOTH sides agrees with itself and still has to come through here.
+  assert.deepEqual(sides[0].rows.map((r) => r[1]),
+    ["high", "high", "high", "medium", "medium", "low", "medium"],
+    "the level sequence moved. `low` is the sixth row, and both copies spend a paragraph on why:"
+    + " a path on `low_review_paths` that also matches a higher row takes the higher level.");
+});
+
 // ── Unresolved template output (Ruling 111) ───────────────────────────────────
 //
 // `render()` returns an unresolved `{{key}}` as itself, and a table builder renders a missing row
