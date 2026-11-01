@@ -19,7 +19,7 @@ One domain per source-of-truth row, which is the usual mapping and holds here ex
 | `review` | `skills/seam-review/` — the level table, the rounds, the triggers |
 | `plugin` | `.claude-plugin/`, `commands/`, `README.md` — what a consumer installs and reads |
 | `tests` | `tests/`, `evals/` — the probe rule's half and the skills' half |
-| `docs` | `docs/`, `CLAUDE.md` — seam's own doc layer, eating its own dog food |
+| `docs` | `docs/` — seam's own doc layer, eating its own dog food |
 
 Kind stays on GitHub's defaults: `bug`, `enhancement`, `documentation`.
 
