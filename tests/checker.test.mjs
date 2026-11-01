@@ -2716,6 +2716,30 @@ test("a stated count is an ASCII number to both checkers, and never a crash", ()
   rm(dir);
 });
 
+// The A6 fix for `re.A` opened its own divergence, which is why this exists: Python's `re.I`
+// folds Unicode to ASCII (U+017F LONG S -> s, U+212A KELVIN SIGN -> k) and JS `i` WITHOUT `u`
+// excludes exactly those mappings. Measured before the `u` flag: Python True, Node false, on
+// both characters. Neither is as exotic as it looks — U+212A is what some keyboards and some
+// PDF extractions produce for a capital K.
+test("a retired name folds Unicode to ASCII identically in both languages", () => {
+  for (const [needle, prose] of [["beehives", "The BEEHIVE\u017f thing is gone."],
+                                 ["kelvin", "The \u212Aelvin thing is gone."]]) {
+    const { dir } = fixture({ mutate: ({ dir: d, edit }) => {
+      edit("docs/engineering.md", "Owns: stack, data access, and the hive-state vocabulary.",
+        "Owns: stack, data access, and the hive-state vocabulary. " + prose);
+      patchAssertion(d, "A6", { retired: [
+        { name: needle, became: "hives", reason: "the table was renamed" }] });
+    } });
+    const r = both(dir);
+    // Both must FIND it. Before the `u` flag Node found nothing while Python did, so an
+    // assertion that only compared the two sides would have passed on `0 === 0` after a
+    // regression that silenced both.
+    assert.equal(r.status, 1, `${needle}: expected a finding in both\n` + r.py.stdout + r.py.stderr);
+    assert.deepEqual(ids(r.findings), ["A6"], r.findings.join("\n"));
+    rm(dir);
+  }
+});
+
 test("a retired name is matched case-insensitively the same way in both languages", () => {
   // `re.A` restricts case folding to ASCII as well as the classes, so applying it to A6 — whose
   // pattern is `\b` + the repo's own name + `\b` — created a divergence that did not exist

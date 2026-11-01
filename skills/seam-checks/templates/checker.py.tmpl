@@ -1340,12 +1340,11 @@ def main() -> int:
     if on("A6"):
         ran += 1
         for entry in opt("A6", "retired", []):
-            # The boundaries are written out and the folding is left Unicode. `re.A` would make
-            # both ASCII, and it is the FOLDING that must not be: `\bna\u00efve\b` against "The
-            # NA\u00cfVE thing" matches in Node and under plain `re.I`, and not under `re.I|re.A`
-            # — so one flag applied across sites whose right answers differ turned A6 into a
-            # finding in Node and silence here. JS word boundaries are ASCII-only whatever the
-            # flags, which is what the lookarounds say out loud.
+            # The boundaries are written out because JS word boundaries are ASCII-only whatever
+            # the flags. The folding is left Unicode here and Node carries `u` to match it: `re.A`
+            # would make both ASCII and silence `naïve` vs "NAÏVE", while `i` without `u` on
+            # the Node side is *narrower* than this, excluding U+017F LONG S and U+212A KELVIN
+            # SIGN. Both were measured divergences in turn; `re.I` here against `giu` there agrees.
             rx = re.compile(r"(?<![A-Za-z0-9_])" + re.escape(entry["name"])
                             + r"(?![A-Za-z0-9_])", re.I)
             for d in docs:

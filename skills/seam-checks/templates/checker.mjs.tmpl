@@ -18,7 +18,7 @@
 // by the test suite, because "a repo can switch languages without changing what is enforced" is
 // only true if it is checked.
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync, realpathSync } from "node:fs";
 import { join, dirname, basename, relative, resolve, sep } from "node:path";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -864,7 +864,7 @@ async function main() {
   const cfgFile = join(ROOT, CONFIG_PATH);
   if (!existsSync(cfgFile)) {
     process.stderr.write(`seam: no ${CONFIG_PATH} found above `
-      + `${dirname(fileURLToPath(import.meta.url))}\n`);
+      + `${realpathSync(dirname(fileURLToPath(import.meta.url)))}\n`);
     return 2;
   }
   // Two refusals, not one, and neither interpolates the engine's own sentence into the line the
@@ -1293,12 +1293,14 @@ async function main() {
   if (on("A6")) {
     ran += 1;
     for (const entry of opt("A6", "retired", [])) {
-      // The boundaries are written out, and `u` is deliberately NOT set: a `\b` here is
-      // ASCII-only whatever the flags, which the lookarounds say out loud, and the FOLDING must
-      // stay Unicode so `naïve` still matches "NAÏVE" — which is what Python's `re.I` does
-      // without `re.A`.
+      // The boundaries are written out because a `\b` here is ASCII-only whatever the flags,
+      // and `u` IS set, because without it JS folding is *narrower* than Python's `re.I`: `i`
+      // alone excludes the Unicode-to-ASCII mappings, so U+017F LONG S and U+212A KELVIN SIGN
+      // matched a retired ASCII name in Python and not here. Measured both ways; with `giu` the
+      // two sides agree on those, `naïve` still matches "NAÏVE", and a name inside a longer
+      // ASCII word still does not match.
       const rx = new RegExp("(?<![A-Za-z0-9_])"
-        + entry.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?![A-Za-z0-9_])", "gi");
+        + entry.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?![A-Za-z0-9_])", "giu");
       for (const d of docs) {
         for (const m of withoutStruck(textOf[d]).matchAll(rx)) {
           findings.push(finding("A6", d, lineOf(textOf[d], m.index), entry.name,

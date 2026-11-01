@@ -599,7 +599,12 @@ pass:
   each is refused by name, saying what shape that value has to have and why a reader needs it. It is one pass
   before anything indexes any of them, because the same malformed config was a `TypeError` in
   Node and a `KeyError` or an `AttributeError` in Python: two different endings for one config,
-  and a traceback is never an acceptable ending for a malformed config. Unreadable JSON, and a
+  and a traceback is never an acceptable ending for a malformed config **shaped like one the
+  wizard writes**. Three keys sit outside that: `A7.reversed[i].pattern`,
+  `A9.count_sites[i].pattern` and `A3.extra_tokens[i]` are compiled raw, so `"("` is a
+  `re.error` against a `SyntaxError` — reachable only from a hand-written config, and recorded
+  in the findings ledger rather than closed here, because scoping what a repo's own regex may
+  contain is a policy decision and not a shape check. Unreadable JSON, and a
   config that is not an object at all, are refused the same way.
 - **No assertion enabled.** A config with no `assertions` block, or one with every switch off,
   would emit a checker that measures nothing and exits 0. That cannot be told apart from passing,
