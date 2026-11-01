@@ -54,7 +54,7 @@ full-suite run, and two of the four had not been touched by it — `wizard-green
 `wizard-interview` at 0.63, whose `questions-asked` grader had passed on an earlier run with no
 change to it since. Either a figure here carries its run count, or the case is marked
 **indicative** the way `github-merge-gate` is. **Do not fix this by raising every case's `runs`:**
-that multiplies a real dollar cost across sixteen cases, and the number is what was missing, not
+that multiplies a real dollar cost across eighteen cases, and the number is what was missing, not
 the runs. The tables below carry the count in their own column, and a case with no row in them is
 unmeasured rather than zero.
 
@@ -133,6 +133,7 @@ a case shipped green has not been watched failing, and that mutation is the comm
 **Both `build-*` cases ship RED, and the reason is a measured defect rather than a grader asking
 more than the method does.** Loosening either to green would be the thing this whole file argues
 against.
+
 Their rates, each `--ablation none`, measured either side of the `seam-build` § Step 0 change
 that gave the finish contract a named source and an ending for the case where it has none:
 
@@ -178,10 +179,11 @@ be "not done", separately from whatever the run then went on to do about it.
 
 ### Which cases the plugin actually changes
 
-`--ablation with-without` is the number worth reading. **Six of the sixteen cases have been
+`--ablation with-without` is the number worth reading. **Six of the eighteen cases have been
 measured both ways**, and over the runs stated those six sort into cases that earn their keep and
-cases that are regression guards. The other ten carry no row here, which means unmeasured, not
-zero — `build-finish-no-doc` among them, whose numbers above are a plugin arm only:
+cases that are regression guards. The other twelve carry no row here, which means unmeasured, not
+zero — `build-finish-no-doc` and `context-level-no-doc` among them, whose numbers above are a
+plugin arm only:
 
 | Case | with | without | Δ | runs |
 |---|---|---|---|---|
