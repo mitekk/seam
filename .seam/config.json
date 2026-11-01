@@ -55,7 +55,7 @@
     {
       "path": "docs/decisions.md",
       "layer": 3,
-      "enforces": "",
+      "enforces": "node --test tests/red-proof.test.mjs",
       "create": true
     },
     {

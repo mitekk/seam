@@ -98,11 +98,11 @@ owner, and `evals/github-pr-shape` is the only measurement.
 
 *2026-11-01 · settled*
 
-Seventeen checks on this branch passed without making the comparison they were written to make.
-Not one was caught by `claude plugin validate`, by the checker, by the type system or by reading
-the diff; every one was caught by **executing** the thing. A check that cannot fail is
-indistinguishable from a check that holds, and it is worse than no check at all, because the
-reader stops looking.
+Checks on this branch kept passing without making the comparison they were written to make — in
+the checker's assertions, in the test suite and in the eval graders alike. Not one was caught by
+`claude plugin validate`, by the checker, by the type system or by reading the diff; every one was
+caught by **executing** the thing. A check that cannot fail is indistinguishable from a check
+that holds, and it is worse than no check at all, because the reader stops looking.
 
 **Settled:** shipping an assertion means shipping **the command that makes it fail and that
 command's real output**. This binds the checker's assertions, the test suite and the eval graders
@@ -120,13 +120,17 @@ rather than reasoned:
    prefer the direction that fails **closed**. A false positive gets investigated; a false
    negative passes the violation in silence. "It is documented" is an acceptable ending for the
    first and not for the second.
-4. **The round written to close an instance is where the next one appears.** Five of the
-   seventeen arrived inside a fix round, two of those written by whoever was reviewing. So a fix
-   round's own output gets the same RED proof as the work it was fixing, and the re-review reads
-   the fix for the defect it was closing.
+4. **The round written to close an instance is where the next one appears.** It has happened
+   repeatedly on this branch, and more than once the new instance was written by whoever was
+   reviewing. So a fix round's own output gets the same RED proof as the work it was fixing, and
+   the re-review reads the fix for the defect it was closing.
 
-**Why, measured** — seventeen as of this branch, across eleven tasks. Three make the case on
-their own:
+**Why, measured.** **This entry keeps no count, deliberately.** A total here could only ever be
+superseded by a second dated section, and this one went stale twice inside the branch that found
+it, from a single source — which is the shape of claim that gets a command rather than a number.
+The instances that were fixed are in the commits that closed them; the ones that are **not**
+becoming work are rows in `docs/findings-ledger.md`, and that is where a running record belongs.
+Three instances make the case on their own:
 
 - a grader asserting a gate matched the model's own free-text `description` of its command rather
   than the command, so it fired on the read-only inspection the gate *requires* while still
@@ -138,10 +142,10 @@ their own:
   them switched off.
 
 **Rejected:** a convention that a new assertion gets a test, which is what the suite already had
-while all seventeen shipped — the test existing is not the proof, the test having been *watched*
-failing is. And locking this entry: `**Locked**` means not corrected, not softened, not ever, and
-this branch corrected four of its own rules while writing them. A rule this young has not earned
-a marker that forbids its own correction, so **D-003 is deliberately not locked**.
+while every one of these shipped — the test existing is not the proof, the test having been
+*watched* failing is. And locking this entry: `**Locked**` means not corrected, not softened, not
+ever, and this branch corrected its own rules repeatedly while writing them. A rule this young has
+not earned a marker that forbids its own correction, so **D-003 is deliberately not locked**.
 
 **Costs if wrong:** a RED proof per assertion is real work, and on a cheap assertion it can cost
 more than the assertion does. The mitigation is that the proof is a command and its output, not a

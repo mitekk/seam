@@ -29,7 +29,7 @@ layer **cites** a higher one and never restates it.
 | `docs/building.md` | 2 Current | The start contract, the finish contract, the test-first rule, and the proportionality rule with its three sizes |  |
 | `docs/context.md` | 2 Current | The threshold table, what triggers a level, the dispatch rule, and where a session's own artifacts live |  |
 | `docs/routing.md` | 2 Current | The model and effort pinned per artifact, and this repo's agent shape |  |
-| `docs/decisions.md` | 3 Decisions | What was chosen, the options rejected, and why — plus in-flight rulings and direction corrections |  |
+| `docs/decisions.md` | 3 Decisions | What was chosen, the options rejected, and why — plus in-flight rulings and direction corrections | `node --test tests/red-proof.test.mjs` |
 | `docs/superpowers/specs/*.md` | 5 Seam | Nothing — dated design documents. Superseded wholesale; a design that changes is rewritten or replaced, never amended into agreement with what shipped |  |
 | `docs/superpowers/plans/*.md` | 5 Seam | Nothing — implementation plans. Superseded wholesale; a plan whose shape changes is rewritten, never amended into agreement with what shipped |  |
 | `docs/findings-ledger.md` | 6 Ledger | Nothing — true observations about this tree that are not becoming work |  |
@@ -129,25 +129,41 @@ an exemption; only "non-deterministic" is.
 - **The wizard never rewrites an existing doc's body**, and touches `CLAUDE.md` only between its
   two markers.
 - **Prose wraps at about 100 columns. It is a target, not an assertion, and it has exemptions.**
-  The point is a diff that reads in one pane, so what is exempt is anything that cannot wrap
+  The point is a diff that reads in one pane, so what is exempt is anything that **cannot** wrap
   without changing meaning: a **markdown table row**, which would become two rows; a line inside
-  a **fenced block**, which is content; and a line that is one long **URL or path**. Everything
-  else is prose, and prose is wrapped. This is written down because it was enforced on four
-  tasks' worth of work while appearing nowhere in the repo, and enforced wrongly — the
-  interview reference, which is almost entirely table, broke it 25 times, the longest row at 809
-  characters, and two of the longest were written under the rule.
+  a **fenced block**, which is content; and a line held over the budget by **one unbreakable
+  token**, a URL or a path longer than the budget itself. Everything else is prose, and prose is
+  wrapped. This is written down because it was enforced on four tasks' worth of work while
+  appearing nowhere in the repo, and enforced wrongly — the interview reference, which is almost
+  entirely table, broke it 25 times, the longest row at 809 characters, and two of the longest
+  were written under the rule.
 
-  **The tree does not hold to it exactly**, which is why the target is "about" and why nothing
+  **`docs/superpowers/` is exempt as a tree**, and for a reason rather than for convenience: it is
+  layer 5, superseded wholesale, so its files are **rewritten, never amended** — rewrapping one
+  would be an edit its own edit rule does not have. Its long lines are therefore not offenders and
+  the command below does not report them.
+
+  **The tree does not hold to the target exactly**, which is why it is "about" and why nothing
   asserts it. What a new paragraph is held to is the number; what the tree is held to is nobody
-  rewrapping a file to chase it. The overflow is one command, which names the lines rather than a
-  count that goes stale:
+  rewrapping a file to chase it. The overflow is one command, which implements the three
+  exemptions above and names the lines rather than a count that goes stale:
 
   ```bash
   for f in $(git ls-files '*.md' | grep -v '^docs/superpowers/'); do
-    awk -v F="$f" '/^```/ {fence=!fence; next}
-      !fence && length($0) > 100 && $0 !~ /^[ \t]*\|/ {print F":"NR" ("length($0)")"}' "$f"
+    awk -v F="$f" '
+      BEGIN { fencepat = "^[ \t]*" sprintf("%c%c%c", 96, 96, 96) }
+      $0 ~ fencepat { fence = !fence; next }
+      fence || /^[ \t]*\|/ { next }
+      length($0) <= 100 { next }
+      { longest = 0; n = split($0, t, /[ \t]+/)
+        for (i = 1; i <= n; i++) if (length(t[i]) > longest) longest = length(t[i])
+        if (longest <= 100) print F":" NR " (" length($0) ")" }
+    ' "$f"
   done
   ```
+
+  The fence test is built with `sprintf` rather than written as a literal, because three backticks
+  inside a fenced block would close the block this command lives in.
 
 ## Process
 
