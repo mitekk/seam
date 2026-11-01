@@ -31,6 +31,7 @@ anyway.
 | `build-finish-contract` | a unit whose named test never ran: which of the four clauses is unmet, and the test actually run |
 | `build-finish-no-doc` | the same unit with **no `docs/building.md` in the fixture**: that a four-clause contract is reached at all, rather than the plan's `Done when` standing in for one |
 | `context-level` | the level read off the figure not the agent count, the Orange action in full, and no invented threshold |
+| `context-level-no-doc` | the same with **no `docs/context.md` in the fixture**: that the thresholds are reached and the file they came from is named, rather than a level being assigned from nowhere |
 
 ## Authoring a case: two rules, both measured
 
@@ -108,8 +109,30 @@ in the suite that can see whether the finish contract is reached through the ski
 `$CLAUDE_PLUGIN_ROOT` fallback or not reached at all. Earlier readings of this file and of Task
 10's report had those two the other way round; the shipped tree is what is described here.
 
-**Both cases ship RED, and the reason is a measured defect rather than a grader asking more than
-the method does.** Loosening either to green would be the thing this whole file argues against.
+**The same pair exists for the context budget, and there the answer came out the other way.**
+`context-level`'s fixture carries a `docs/context.md`; `context-level-no-doc` is the same session,
+the same figure and the same question with that file removed, so the thresholds have to come
+through `seam-context`'s `$CLAUDE_PLUGIN_ROOT` route or from nowhere. It passes **3 of 3**, score
+1.00, and the mechanism is unanimous: every run named
+`skills/seam-docs/templates/current/context.md` as where the table came from, two of the three
+reading it with `cat` rather than `Read`.
+
+**That case was built expecting the finish contract's defect and did not find it, and the
+counterfactual says why.** `seam-context/SKILL.md:20-23` tells the session to *"read the template
+meanwhile"*; `seam-build`'s equivalent paragraph said *"rather than improvising a contract"* and
+never named a read at all. Rewriting the context skill's clause into that older shape — one
+sentence, nothing else — takes the case from 3 of 3 to **0 of 3**, score 0.20, `FAIL FAIL FAIL`
+unanimous on every run, and the runs say what went wrong in their own words: *"What level are we
+at: I can't tell you… If I picked a level now, I'd be inventing the threshold on the spot."* They
+still **name** the template, in the offer to write the repo its own, and never read it.
+
+So the clause is load-bearing in the protective direction, the opposite of what an earlier reading
+of it supposed, and the case is the regression guard for it. **It is also that case's RED proof**:
+a case shipped green has not been watched failing, and that mutation is the command that fails it.
+
+**Both `build-*` cases ship RED, and the reason is a measured defect rather than a grader asking
+more than the method does.** Loosening either to green would be the thing this whole file argues
+against.
 Their rates, each `--ablation none`, measured either side of the `seam-build` § Step 0 change
 that gave the finish contract a named source and an ending for the case where it has none:
 
