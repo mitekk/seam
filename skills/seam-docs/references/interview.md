@@ -147,6 +147,7 @@ rather than asking open questions about them.
 | `load_bearing` | `[]` | Absent means empty, which is the honest answer for a repo where nothing enforces anything yet. |
 | `teardown_command` | `""` | Absent means empty, and empty means deleting the branch is the whole teardown — the common case, because most repos have nothing else to take down. A value here is the repo's own command, and the tracker conventions run it as the last step of a merge rather than when someone notices later. |
 | `checker.path` | from the language | `scripts/check_docs.py` or `scripts/check_docs.mjs`. |
+| `seam_version` | the running plugin's own `version` | Read from `.claude-plugin/plugin.json`, never a constant in the program — it was one, and a 0.2.0 wizard stamped `0.1.0`. A value in the answers file still wins, so a repo adopted under 0.1.x keeps saying so and the README's upgrade path still reads. Unreadable manifest, or no `version` in it: refused, because the field reaches `.seam/provenance.json` too. |
 | `assertions.A4.not_fields` | a built-in list of extensions and TLDs, **plus** whatever you add | So a repo cannot blind A4 by naming one exemption of its own. `not_fields_override` replaces the list outright, for the repo whose column really is called `html`. |
 | `field` | **asked, no default** | Green or brown field is the one answer the rest of the interview branches on, and it is not readable off the tree with any confidence — a repo whose `docs/` holds one stale file is a judgement call. `field_reason` has no fallback either, unlike `domains[].covers`: a determination without its reason reads as an error to whoever finds it next. |
 | `checker.language` | asked, no default | |
@@ -165,6 +166,11 @@ are not there. Each failure names the key path:
   milestone 1, so an unanswered field ships `{{field}}` into that row as itself
 - `field_reason` absent or empty — the determination is a judgement about the tree as it stands,
   and the reason is the half that keeps it readable later
+- the plugin's own `.claude-plugin/plugin.json` unreadable, or carrying no `version` string, when
+  the answers file omits `seam_version` — the version reaches `.seam/config.json` **and**
+  `.seam/provenance.json`, which is A16's record of which seam wrote that pair, so a guessed one
+  reads as a fact later. An answers file that names a version is never second-guessed, so a repo
+  adopted under 0.1.x keeps saying so
 - `table.file` missing
 - `checker.language` not `python` or `node`
 - `checker.path` given with an extension that does not match the language

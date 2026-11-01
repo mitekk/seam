@@ -809,6 +809,40 @@ test("several layer-5 rows give A8 every one of them", () => {
   rm(dir);
 });
 
+test("seam_version is stamped from plugin.json, not from a constant in the wizard", () => {
+  // Round 2's Important. `seam_version: a.seam_version ?? "0.1.0"` meant a 0.2.0 wizard stamped
+  // 0.1.0 onto an answers file that omits the key, and nothing compared the constant to
+  // `.claude-plugin/plugin.json`. `bin/generate-checker.mjs:121` already reads the version from
+  // plugin.json, so the pattern existed and the wizard was the one place not using it.
+  //
+  // The expected value is READ FROM plugin.json, not written here: a literal would be the third
+  // copy of the version and this test would pass on the day it went stale.
+  const shipped = JSON.parse(
+    readFileSync(join(REPO, ".claude-plugin/plugin.json"), "utf8")).version;
+  assert.match(shipped, /^\d+\.\d+\.\d+$/, "plugin.json carries no version this test can read");
+
+  const ans = answers();
+  delete ans.seam_version;
+  const { dir, r } = init(ans);
+  assert.equal(r.status, 0, r.stderr);
+  const cfg = JSON.parse(read(dir, ".seam/config.json"));
+  assert.equal(cfg.seam_version, shipped,
+    `the wizard stamped ${cfg.seam_version} where .claude-plugin/plugin.json says ${shipped}.`
+    + ` The version a config records is the version of the wizard that wrote it, and a constant`
+    + ` in bin/seam-init.mjs is a copy with nothing comparing it.`);
+  // The provenance sidecar reads the same field, so it moves with it — A16's record of "which
+  // seam wrote this pair" is only worth anything if it names the real one.
+  assert.equal(JSON.parse(read(dir, ".seam/provenance.json")).seam_version, shipped);
+  rm(dir);
+
+  // An answers file that names a version still wins: a repo adopted under 0.1.x keeps saying so,
+  // which is what the README's upgrade path reads.
+  const pinned = answers({ seam_version: "0.1.0" });
+  const { dir: old } = init(pinned);
+  assert.equal(JSON.parse(read(old, ".seam/config.json")).seam_version, "0.1.0");
+  rm(old);
+});
+
 test("A1's intent globs come from the layer-5 rows, not a hardcoded path", () => {
   // I3, and the same defect as A8's above — three lines below the comment in `seam-init.mjs`
   // that rejects it. `intent_globs` exempts the docs whose citations are INTENTIONS: a plan

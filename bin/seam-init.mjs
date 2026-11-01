@@ -22,7 +22,37 @@ import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const TEMPLATES = join(HERE, "..", "skills", "seam-docs", "templates");
+const PLUGIN = join(HERE, "..");
+const TEMPLATES = join(PLUGIN, "skills", "seam-docs", "templates");
+
+/** This plugin's own version, read rather than held as a constant.
+ *
+ * It was `"0.1.0"` inline, so a 0.2.0 wizard stamped 0.1.0 onto any answers file that
+ * omitted the key and nothing compared the two — the version a config records is supposed
+ * to be the version of the wizard that wrote it, and `.seam/provenance.json` carries the
+ * same field for A16. `bin/generate-checker.mjs` already reads it from here, so the pattern
+ * existed and this was the one place not using it.
+ *
+ * Refused rather than guessed when it cannot be read: the manifest ships beside this file,
+ * so an unreadable one is a broken install, and a stamped guess is a wrong provenance
+ * record that reads as a fact later. */
+function seamVersion() {
+  const manifest = join(PLUGIN, ".claude-plugin", "plugin.json");
+  let v;
+  try {
+    v = JSON.parse(readFileSync(manifest, "utf8")).version;
+  } catch (e) {
+    die(`cannot read ${manifest} to learn this plugin's own version — ${e.message}. That`
+      + ` file ships beside the wizard, so this is a broken install rather than a repo`
+      + ` problem. Nothing is written: the version reaches .seam/config.json and`
+      + ` .seam/provenance.json, where a guess would read as a fact later.`);
+  }
+  if (typeof v !== "string" || !v) {
+    die(`${manifest} carries no \`version\` string, so the wizard cannot say which seam`
+      + ` wrote this config. Nothing is written.`);
+  }
+  return v;
+}
 
 const LAYERS = {
   1: { name: "Artifact", rule: "changes with the code" },
@@ -408,7 +438,7 @@ function project(a, answersRel = null) {
   }
   // Explicit key order, so two runs on one answers file produce one byte sequence.
   const cfg = {
-    seam_version: a.seam_version ?? "0.1.0",
+    seam_version: a.seam_version ?? seamVersion(),
     repo: a.repo ?? { name: basename(process.cwd()), default_branch: "main" },
     // Green or brown field. A machine key, not prose: it is a two-valued fact about the tree, and
     // the skills branch on it. Its reason is prose and stays in the answers file.
