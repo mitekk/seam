@@ -54,8 +54,8 @@ reported as `Large`: the reach is the same and the cost of being wrong is not.
   "load_bearing": ["db/schema.sql"],
   "domains": [{ "name": "hives" }, { "name": "web" }, { "name": "infra" }],
   "milestones": [
-    { "n": 1, "title": "Queenless list", "active": false },
-    { "n": 2, "title": "Inspection window", "active": true }
+    { "n": 2, "title": "Queenless list", "active": false },
+    { "n": 3, "title": "Inspection window", "active": true }
   ]
 }
 ```

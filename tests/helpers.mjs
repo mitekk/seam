@@ -115,7 +115,7 @@ export function answers(overrides = {}) {
     load_bearing: ["db/schema.sql"],
     low_review_paths: [],
     domains: [{ name: "core", covers: "The one subsystem this scratch repo has" }],
-    milestones: [{ n: 1, title: "First subsystem", green: "its tests pass", active: true }],
+    milestones: [{ n: 2, title: "First subsystem", green: "its tests pass", active: true }],
     agents: [],
     assertions: {},
     open_questions: ["Whether this repo needs a second domain."],

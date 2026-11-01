@@ -111,7 +111,7 @@ test("writes .seam/config.json as the answers minus every prose key", () => {
   assert.deepEqual(cfg.low_review_paths, []);
   // `active` is a machine key: the qualifier's third clause reads it from here, so a projection
   // that dropped it would leave the clause with no fact to check.
-  assert.deepEqual(cfg.milestones, [{ n: 1, title: "First subsystem", active: true }]);
+  assert.deepEqual(cfg.milestones, [{ n: 2, title: "First subsystem", active: true }]);
   assert.deepEqual(
     cfg.docs.map((d) => [d.path, d.layer]),
     [
@@ -359,7 +359,7 @@ test("a layer-2 row named taxonomy.md gets the taxonomy template, not the generi
     { name: "hives", covers: "Hive state and inspection scheduling" },
     { name: "web", covers: "The pages a beekeeper opens" },
   ];
-  ans.milestones = [{ n: 1, title: "Queenless list", green: "the list renders from the database", active: true }];
+  ans.milestones = [{ n: 2, title: "Queenless list", green: "the list renders from the database", active: true }];
   const { dir, r } = init(ans);
   assert.equal(r.status, 0, r.stderr);
   const t = read(dir, "docs/taxonomy.md");
@@ -867,8 +867,8 @@ test("A15's default_branch must be a branch name", () => {
 // — a quietly wrong config would leave the clause pointing at nothing, or at two things.
 
 const TWO_MILESTONES = (a0, a1) => [
-  { n: 1, title: "Queenless list", green: "the list renders", active: a0 },
-  { n: 2, title: "Inspection plan", green: "a week of inspections renders", active: a1 },
+  { n: 2, title: "Queenless list", green: "the list renders", active: a0 },
+  { n: 3, title: "Inspection plan", green: "a week of inspections renders", active: a1 },
 ];
 
 test("exactly one milestone may be active", () => {
@@ -895,8 +895,8 @@ test("every milestone says whether it is active, as a boolean", () => {
   // A string "true" is truthy and a missing key is falsy; both would pass a loose check and give
   // a config whose `active` means different things on different rows.
   for (const [ms, at] of [
-    [[{ n: 1, title: "A", active: true }, { n: 2, title: "B" }], 1],
-    [[{ n: 1, title: "A", active: "true" }, { n: 2, title: "B", active: false }], 0],
+    [[{ n: 2, title: "A", active: true }, { n: 3, title: "B" }], 1],
+    [[{ n: 2, title: "A", active: "true" }, { n: 3, title: "B", active: false }], 0],
   ]) {
     const { dir, r } = init(answers({ milestones: ms }));
     assert.equal(r.status, 2, `${JSON.stringify(ms)}: ${r.stdout}`);
@@ -1078,6 +1078,15 @@ test("milestone 1 is the field determination, from the template, for every repo"
     // first milestone would be waiting behind it forever.
     assert.equal(first.at(-1), "no", `${where}: milestone 1 is marked active: ${first}`);
     for (const cells of rows) assert.equal(cells.length, rows[0].length, `ragged row: ${cells}`);
+    // **No two rendered rows share a number.** "The repo's own build order is numbered from 2" is
+    // a method rule, and the only thing that can hold a worked example to it is this assertion:
+    // a repo whose own first milestone is `n: 1` renders a table with two rows numbered 1, which
+    // is what every fixture in this tree did on the day the rule shipped. Checking row 1 alone
+    // and matching the rest by title is how that went green.
+    const numbers = rows.slice(2).map((cells) => cells[0]);
+    assert.deepEqual([...new Set(numbers)], numbers,
+      `${where}: two milestone rows share a number (${numbers.join(", ")}) — milestone 1 is the`
+      + ` field determination, so the repo's own build order starts at 2`);
     assert.match(doc, /every doc here was written by this method/,
       `${where}: the reason the determination was made is not written beside it`);
     assert.equal(doc.indexOf("{{"), -1, `${where}: the rendered taxonomy carries a placeholder`);
@@ -1259,7 +1268,7 @@ test("every key path seam-github reads resolves, and the asked ones carry a ques
       + ` reading it in the skill`);
   // Then the stricter test, for the keys the interview must **ask**: a row whose **answers-key
   // cell** is that key. Scoped to the cell because a key named in another row's Notes let the
-  // interview lose question 4 (`load_bearing`) or question 11 (`milestones[].active`) green.
+  // interview lose question 5 (`load_bearing`) or question 8 (`milestones[].active`) green.
   // Per top-level key by design — which subkey a row asks for is the resolution check's business.
   const askedFor = (k) => cells.some((c) => new RegExp("`" + k + "(`|\\[|\\.)").test(c.key));
   assert.deepEqual(named.filter(askedFor),
@@ -1534,7 +1543,7 @@ test("a domain or milestone row with no label is refused, not rendered as `undef
   for (const [key, patch] of [
     ["domains[0].name", { domains: [{ covers: "no name at all" }] }],
     ["milestones[0].n", { milestones: [{ title: "First", green: "tests pass", active: true }] }],
-    ["milestones[0].title", { milestones: [{ n: 1, green: "tests pass", active: true }] }],
+    ["milestones[0].title", { milestones: [{ n: 2, green: "tests pass", active: true }] }],
   ]) {
     const { dir, r } = init(answers(patch));
     assert.equal(r.status, 2, `${key} missing was accepted: ${r.stdout}`);
@@ -1577,11 +1586,11 @@ test("an empty milestones list and a one-row active list are both accepted", () 
   rm(empty.dir);
 
   const one = init(answers({
-    milestones: [{ n: 1, title: "Green or brown field", green: "the determination is recorded", active: true }],
+    milestones: [{ n: 2, title: "Green or brown field", green: "the determination is recorded", active: true }],
   }));
   assert.equal(one.r.status, 0, one.r.stderr);
   assert.deepEqual(JSON.parse(read(one.dir, ".seam/config.json")).milestones,
-    [{ n: 1, title: "Green or brown field", active: true }]);
+    [{ n: 2, title: "Green or brown field", active: true }]);
   rm(one.dir);
 });
 

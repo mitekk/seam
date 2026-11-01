@@ -63,7 +63,7 @@ function adopterAnswers(format) {
     load_bearing: [],
     low_review_paths: [],
     domains: [{ name: "hives", covers: "The one subsystem this repo has" }],
-    milestones: [{ n: 1, title: "Queenless list", green: "its tests pass", active: true }],
+    milestones: [{ n: 2, title: "Queenless list", green: "its tests pass", active: true }],
     agents: [],
     assertions: {},
     date: TODAY,
