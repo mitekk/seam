@@ -2860,3 +2860,37 @@ test("A13 reads the gap before a successor number as the same class in both", ()
     a.findings[0]);
   rm(ascii);
 });
+
+test("A2's adjacency gap ends where the gap ends, in both languages", () => {
+  // I2. `ADJACENT_RE` is `^[ \t\r\n\f\v,*]{0,4}$` on both sides, and Python's `$` also matches
+  // just before a trailing newline — so a FIVE-character gap whose fifth character is that
+  // newline matched in Python and not in Node. It reaches A2's `target` branch, where the gap is
+  // `para[target_end:m.start()]` with no length guard of its own (the `shadow` branch pre-checks
+  // `m.start() - shadow_end <= 4` and is safe). Under the default `bare_sections: false` that
+  // made one `§` citation targeted in Python — checked, and reported — and skipped in Node.
+  // Python now uses `\Z`, which is the end of the string in both engines.
+  const gap = "**  \n";                       // five characters, the last one a newline
+  assert.equal(gap.length, 5);
+  const { dir } = fixture({ mutate: ({ edit }) =>
+    edit("docs/engineering.md", "`docs/checks.md` § Checks", "`docs/checks.md`" + gap + "§ Rollback") });
+  const r = both(dir);
+  // Over four characters the binding lapses in both, so the `§` is read as naming nothing a
+  // targeted citation can resolve and is skipped rather than reported — Node's reading, now
+  // Python's too.
+  assert.deepEqual(r.findings, [], r.findings.join("\n"));
+  assert.equal(r.status, 0, r.py.stdout);
+  rm(dir);
+
+  // The four-character twin, newline-terminated as well: this cannot pass by A2 going quiet on
+  // any gap that ends in a newline. Inside the bound the citation is still targeted, and
+  // `§ Rollback` is still no heading of docs/checks.md.
+  const short = "*  \n";
+  assert.equal(short.length, 4);
+  const { dir: near } = fixture({ mutate: ({ edit }) =>
+    edit("docs/engineering.md", "`docs/checks.md` § Checks", "`docs/checks.md`" + short + "§ Rollback") });
+  const n = both(near);
+  assert.equal(n.status, 1, n.py.stdout);
+  assert.deepEqual(ids(n.findings), ["A2"], n.findings.join("\n"));
+  assert.match(n.findings[0], /cites `docs\/checks\.md` § Rollback/, n.findings[0]);
+  rm(near);
+});

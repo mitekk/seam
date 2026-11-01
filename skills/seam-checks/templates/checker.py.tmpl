@@ -506,7 +506,11 @@ MD_CITE_RE = re.compile(r"`([\w./@-]+\.md)`", re.A)
 # A `|` ends a section name: it is a table cell boundary and never part of a heading.
 TOKEN_RE = re.compile(r"`([^`\n]+)`|(?<![`\w./-])([\w./-]+\.md)(?![\w.-])"
                       r"|§[ \t\n]*([A-Za-z][^.;:—(*`§|\n]*)", re.A)
-ADJACENT_RE = re.compile(r"^[ \t\r\n\f\v,*]{0,4}$")
+# `\Z`, not `$`: Python's `$` also matches just before a trailing newline, so a FIVE-character
+# gap whose fifth character is a newline matched here and not in Node — and A2's `target`
+# branch has no length guard of its own, so that made one `§` citation targeted on this side
+# and skipped on the other. `\Z` is the end of the string, which is what Node's `$` is here.
+ADJACENT_RE = re.compile(r"^[ \t\r\n\f\v,*]{0,4}\Z")
 CONNECTOR_RE = re.compile(r"^[ \t\r\n\f\v,]*(?:and|or)?[ \t\r\n\f\v,]*$")
 
 
