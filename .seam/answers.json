@@ -127,7 +127,50 @@
       "covers": "docs/ \u2014 seam's own doc layer, eating its own dog food"
     }
   ],
-  "milestones": [],
+  "milestones": [
+    {
+      "n": 2,
+      "title": "Skeleton",
+      "green": "`claude plugin validate --strict .` passes",
+      "active": false
+    },
+    {
+      "n": 3,
+      "title": "The doc wizard, greenfield",
+      "green": "the wizard runs end to end on a scratch repo from an answers file, emitting all six layers",
+      "active": false
+    },
+    {
+      "n": 4,
+      "title": "The adopt path",
+      "green": "a read-only run against a repo that already has a table reconstructs it, layers included",
+      "active": false
+    },
+    {
+      "n": 5,
+      "title": "The drift checker",
+      "green": "a clean fixture exits 0, each planted drift exits 1 naming its assertion, baselined violations pass while moved ones fail, and both emitted languages report identically",
+      "active": false
+    },
+    {
+      "n": 6,
+      "title": "GitHub conventions",
+      "green": "the eval suite scores issue shape, PR shape and the gate's refusal",
+      "active": false
+    },
+    {
+      "n": 7,
+      "title": "The review policy",
+      "green": "eval cases present diffs and the chosen level matches the table",
+      "active": false
+    },
+    {
+      "n": 8,
+      "title": "First real adoption",
+      "green": "the adopted repo carries no decision the plugin also carries, and its checker runs clean against its own baseline",
+      "active": true
+    }
+  ],
   "agents": [],
   "assertions": {
     "A1": {
@@ -180,7 +223,6 @@
     "path": ".seam/baseline.json"
   },
   "open_questions": [
-    "Does seam need a layer-4 PRD, given that README.md is the intent and it is public? No docs/prd row is proposed yet.",
-    "Which of seam's own milestones is the active one? docs/taxonomy.md lists the build order, and milestones[] here is empty because the wizard refuses a list with no active row and nobody has said which it is \u2014 which is what the interview says to record rather than guess."
+    "Does seam need a layer-4 PRD, given that README.md is the intent and it is public? No docs/prd row is proposed yet."
   ]
 }

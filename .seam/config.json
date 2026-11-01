@@ -102,7 +102,43 @@
       "name": "docs"
     }
   ],
-  "milestones": [],
+  "milestones": [
+    {
+      "n": 2,
+      "title": "Skeleton",
+      "active": false
+    },
+    {
+      "n": 3,
+      "title": "The doc wizard, greenfield",
+      "active": false
+    },
+    {
+      "n": 4,
+      "title": "The adopt path",
+      "active": false
+    },
+    {
+      "n": 5,
+      "title": "The drift checker",
+      "active": false
+    },
+    {
+      "n": 6,
+      "title": "GitHub conventions",
+      "active": false
+    },
+    {
+      "n": 7,
+      "title": "The review policy",
+      "active": false
+    },
+    {
+      "n": 8,
+      "title": "First real adoption",
+      "active": true
+    }
+  ],
   "agents": [],
   "assertions": {
     "A1": {

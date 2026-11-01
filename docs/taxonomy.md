@@ -49,7 +49,7 @@ The build order. Each ends green before the next starts, and each produces a rev
 | 5 | The drift checker | a clean fixture exits 0, each planted drift exits 1 naming its assertion, baselined violations pass while moved ones fail, and both emitted languages report identically | no |
 | 6 | GitHub conventions | the eval suite scores issue shape, PR shape and the gate's refusal | no |
 | 7 | The review policy | eval cases present diffs and the chosen level matches the table | no |
-| 8 | First real adoption | the adopted repo carries no decision the plugin also carries, and its checker runs clean against its own baseline | no |
+| 8 | First real adoption | the adopted repo carries no decision the plugin also carries, and its checker runs clean against its own baseline | yes |
 
 **Milestone 1 is the method's, and it is green on arrival.** Every repo adopting seam has it:
 establishing whether the repo is green or brown field is the first step to getting the rest
@@ -65,11 +65,21 @@ many. That is the adopt path. It is a judgement about the
 tree **as it stands**, not about its history: every doc here was written by this method, from an
 empty repo, and without that sentence "brownfield" reads as an error later.
 
-**No row is marked active, and that is recorded rather than guessed.** `milestones[]` in
-`.seam/config.json` is empty, because the wizard refuses a list with no active row and which of
-rows 2–8 is being built now has never been written down; it is an open question in
-`.seam/answers.json`. Until it is answered, the priority rule's `p1` — "in the active
-milestone" — has nothing to read, and `p0`'s second clause has nothing to block.
+**Row 8 is active, and it is derived rather than preferred.** Every row's *Green when* column is
+checkable, and 8's is the only one that is false: nothing has adopted seam yet, so no adopted repo
+exists to carry a decision or to run a checker against its own baseline. Rows 1 to 5 are met by
+things this repo runs: the determination is recorded, `claude plugin validate --strict .`
+passes, and `node --test tests/*.test.mjs` exercises the wizard end to end from an answers file,
+the adopt path's inventory, and every assertion in both emitted languages. Rows 6 and
+7 are met by the cases under `evals/` existing and scoring those things, not by a score read here:
+**the eval suite costs a model run per case and nothing in § Checks runs it**, so a claim about
+what it scored today would not be traceable. Row 8 is therefore the row the priority rule reads
+for `p1`, and the row `p0`'s second clause blocks against.
+
+The rows above are `milestones[]` in `.seam/answers.json`, projected into `.seam/config.json`,
+with `"active": true` on 8 and `false` on the rest — kept in step with this column by hand, as
+this file says above. Milestone 1 is not among them: it is the method's row, green on arrival, and
+the paragraph above says why it is never the active one.
 
 ## The tracker itself
 
