@@ -17,11 +17,25 @@ description: >
 contract, the test-first rule and the proportionality cut for this repo. This file is how to
 follow it while working; it never answers a question the doc answers.
 
-If the repo has no `docs/building.md`, say so once and offer to write it from
-`$CLAUDE_PLUGIN_ROOT/skills/seam-docs/templates/current/building.md` with `seam-docs`, rather than
-improvising a contract. A start and finish line invented per session is the thing the doc exists
-to replace. The offer is one line and it is **not a stop** — nothing in this method waits for
-permission, and the loop below still applies.
+## Step 0 — name where the contracts are being read from
+
+**No `docs/building.md` in the repo does not mean no contract.** It means the contract for this
+session is `$CLAUDE_PLUGIN_ROOT/skills/seam-docs/templates/current/building.md`, read now, and
+the offer to write the repo its own from that template with `seam-docs` is one line alongside —
+**not a stop**, because nothing in this method waits for permission.
+
+So **say which of the two the contracts came from, in one line, before step 1** —
+`Contracts: <the file> — <repo doc | plugin template standing in>` — and name that same file
+again with the verdict in § Finishing. A source that cannot be named is a contract that was invented,
+which is the thing the doc exists to replace, and naming it is the only way the difference is
+visible from outside the session.
+
+**If neither file is readable, this procedure cannot be completed, and that is where it stops.**
+Say the finish contract is not reachable and that nothing can be called done against a contract
+nobody read. **Do not put the plan's `Done when` cell in its place** — a plan is layer 5 and owns
+which units exist, not what done means, so a verdict reached through that cell alone is a verdict
+with no contract behind it. This is the one ending here that is a stop, and it stops because the
+written procedure has run out, not because it is waiting on an answer.
 
 ## The loop
 
@@ -61,10 +75,17 @@ same from its side; the two mandates would collide without it.
 
 ## Finishing
 
-Run the doc's finish contract clause by clause against the unit — or against the owning document,
-where a document owns the change — and **read the real output rather than recalling what it should
-have said**. Where the output and a stated expectation differ, that is a deviation: write the
-ruling before moving on, and move on — a ruling is not a stop.
+Run the finish contract clause by clause against the unit — or against the owning document,
+where a document owns the change — **naming the file step 0 resolved it from** and **reading the
+real output rather than recalling what it should have said**. Every clause gets a verdict; a
+verdict on the unit that walks fewer clauses than the contract has is a verdict on part of it.
+Where the output and a stated expectation differ, that is a deviation: write the ruling before
+moving on, and move on — a ruling is not a stop.
+
+**A clause that does not hold is not a question.** The unit is not done, and what that clause asks
+for is the rest of its work: do it now, then run the contract again from the top. Offering the fix
+and waiting is the shape this step fails in most often, because it reads as diligence —
+`docs/building.md` § The one principle is why it is not.
 
 **Write the ruling the doc's rulings section describes**, in the repo's layer-3 track and in the
 shape that track defines — `adr.format` in `.seam/config.json` says whether that is a dated entry
