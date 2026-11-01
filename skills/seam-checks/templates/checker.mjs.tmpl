@@ -1546,7 +1546,11 @@ async function main() {
           findings.push(finding("A13", d, 1, "Status",
             "a decision record carries a **Status:** — proposed, accepted, or superseded by NNNN"));
         } else if (m[1].toLowerCase().includes("superseded")) {
-          const succ = m[1].match(/superseded by\s+(\d{4})/i);
+          // Written out rather than `\s`, for the reason `ADJACENT_RE` above gives: this
+          // engine's `\s`, Python's Unicode `\s` and its ASCII one are three different
+          // sets. A U+00A0 here resolved the number in Node and did not in Python, so one
+          // record produced two finding texts and two baseline keys.
+          const succ = m[1].match(/superseded by[ \t\r\n\f\v]+(\d{4})/i);
           if (!succ) {
             findings.push(finding("A13", d, lineOf(text, m.index), m[1],
               "a superseded record names its successor by number, or the reversal is unfindable"));

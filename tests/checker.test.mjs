@@ -2819,3 +2819,44 @@ test("the table's Enforces cell is read the same way in both languages", () => {
   assert.match(r.findings[0], /enforced by `a\.sql`,`b\.sql`/, r.findings[0]);
   rm(dir);
 });
+
+// ── The final whole-branch review: two surviving parity divergences ──────────
+
+test("A13 reads the gap before a successor number as the same class in both", () => {
+  // I1. A13's successor regex was `/superseded by\s+(\d{4})/i` in Node against
+  // `superseded by[ \t\r\n\f\v]+` with `re.A` in Python — the last `\s` left in a matching
+  // position in either template, and `checker.mjs.tmpl` already carries the comment saying why
+  // that cannot stand: this engine's `\s`, Python's Unicode `\s` and its ASCII one are three
+  // different sets. A U+00A0 between `by` and the number resolved the successor in Node, which
+  // then reported a missing record 0002, and did not resolve in Python, which reported the
+  // status line instead. Two finding texts, two baseline keys, one tree.
+  const { dir } = fixture({
+    mutate: ({ edit }) => edit("docs/adr/0001-use-a-plain-table-for-the-queue.md",
+      "**Status:** accepted", "**Status:** superseded by 0002"),
+    // The mutation also changes a layer-3 file's bytes, which is A12's drift. Committing it
+    // makes those the default branch's own bytes, so only A13 can fire.
+    commitAfter: true,
+  });
+  const r = both(dir);
+  assert.equal(r.status, 1, r.py.stdout);
+  assert.deepEqual(ids(r.findings), ["A13"], r.findings.join("\n"));
+  // Non-ASCII whitespace is not the separator in either language now, so the number is not
+  // resolved and both say the record names no successor.
+  assert.equal(r.findings.length, 1, r.findings.join("\n"));
+  assert.match(r.findings[0], /a superseded record names its successor by number/, r.findings[0]);
+  rm(dir);
+
+  // The ASCII twin, so "they agree" cannot be A13 having stopped resolving successors at all:
+  // a plain space still resolves 0002 and still reports the record that is not there.
+  const { dir: ascii } = fixture({
+    mutate: ({ edit }) => edit("docs/adr/0001-use-a-plain-table-for-the-queue.md",
+      "**Status:** accepted", "**Status:** superseded by 0002"),
+    commitAfter: true,
+  });
+  const a = both(ascii);
+  assert.equal(a.status, 1, a.py.stdout);
+  assert.deepEqual(ids(a.findings), ["A13"], a.findings.join("\n"));
+  assert.match(a.findings[0], /names 0002 as its successor, and there is no such record/,
+    a.findings[0]);
+  rm(ascii);
+});
