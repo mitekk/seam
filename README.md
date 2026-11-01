@@ -143,9 +143,17 @@ it exempts, in `.seam/config.json`. Two places, two rules, and the difference is
 - The repo's **context file** — the sources-of-truth table, between
   `<!-- seam:sources-of-truth start -->` and `<!-- seam:sources-of-truth end -->`. Nothing outside
   the markers is touched. The default host is `CLAUDE.md`; which file hosts it is a config key.
-- `.seam/config.json` — the machine-readable projection: each doc's path and layer, load-bearing
-  globs, `low`-review paths, domains, milestones, artifacts, assertion switches and their
-  allow-lists, and the checker's language and path.
+- `.seam/config.json` — the machine-readable projection: whether the repo is green or brown field,
+  each doc's path and layer, load-bearing globs, `low`-review paths, domains, milestones,
+  artifacts, assertion switches and their allow-lists, and the checker's language and path.
+
+  **Green or brown field is the interview's first question**, because the path, the proposal, the
+  baseline and the never-rewrite rule all branch on it — and it is **milestone 1** in the repo's
+  own `docs/taxonomy.md`, which the taxonomy template ships for every repo with the reason the
+  determination was made beside it. The row is green on arrival and never the active milestone, so
+  the repo's own build order is numbered from 2. An answers file recorded before that question
+  existed carries no `field`: the wizard refuses it by name until the determination and its
+  one-sentence reason are added.
   [`skills/seam-docs/references/interview.md`](skills/seam-docs/references/interview.md) § Schema
   is the full key list; the three priorities are not in it, because they are fixed by the method
   and live in the repo's own `docs/taxonomy.md`.

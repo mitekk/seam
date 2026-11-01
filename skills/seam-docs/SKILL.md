@@ -42,6 +42,24 @@ Never:
   asked, and the answer goes in **in the user's words**.
 - writes a CI workflow when one already exists. It prints the job to add and changes nothing.
 
+## Establish the field first
+
+**Before proposing anything, establish whether this repo is green or brown field** — a tree with
+no docs, or a tree that already has docs. It is the interview's first question, it is recorded as
+`field` with the reason it was made beside it, and it selects which of the two paths below you
+run. Everything after it depends on it: what the proposal may claim, whether an existing doc's
+body is off limits, how big the baseline will be, and which assertions can run at all.
+
+It is **milestone 1 for every repo**, and the taxonomy template ships that row: the determination
+is the first step to getting the rest straight, so it is written down where the tracker can see it
+rather than only in the answers file. The row arrives already green — `bin/seam-init.mjs` cannot
+write the file without the answer — so it is never the active milestone, and the repo's own build order is
+numbered from 2.
+
+The judgement is about the tree **as it stands**, not about its history. A repo whose every doc
+was written by this method is still, as a tree, a repo that already has docs; say which it is and
+why, in one sentence, and record both.
+
 ## The two paths
 
 ### A tree with no docs

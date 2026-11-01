@@ -33,6 +33,8 @@ function adopterAnswers(format) {
     purpose: "A scratch adopter, used to perform every action the skills prescribe.",
     users: "The test suite.",
     repo: { name: "apiary", default_branch: "main" },
+    field: "greenfield",
+    field_reason: "a scratch adopter created empty by this test, with no docs before the wizard.",
     table: { file: "CLAUDE.md" },
     checker: { language: "node", path: "scripts/check_docs.mjs" },
     adr: format === "madr"

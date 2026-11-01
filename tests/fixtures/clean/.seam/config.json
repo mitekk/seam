@@ -1,6 +1,7 @@
 {
   "seam_version": "0.1.0",
   "repo": { "name": "apiary", "default_branch": "main" },
+  "field": "greenfield",
   "table": { "file": "CLAUDE.md" },
   "checker": { "language": "python", "path": "scripts/check_docs.py" },
   "adr": { "format": "madr", "dir": "docs/adr" },

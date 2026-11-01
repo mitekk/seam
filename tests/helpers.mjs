@@ -68,6 +68,8 @@ export function answers(overrides = {}) {
     seam_version: "0.1.0",
     purpose: "A scratch repo used to prove the wizard writes what it says it writes.",
     repo: { name: "scratch", default_branch: "main" },
+    field: "greenfield",
+    field_reason: "a scratch repo with nothing in it but the two files this fixture seeds.",
     table: { file: "CLAUDE.md" },
     checker: { language: "python", path: "scripts/check_docs.py" },
     adr: { format: "madr", dir: "docs/adr" },

@@ -35,7 +35,8 @@ const LAYERS = {
 
 // Keys that carry a human's words. They reach the docs and never the machine config: a config is
 // read by a script, and a script has no use for a sentence it cannot check.
-const PROSE_KEYS = ["purpose", "open_questions", "users", "in_scope", "out_of_scope"];
+const PROSE_KEYS = ["purpose", "open_questions", "users", "in_scope", "out_of_scope",
+  "field_reason"];
 const PROSE_SUBKEYS = { docs: ["owns"], domains: ["covers"], milestones: ["green"], agents: ["covers"] };
 
 // Beside the config, written by the same run: the two hashes assertion A16 compares, so that a
@@ -256,6 +257,28 @@ function validate(a) {
       + " name renders as `| `undefined` |` and the doc carries a label nobody can apply");
   });
 
+  // The field determination: milestone 1 for every repo, and the interview's first question. Both
+  // halves are required and neither has a fallback, for two different reasons.
+  //
+  // `field` is an enum the taxonomy template renders into the milestone-1 row, so an absent or
+  // misspelled value would ship `{{field}}` into that row as itself — the same class as
+  // `{{agent.model}}` in a frontmatter, one layer up.
+  //
+  // `field_reason` has no `_not recorded_` fallback, unlike `domains[].covers` and
+  // `milestones[].green`, because the determination is a judgement about the tree **as it stands**
+  // and not about its history: a repo whose every doc was written by this method is still a repo
+  // that has docs. Without the reason beside it, the determination reads as an error later.
+  const FIELDS = ["greenfield", "brownfield"];
+  need(FIELDS.includes(a.field), "field",
+    `must be ${FIELDS.map((f) => JSON.stringify(f)).join(" or ")}, not`
+    + ` ${JSON.stringify(a.field)} — whether this repo already has docs is the first thing the`
+    + ` interview establishes, because the proposal, the baseline and the never-rewrite rule all`
+    + ` branch on it, and the taxonomy template renders it as milestone 1`);
+  need(typeof a.field_reason === "string" && a.field_reason.trim() !== "", "field_reason",
+    "the determination needs the reason it was made, in words, because it is a judgement about the"
+    + " tree as it stands rather than about its history — without it, the answer reads as an error"
+    + " to whoever finds it next");
+
   if (bad.length) die(bad[0]);
 }
 
@@ -383,6 +406,9 @@ function project(a, answersRel = null) {
   const cfg = {
     seam_version: a.seam_version ?? "0.1.0",
     repo: a.repo ?? { name: basename(process.cwd()), default_branch: "main" },
+    // Green or brown field. A machine key, not prose: it is a two-valued fact about the tree, and
+    // the skills branch on it. Its reason is prose and stays in the answers file.
+    field: a.field,
     table: a.table,
     checker: {
       language: a.checker.language,
@@ -477,6 +503,10 @@ function templateVars(a, cfg) {
       citation: artifact ? `\`${artifact.path}\`` : "the code itself (layer 1)",
       path: artifact?.path ?? "",
     },
+    // Milestone 1, for every repo. The template ships the row and takes both halves from here,
+    // which is why neither is optional: there is no honest cell to render without them.
+    field: a.field,
+    field_reason: a.field_reason,
     purpose: a.purpose ?? "_Not recorded. `/seam:init` asks for this; it is never inferred._",
     purpose_short: (a.purpose ?? "not recorded").replace(/\s+/g, " ").slice(0, 80),
     users: a.users ?? "_Not recorded — an open question, not an assumption._",

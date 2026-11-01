@@ -39,6 +39,8 @@ create table apiaries (
   "in_scope": ["Recording a hive's state", "Listing the queenless hives"],
   "out_of_scope": ["Honey yield accounting", "More than one beekeeper per apiary"],
   "repo": { "name": "apiary", "default_branch": "main" },
+  "field": "greenfield",
+  "field_reason": "A new repo: a schema and a package manifest, and nothing under docs/ at all.",
   "table": { "file": "CLAUDE.md" },
   "checker": { "language": "python", "path": "scripts/check_docs.py" },
   "adr": { "format": "madr", "dir": "docs/adr" },

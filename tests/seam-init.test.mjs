@@ -930,8 +930,12 @@ test("the active milestone reaches the taxonomy doc", () => {
   ans.docs.push(TAXONOMY_ROW);
   const { dir, r } = init(ans);
   assert.equal(r.status, 0, r.stderr);
-  const [header, , ...rows] = milestoneRows(read(dir, "docs/taxonomy.md"));
+  // Row 1 is the method's own — the field determination the template ships, which is never the
+  // active one — so the repo's own rows are the ones after it.
+  const [header, , field, ...rows] = milestoneRows(read(dir, "docs/taxonomy.md"));
   assert.equal(header.at(-1), "Active", `the table has no Active column: ${header}`);
+  assert.deepEqual([field[0], field.at(-1)], ["1", "no"],
+    `row 1 is not the field determination, inactive: ${field}`);
   assert.deepEqual(
     Object.fromEntries(rows.map((c) => [c[1], c.at(-1)])),
     { "Queenless list": "no", "Inspection plan": "yes" },
@@ -961,16 +965,18 @@ test("no milestones is still valid, and the taxonomy table stays rectangular", (
 });
 
 test("the interview says what to record when the user never names the active milestone", () => {
-  const md = readFileSync(join(REPO, "skills/seam-docs/references/interview.md"), "utf8");
-  const qFrom = md.indexOf("### What must be asked, never inferred");
-  const qTo = md.indexOf("### The discipline");
-  assert.ok(qFrom !== -1 && qTo > qFrom, "the question table's headings moved; update this slice");
-  const row = md.slice(qFrom, qTo).split("\n").find((l) => /^\| 11 \|/.test(l));
-  assert.ok(row, "the question table has no row 11");
+  // Found by its **answers-key cell**, not by its number: the question order is a live thing —
+  // the field determination went in front of all of it — and a row number pinned here fails as a
+  // missing question rather than as the renumbering it is.
+  const { questions } = interviewTables();
+  const n = questionKeyCells(questions).find((c) => /`milestones\[\]`/.test(c.key))?.n;
+  assert.ok(n, "no question row's answers-key cell is `milestones[]`");
+  const row = questions.split("\n").find((l) => new RegExp(`^\\|\\s*${n}\\s*\\|`).test(l));
+  assert.ok(row, `the question table has no row ${n}`);
   // The wizard refuses an active-less list, so "listed but unanswered" has one consistent
   // outcome, and it is the same one the discipline section gives every undetermined fact.
-  assert.match(row, /milestones: \[\]/, "row 11 does not say to record an empty list");
-  assert.match(row, /open question/i, "row 11 does not say to record an open question");
+  assert.match(row, /milestones: \[\]/, `row ${n} does not say to record an empty list`);
+  assert.match(row, /open question/i, `row ${n} does not say to record an open question`);
 });
 
 test("the clean fixture's milestones are ones the wizard could have produced", () => {
@@ -982,6 +988,152 @@ test("the clean fixture's milestones are ones the wizard could have produced", (
   assert.ok(cfg.milestones.length > 0, "the fixture no longer has a milestone to check");
   assert.ok(cfg.milestones.every((m) => typeof m.active === "boolean"), "a milestone has no boolean active");
   assert.equal(cfg.milestones.filter((m) => m.active).length, 1, "exactly one milestone is active");
+});
+
+// ── The field determination: milestone 1, for every repo ──────────────────────
+//
+// Ruling 123, an owner decision: milestone 1, for any repo adopting seam, is establishing whether
+// it is **green or brown field**. It is the first step to get things straight, and it is true
+// mechanically as well — the proposal, the baseline, the never-rewrite rule and which assertions
+// can run at all branch on it. So the interview asks it first, the taxonomy template ships the row
+// for every repo, and the determination carries the reason it was made.
+//
+// The gate is documentary and not a refusal: the owner was offered a wizard that refuses to
+// propose anything until the field is recorded, and chose the method-rule form. What IS mechanical
+// is the answers key, because a key that reaches a template and is validated by nothing ships
+// `{{field}}` into an adopting repo with a zero exit — Ruling 111's class, measured once already.
+
+test("the field determination is required, and only the two values are permitted", () => {
+  const missing = answers();
+  delete missing.field;
+  const a = init(missing);
+  assert.equal(a.r.status, 2, a.r.stdout);
+  assert.match(a.r.stderr, /^seam-init: field:/, a.r.stderr);
+  assert.ok(!has(a.dir, ".seam/config.json"), "a rejected run still wrote a config");
+  rm(a.dir);
+
+  for (const bad of ["brown", "green-field", "", "GREENFIELD", true, null]) {
+    const { dir, r } = init(answers({ field: bad }));
+    assert.equal(r.status, 2, `${JSON.stringify(bad)} was accepted as a field: ${r.stdout}`);
+    assert.match(r.stderr, /\bfield\b/, r.stderr);
+    assert.ok(!has(dir, ".seam/config.json"), "a rejected run still wrote a config");
+    rm(dir);
+  }
+
+  // And it reaches the config at the same key path: one namespace, no translation step.
+  for (const good of ["greenfield", "brownfield"]) {
+    const { dir, r } = init(answers({ field: good }));
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(JSON.parse(read(dir, ".seam/config.json")).field, good);
+    rm(dir);
+  }
+});
+
+test("the field's reason is required, and it is prose — it never reaches the config", () => {
+  // Required rather than fallback-able, which `domains[].covers` and `milestones[].green` are:
+  // the determination is a judgement about the tree **as it stands** and not about its history,
+  // so without the reason beside it "brownfield" reads as an error to the next reader.
+  for (const bad of [undefined, "", "   ", 7]) {
+    const ans = answers();
+    if (bad === undefined) delete ans.field_reason;
+    else ans.field_reason = bad;
+    const { dir, r } = init(ans);
+    assert.equal(r.status, 2, `${JSON.stringify(bad)} was accepted as a reason: ${r.stdout}`);
+    assert.match(r.stderr, /field_reason/, r.stderr);
+    assert.ok(!has(dir, ".seam/config.json"), "a rejected run still wrote a config");
+    rm(dir);
+  }
+  const { dir, r } = init(answers());
+  assert.equal(r.status, 0, r.stderr);
+  const cfg = JSON.parse(read(dir, ".seam/config.json"));
+  assert.ok(!("field_reason" in cfg), "field_reason is prose and must not reach the config");
+  assert.equal(cfg.field, answers().field);
+  rm(dir);
+});
+
+test("milestone 1 is the field determination, from the template, for every repo", () => {
+  // Both shapes, because `milestones[]` is a live empty list and a live one: the row comes from
+  // the TEMPLATE and not from `milestones[]`, so it is there either way — which is also what
+  // keeps the one-active rule reading the repo's own build order and nothing else.
+  for (const milestones of [[], TWO_MILESTONES(false, true)]) {
+    const ans = answers({
+      milestones,
+      field: "brownfield",
+      field_reason: "every doc here was written by this method, but as a tree it already has docs",
+    });
+    ans.docs.push(TAXONOMY_ROW);
+    const { dir, r } = init(ans);
+    assert.equal(r.status, 0, r.stderr);
+    const doc = read(dir, "docs/taxonomy.md");
+    const rows = milestoneRows(doc);
+    const [header, , first] = rows;
+    const where = `milestones=${JSON.stringify(milestones.length)}`;
+    assert.equal(header.at(-1), "Active", `${where}: no Active column: ${header}`);
+    assert.equal(first[0], "1", `${where}: the field determination is not row 1: ${first}`);
+    assert.match(first[1], /brownfield/, `${where}: row 1 does not name the determination: ${first}`);
+    // Green on arrival — the wizard cannot write this file without the answer — so marking it
+    // active would park the priority rule on a milestone nobody can work on, and the repo's own
+    // first milestone would be waiting behind it forever.
+    assert.equal(first.at(-1), "no", `${where}: milestone 1 is marked active: ${first}`);
+    for (const cells of rows) assert.equal(cells.length, rows[0].length, `ragged row: ${cells}`);
+    assert.match(doc, /every doc here was written by this method/,
+      `${where}: the reason the determination was made is not written beside it`);
+    assert.equal(doc.indexOf("{{"), -1, `${where}: the rendered taxonomy carries a placeholder`);
+    // The config's milestones are the repo's own, unchanged: the template's row is not one.
+    assert.deepEqual(JSON.parse(read(dir, ".seam/config.json")).milestones,
+      milestones.map(({ green, ...m }) => m));
+    rm(dir);
+  }
+});
+
+test("the interview asks the field first, and proposes every doc before asking what it owns", () => {
+  const { questions, schema, defaults } = interviewTables();
+  const cells = questionKeyCells(questions);
+  assert.ok(cells.length >= 20, `parsed ${cells.length} question rows — the parse broke, and`
+    + ` every assertion below would pass on an empty set`);
+  assert.deepEqual(cells.map((c) => c.n), cells.map((_, i) => i + 1),
+    "the question numbers are not 1..N in order — a reorder duplicated or skipped one");
+  const at = (rx) => cells.find((c) => rx.test(c.key))?.n;
+  assert.equal(at(/`field`/), 1, "the field determination is not the interview's first question");
+
+  // The order defect this task owns: question 6 asked what each proposed doc owns, ten rows
+  // before any row proposed one. Asserted as the class — every proposal, against the one row
+  // that asks the per-doc question — rather than against the numbers it had on the day.
+  const owns = at(/`docs\[\]\.owns`/);
+  assert.ok(owns, "no question row's answers-key cell asks for `docs[].owns`");
+  const proposals = cells.filter((c) => /layer-2 row/.test(c.key));
+  assert.ok(proposals.length >= 5,
+    `found ${proposals.length} doc-proposal rows, expected at least five`);
+  for (const p of proposals)
+    assert.ok(p.n < owns, `question ${p.n} proposes a doc AFTER question ${owns} asks what each`
+      + ` proposed doc owns — so that question is asked before anything has been proposed`);
+
+  assert.match(schema, /"field"\s*:/, "§ Schema carries no `field` key");
+  assert.match(schema, /"field_reason"\s*:/, "§ Schema carries no `field_reason` key");
+  assert.match(defaults, /^\|\s*`field`\s*\|/m, "§ Defaults has no row for `field`");
+
+  const md = readFileSync(join(REPO, "skills/seam-docs/references/interview.md"), "utf8");
+  const rej = md.slice(md.indexOf("### Rejections"));
+  assert.match(rej, /`field`/, "§ Rejections does not say an unanswered field is refused");
+  assert.match(rej, /`field_reason`/, "§ Rejections does not say a reasonless field is refused");
+  const prose = md.slice(md.indexOf("**Prose keys**"));
+  assert.match(prose.slice(0, prose.indexOf("\n\n")), /`field_reason`/,
+    "the prose-key list does not carry `field_reason`, which never reaches the config");
+});
+
+test("the wizard's skill states the field determination comes first", () => {
+  const md = readFileSync(join(REPO, "skills/seam-docs/SKILL.md"), "utf8");
+  const i = md.search(/green or brown/i);
+  assert.ok(i !== -1, "seam-docs/SKILL.md never names the green-or-brown-field determination");
+  const paths = md.indexOf("## The two paths");
+  assert.ok(paths !== -1 && i < paths,
+    "the field determination is stated after the two paths it is what chooses between");
+  const sec = md.slice(i, paths);
+  assert.match(sec, /milestone 1/i, "the skill does not say the determination is milestone 1");
+  // Documentary, not a refusal: the owner was offered a wizard that refuses to propose anything
+  // until the field is recorded, and chose the method-rule form instead.
+  assert.ok(!/\brefus/i.test(sec),
+    "the skill turns the field determination into a refusal, which Ruling 123 did not choose");
 });
 
 // ── teardown_command ──────────────────────────────────────────────────────────
@@ -1077,9 +1229,12 @@ test("every key path seam-github reads resolves, and the asked ones carry a ques
   // checker", `domains` from "owns the domains", `table` from "an empty table" — and the blind
   // match is kept anyway: a detector that demanded a marker is how a bash fence, a YAML fence and
   // an unquoted dotted path all read green, and every one of these resolves and is harmless.
+  // `field` is the fifth prose collision — "reads a field", "which is the field" — and it arrived
+  // the day green-or-brown-field became a config key, which is the cost of naming a key after an
+  // ordinary English word.
   assert.deepEqual(named,
-    ["assertions", "checker", "docs", "domains", "load_bearing", "milestones", "repo", "table",
-      "teardown_command"],
+    ["assertions", "checker", "docs", "domains", "field", "load_bearing", "milestones", "repo",
+      "table", "teardown_command"],
     "seam-github names a config key this test does not know about, or stopped naming one");
   // **The subject is the answers file**, walked path by path, with the config beside it for the
   // keys the program fills rather than the interview. The projection alone is the wrong subject:
@@ -1106,7 +1261,8 @@ test("every key path seam-github reads resolves, and the asked ones carry a ques
   // Per top-level key by design — which subkey a row asks for is the resolution check's business.
   const askedFor = (k) => cells.some((c) => new RegExp("`" + k + "(`|\\[|\\.)").test(c.key));
   assert.deepEqual(named.filter(askedFor),
-    ["assertions", "checker", "docs", "domains", "load_bearing", "milestones", "teardown_command"],
+    ["assertions", "checker", "docs", "domains", "field", "load_bearing", "milestones",
+      "teardown_command"],
     "a key seam-github reads lost the question row that fills it, or gained one unexpectedly");
   // The teardown clause is a real conditional, and the else-branch is stated: a key most repos
   // leave empty needs one, or "if the config names one" is a requirement in conditional clothing.

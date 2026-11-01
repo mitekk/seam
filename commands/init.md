@@ -19,8 +19,11 @@ Use the `seam-docs` skill, which owns this procedure. Before anything else:
    this document turns out to be wrong*, and it selects the edit rule and the assertions.
 2. Read `$CLAUDE_PLUGIN_ROOT/skills/seam-docs/references/interview.md` — the question set, the answers-file schema,
    and which questions may be answered from the tree rather than asked.
-3. If this repo already has docs, read `$CLAUDE_PLUGIN_ROOT/skills/seam-docs/references/adopt.md` first. The adopt
-   path never rewrites an existing doc's body.
+3. **Establish whether this repo is green or brown field before proposing anything** — it is the
+   interview's first question, it is milestone 1 in the repo's own taxonomy, and it selects the
+   path. If this repo already has docs it is brownfield: read
+   `$CLAUDE_PLUGIN_ROOT/skills/seam-docs/references/adopt.md` first, and that path never rewrites
+   an existing doc's body.
 
 Then, once the answers file exists:
 
