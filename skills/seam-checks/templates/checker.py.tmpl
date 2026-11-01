@@ -16,7 +16,9 @@ Exit 0: no violations outside the baseline. Exit 1: violations, listed on stderr
 """
 from __future__ import annotations
 
+import errno
 import fnmatch
+import hashlib
 import importlib.util
 import json
 import os
@@ -27,6 +29,8 @@ from pathlib import Path
 
 SEAM_VERSION = "{{SEAM_VERSION}}"
 CONFIG_PATH = "{{CONFIG_PATH}}"
+# Beside the config, and fixed: it is provenance about that file, written by the same run.
+PROVENANCE_PATH = ".seam/provenance.json"
 
 ROOT = Path(__file__).resolve().parent
 while not (ROOT / CONFIG_PATH).exists() and ROOT != ROOT.parent:
@@ -57,6 +61,82 @@ def line_of(text: str, index: int) -> int:
     return text.count("\n", 0, index) + 1
 
 
+# Every primitive below exists because the two languages' own built-in disagrees with the other's,
+# and a repo is promised that the choice of checker language does not change what is enforced.
+
+ASCII_WS = " \t\r\n\f\v"
+
+
+def strip_ws(s: str) -> str:
+    """`s` without leading or trailing ASCII whitespace.
+
+    Not `str.strip()`, and the Node emission does not use `trim()`: `strip()` takes U+0085 and
+    `trim()` does not, `trim()` takes U+FEFF and `strip()` does not. So a padded table cell, a
+    heading or a citation was read one way here and another way there.
+    """
+    return s.strip(ASCII_WS)
+
+
+def split_ws(s: str) -> list[str]:
+    """`s` split on runs of ASCII whitespace, with no empty pieces. `str.split()` splits on
+    Unicode whitespace and `/\\s+/` on a third set; this is the one both can agree on."""
+    return [w for w in re.split(r"[ \t\r\n\f\v]+", s) if w]
+
+
+ALNUM_RE = re.compile(r"[a-z0-9]", re.I)
+
+
+def alnum(ch: str) -> bool:
+    """Whether `ch` is an ASCII letter or digit — what both checkers mean by a word character.
+    `str.isalnum()` is Unicode-aware and Node's `/[a-z0-9]/i` is not, so a heading or a citation
+    ending in a non-ASCII letter was a word boundary on one side and not on the other."""
+    return ch != "" and ALNUM_RE.fullmatch(ch) is not None
+
+
+DIGITS_RE = re.compile(r"[0-9]+")
+
+
+def ascii_int(word: str):
+    r"""`word` as an int when it is a run of ASCII digits, else None.
+
+    `str.isdigit()` is Unicode-aware and `int()` is not consistent with it: `'\u0663'.isdigit()`
+    is True and `int('\u0663')` is 3, where Node's `/^\d+$/` is false — a count compared on one
+    side and skipped on the other — while `'\u00b2'.isdigit()` is True and `int('\u00b2')`
+    RAISES, so the checker died here and skipped there. The same reason `isalnum()` needed
+    `alnum`.
+
+    Raw, and that is load-bearing rather than tidy: `\d` is not a valid Python escape, so a
+    plain docstring made this file a `SyntaxWarning` on **stderr** from Python 3.12 on — a
+    hidden `DeprecationWarning` on 3.9 — and the parity tests compare stderr byte for byte
+    against the Node emission, which has no such line. It failed 100 of them in CI while
+    passing every one locally. The `\u0663`s read as text here too, which is what the
+    sentence means; unraw they were the character itself.
+    """
+    return int(word) if DIGITS_RE.fullmatch(word) else None
+
+
+def given(value, default):
+    """`value`, or `default` when the key was absent or JSON `null`.
+
+    The Node emission reads a config value with `??`, which treats a null as unset; `.get(k, d)`
+    hands the null straight to the reader. One JSON null — `adr.file` — was the difference
+    between exit 0 and exit 1, and through `opt()` it was a crash.
+    """
+    return default if value is None else value
+
+
+def read_text(path) -> str:
+    """A repo file as text, read the way the Node emission reads one.
+
+    `errors="replace"` because `Path.read_text()` raises on a byte that is not UTF-8, which killed
+    the checker before any assertion ran while Node substituted U+FFFD and carried on — a crash is
+    not a verdict about the docs. Universal newlines is the default here and the reason the Node
+    emission strips `\r` explicitly: without that, a CRLF plan had no sections at all on that
+    side, so the choice of checker language changed what was enforced.
+    """
+    return Path(path).read_text(encoding="utf-8", errors="replace")
+
+
 def glob_re(pattern: str) -> re.Pattern:
     """A path glob as a regex. `**/` crosses directories, `*` and `?` do not."""
     out = []
@@ -74,7 +154,11 @@ def glob_re(pattern: str) -> re.Pattern:
         else:
             out.append(re.escape(pattern[i]))
             i += 1
-    return re.compile("^" + "".join(out) + "$")
+    # `\\Z` and not `$`, because `$` also matches before a trailing newline; `re.S` so `.` in the
+    # `**/` expansion is any character, which is what Node's `s` flag gives it. Node's `.`
+    # excludes `\r`, U+2028 and U+2029 as well as `\n`, so without both of these a path carrying
+    # one was inside the glob here and outside it there.
+    return re.compile("^" + "".join(out) + r"\Z", re.S)
 
 
 SKIP = {".git", "node_modules", "dist", "build", ".next", "vendor", "__pycache__",
@@ -119,10 +203,36 @@ def walk_md(root: Path) -> list[str]:
 
 # ── Markdown reading ─────────────────────────────────────────────────────────
 
+FENCE_RE = re.compile(r"[ \t]*(?:```|~~~)")
+
+
+def without_fences(text: str) -> str:
+    """`text` with every fenced block blanked, keeping the line count so offsets stay true.
+
+    A `## Heading` written INSIDE a fence is a heading being SHOWN, not declared — and it was
+    becoming a real anchor, so A2 passed a citation naming a section no human can find. The toggle
+    is the one `section_span` and `table_rows` already use: a marker at any indentation opens or
+    closes a block, and an unterminated one runs to the end of the text. That is stricter than a
+    renderer, which reads a four-space-indented marker as literal text, and it is deliberate:
+    three readers of a fence in one file that disagreed would be the drift this whole layer is
+    against.
+    """
+    out = []
+    fenced = False
+    for line in text.split("\n"):
+        if FENCE_RE.match(line):
+            fenced = not fenced
+            out.append("")
+        else:
+            out.append("" if fenced else line)
+    return "\n".join(out)
+
+
 def headings(text: str) -> list[str]:
     out = []
-    for m in re.finditer(r"^#{1,6}[ \t]+(.*)$", text, re.M):
-        h = m.group(1).replace("~~", "").replace("**", "").replace("*", "").replace("`", "").strip()
+    for m in re.finditer(r"^#{1,6}[ \t]+(.*)$", without_fences(text), re.M):
+        h = strip_ws(m.group(1).replace("~~", "").replace("**", "").replace("*", "")
+                     .replace("`", ""))
         if h:
             out.append(h)
     return out
@@ -148,12 +258,12 @@ def anchors(text: str) -> set[str]:
         # what each one does" or "Pipeline, a note on scoring" — and since a citation matches any
         # anchor it starts with on a word boundary, A2 then silently passed citations to sections
         # that do not exist. A check that stops checking is worse than one that fails.
-        clauses = [c.strip() for c in re.split(r" — |, ", h) if c.strip()]
+        clauses = [strip_ws(c) for c in re.split(r" — |, ", h) if strip_ws(c)]
         for i, c in enumerate(clauses):
             out.add(c.lower())
             if i:
                 continue
-            words = [w for w in c.lower().split() if w]
+            words = split_ws(c.lower())
             for k in range(1, len(words) + 1):
                 out.add(" ".join(words[:k]))
     return out
@@ -162,48 +272,253 @@ def anchors(text: str) -> set[str]:
 def cites_section(anchor_set: set[str], cited: str) -> bool:
     """A citation carries the prose that follows it, so a match is the longest anchor it starts
     with, ending on a word boundary: "Seams" does not satisfy "Seam 9"."""
-    low = " ".join(cited.split()).lower().rstrip(")")
+    low = " ".join(split_ws(cited)).lower().rstrip(")")
     for a in sorted(anchor_set, key=len, reverse=True):
-        if low.startswith(a) and (len(low) == len(a) or not low[len(a)].isalnum()):
+        if low.startswith(a) and (len(low) == len(a) or not alnum(low[len(a)])):
             return True
     return False
 
 
-def section_body(text: str, name: str) -> str | None:
-    """The lines under the heading called `name`, to the next heading at the same level or above.
+def section_span(text: str, name: str) -> tuple[str, int] | None:
+    """The lines under the heading called `name`, to the next heading at the same level or above,
+    with the 1-based line the first of them is on.
 
     `None` when there is no such heading — which callers report rather than treat as empty. A
     renamed heading that silently compared nothing is the exact failure this returns None for.
+
+    The line comes from the scan and not from looking the body up afterwards. `text.find(body)`
+    and `split("\n").index(first_line)` are lookups by CONTENT: a section body's first line is
+    usually blank, so `index("")` returned the first blank line in the whole file, and a plan that
+    quoted its own units table sent the search into the quotation. Every A8 finding named a line
+    about a dozen rows above the row it was about.
     """
     lines = text.split("\n")
     start = None
     start_level = 0
     low = name.lower()
+    fenced = False
     for i, line in enumerate(lines):
+        # A heading inside a fenced block is a QUOTE of a section, not that section. A doc that
+        # shows a template inside ```markdown had its example read as the real thing, so the
+        # assertion measured the placeholder row in the example rather than the table below it.
+        if FENCE_RE.match(line):
+            fenced = not fenced
+            continue
+        if fenced:
+            continue
         # Levels 2 to 6: a `#` heading is the document's title, not a section of it. Without that
         # bound, `§ Checks` in a file called "# Checks" matched the title, whose body is the
         # whole file — so a renamed section still compared something and passed.
         m = re.match(r"^(#{2,6})[ \t]+(.*)$", line)
         if not m:
             continue
-        clean = m.group(2).replace("~~", "").replace("**", "").replace("*", "").strip().lower()
+        clean = strip_ws(m.group(2).replace("~~", "").replace("**", "").replace("*", "")).lower()
         if start is None:
             # The same rule citations use: the heading begins with the cited name, ending on a
             # word boundary — "The issues" names "The issues, in the order they can be built".
-            if clean.startswith(low) and (len(clean) == len(low) or not clean[len(low)].isalnum()):
+            if clean.startswith(low) and (len(clean) == len(low) or not alnum(clean[len(low)])):
                 start, start_level = i + 1, len(m.group(1))
             continue
         if len(m.group(1)) <= start_level:
-            return "\n".join(lines[start:i])
-    return None if start is None else "\n".join(lines[start:])
+            return "\n".join(lines[start:i]), start + 1
+    return None if start is None else ("\n".join(lines[start:]), start + 1)
 
 
-MD_CITE_RE = re.compile(r"`([\w./@-]+\.md)`")
+def section_body(text: str, name: str) -> str | None:
+    """`section_span`'s body alone, for the callers that do not report a line inside it."""
+    span = section_span(text, name)
+    return None if span is None else span[0]
+
+
+def table_cells(line: str) -> list[str] | None:
+    """The cells of a markdown table row, or None when the line is not one. A8 and A14 read their
+    tables through this and nothing else.
+
+    At most one pipe is dropped at each end, and only ASCII whitespace is trimmed. Both are on
+    purpose: the other checker has to read the same row the same way, and each language's own
+    strip has a different idea of both — Python's `strip("|")` takes every pipe, and `trim()` and
+    `strip()` disagree about U+FEFF and U+0085.
+    """
+    t = strip_ws(line)
+    if not t.startswith("|"):
+        return None
+    t = t[1:]
+    if t.endswith("|"):
+        t = t[:-1]
+    return [strip_ws(c) for c in t.split("|")]
+
+
+def table_rows(body: str) -> list[tuple[int, list[str]]]:
+    """Every table row in a section body, as `(index, cells)`, **skipping fenced blocks**.
+
+    A doc that QUOTES a table — a plan showing the template it was written from — has rows in its
+    body that are an example and not a row. Measured on this repo's own plan: `§ The units`
+    reported "unit 1 has no test path" from a fenced block eighty lines below the real table. A8
+    and A14 read their tables through here and nothing else, so the two agree about what a row is.
+    `section_body` skips a fenced heading for the same reason.
+    """
+    out: list[tuple[int, list[str]]] = []
+    fenced = False
+    for i, line in enumerate(body.split("\n")):
+        if FENCE_RE.match(line):
+            fenced = not fenced
+            continue
+        if fenced:
+            continue
+        cells = table_cells(line)
+        if cells is not None:
+            out.append((i, cells))
+    return out
+
+
+# ── The assertion pattern ────────────────────────────────────────────────────
+
+DEFAULT_ASSERTION_PATTERN = r"{{DEFAULT_ASSERTION_PATTERN}}"
+
+# What a backslash may be followed by: a class or control escape, or any non-alphanumeric
+# printable ASCII character, which both engines read as that character. A letter or a digit is
+# refused — `\B` matches an empty string in Node and nowhere in one in Python, and `\q` is an
+# error in Python and a literal in Node. `\b` is an anchor and is handled where it can appear.
+ESCAPE_LETTERS = "wWdDsSnrt"
+ESCAPE_PUNCT_RE = re.compile(r"[\x20-\x2f\x3a-\x40\x5b-\x60\x7b-\x7e]")
+
+
+def escapable(d: str) -> bool:
+    return d != "" and (d in ESCAPE_LETTERS or ESCAPE_PUNCT_RE.fullmatch(d) is not None)
+
+
+def portable_regex(p: str) -> str | None:
+    """Why `p` is not a pattern both emitted checkers read the same way, or None when it is.
+
+    `assertions.A14.assertion_pattern` is run by a Python engine here and a Node one in the other
+    checker, and they disagree about plenty: inline flags, named groups, a range out of a class
+    escape, possessive quantifiers, `{,n}`. A checker that ran whatever its own engine accepted
+    would pass a repo in one language and fail it in the other, so a pattern is held to a subset
+    both read identically — literals, `.`, `^` `$` `|`, `(…)` and `(?:…)`, simple `[…]` classes,
+    the escapes above, `\b`, and `* + ? {n} {n,} {n,m}` with an optional lazy `?`. Printable
+    ASCII only. It is a scanner and not a regex because a regex cannot count brackets.
+    """
+    if p == "":
+        return "it is empty"
+
+    def bad(k: int) -> str:
+        return f"character {k + 1} is outside the subset both checkers read the same way"
+
+    odd = re.search(r"[^\x20-\x7e]", p)
+    if odd:
+        return bad(odd.start())
+    n = len(p)
+    i = 0
+    depth = 0
+    prev = None                     # what a quantifier may follow: "atom", or nothing
+    while i < n:
+        c = p[i]
+        if c == "\\":
+            d = p[i + 1:i + 2]
+            if d == "b":
+                prev = "anchor"
+            elif escapable(d):
+                prev = "atom"
+            else:
+                return bad(i)
+            i += 2
+        elif c == "[":
+            j = i + 1
+            if p[j:j + 1] == "^":
+                j += 1
+            items = 0
+            while True:
+                k = p[j:j + 1]
+                if k == "":
+                    return bad(i)                                 # never closed
+                if k == "]":
+                    if items == 0:
+                        return bad(j)                             # empty: engines disagree
+                    j += 1
+                    break
+                if k == "\\":
+                    d = p[j + 1:j + 2]
+                    if not escapable(d):
+                        return bad(j)
+                    j += 2
+                elif k in ("[", "&", "~", "|"):
+                    return bad(j)                                 # Python warns these may change
+                elif k == "-":
+                    # A hyphen is a literal only at either end of the class; anywhere else it is
+                    # a range operator, and what a range from a class escape means differs by
+                    # engine.
+                    if items != 0 and p[j + 1:j + 2] != "]":
+                        return bad(j)
+                    j += 1
+                elif p[j + 1:j + 2] == "-" and p[j + 2:j + 3] not in ("]", ""):
+                    hi = p[j + 2:j + 3]
+                    if hi in "\\[]-&~|" or hi < k:
+                        return bad(j)
+                    j += 3
+                else:
+                    j += 1
+                items += 1
+            prev = "atom"
+            i = j
+        elif c == "(":
+            if p[i + 1:i + 2] == "?":
+                if p[i + 2:i + 3] != ":":
+                    return bad(i)                                 # lookaround, flags, names
+                i += 3
+            else:
+                i += 1
+            depth += 1
+            prev = None
+        elif c == ")":
+            if depth == 0:
+                return bad(i)
+            depth -= 1
+            prev = "atom"
+            i += 1
+        elif c == "|":
+            prev = None
+            i += 1
+        elif c in ("^", "$"):
+            prev = "anchor"
+            i += 1
+        elif c in ("*", "+", "?"):
+            if prev != "atom":
+                return bad(i)
+            i += 1
+            if p[i:i + 1] == "?":                                 # lazy; a second quantifier is refused
+                i += 1
+            prev = "quantified"
+        elif c == "{":
+            m = re.match(r"\{(\d{1,3})(?:,(\d{0,3}))?\}", p[i:], re.A) if prev == "atom" else None
+            if not m or (m.group(2) and int(m.group(2)) < int(m.group(1))):
+                return bad(i)
+            i += len(m.group(0))
+            if p[i:i + 1] == "?":
+                i += 1
+            prev = "quantified"
+        elif c in ("}", "]"):
+            return bad(i)
+        else:
+            prev = "atom"                                         # `.` and every plain literal
+            i += 1
+    return None if depth == 0 else "a group is never closed"
+
+
+# `re.A` on every pattern whose classes have a Node counterpart: `\w`, `\d`, `\b` and `\s` are
+# Unicode-aware here by default and ASCII-only in Node always, so `٣` was a digit on one side and
+# not on the other. Where a `\s` is wanted it is written out as an ASCII class instead of `\s`,
+# because the three whitespace sets — Node's `\s`, Python's Unicode `\s` and `re.A`'s — are three
+# different sets, and only an explicit class is the same on both sides.
+MD_CITE_RE = re.compile(r"`([\w./@-]+\.md)`", re.A)
 # A `|` ends a section name: it is a table cell boundary and never part of a heading.
 TOKEN_RE = re.compile(r"`([^`\n]+)`|(?<![`\w./-])([\w./-]+\.md)(?![\w.-])"
-                      r"|§[ \t\n]*([A-Za-z][^.;:—(*`§|\n]*)")
-ADJACENT_RE = re.compile(r"^[\s,*]{0,4}$")
-CONNECTOR_RE = re.compile(r"^[\s,]*(?:and|or)?[\s,]*$")
+                      r"|§[ \t\n]*([A-Za-z][^.;:—(*`§|\n]*)", re.A)
+# `\Z`, not `$`: Python's `$` also matches just before a trailing newline, so a FIVE-character
+# gap whose fifth character is a newline matched here and not in Node — and A2's `target`
+# branch has no length guard of its own, so that made one `§` citation targeted on this side
+# and skipped on the other. `\Z` is the end of the string, which is what Node's `$` is here.
+ADJACENT_RE = re.compile(r"^[ \t\r\n\f\v,*]{0,4}\Z")
+CONNECTOR_RE = re.compile(r"^[ \t\r\n\f\v,]*(?:and|or)?[ \t\r\n\f\v,]*$")
 
 
 def resolve_md(root: Path, frm: str, cited: str) -> str | None:
@@ -224,6 +539,47 @@ def frozen_record(path: str) -> bool:
     return os.path.basename(path) not in NOT_A_RECORD
 
 
+def resolve_default_branch(branch: str) -> str | None:
+    """The default branch as this checkout has it: `<branch>` if that resolves to a commit, else
+    `origin/<branch>`, else None. A local branch ref is not a given: a pull request's CI checkout
+    is a detached HEAD whose only copy of the default branch is `origin/<branch>`, so a check that
+    needs a local ref to exist would red every adopting repo on its first pull request. A12 and
+    A15 both read the default branch, so both resolve it here and nowhere else."""
+    for cand in (branch, f"origin/{branch}"):
+        try:
+            subprocess.run(["git", "rev-parse", "--verify", "--quiet", f"{cand}^{{commit}}"],
+                           cwd=ROOT, check=True, stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL)
+            return cand
+        except Exception:
+            pass
+    return None
+
+
+# The one field a MADR record may change after it is on the default branch. The method's own rule
+# for a reversal is that the OLD record gains `superseded by NNNN`, and A13 requires that a
+# superseded record names a successor that exists — both asked of the same bytes, so byte-equality
+# alone made them unsatisfiable the first time a repo reversed a decision. Its substance stays
+# frozen; its status is metadata about supersession. Nothing wider than this one line, and not
+# arbitrary content on it either: the new line is a short run of plain characters. No \r inside
+# it, because a markdown renderer shows a lone CR as a line break, so one could smuggle in new
+# paragraphs while the \n line count stayed equal; the single \r that ends a CRLF line is the
+# terminator and is allowed. What a status may SAY is A13's question, so this is one bound and
+# not a vocabulary.
+STATUS_LINE = re.compile(rb"^\*\*Status:\*\*")
+STATUS_VALUE = re.compile(rb"\*\*Status:\*\*[A-Za-z0-9_ \t.,;:()'/#-]{0,120}\r?")
+
+
+def differs_only_in_status_lines(was: bytes, now: bytes) -> bool:
+    """True when `was` and `now` have the same number of lines and differ only on lines that open
+    `**Status:**` in `was` and are a short plain `**Status:**` line in `now`. Compared as bytes,
+    never as decoded text, so it cannot read invalid UTF-8 differently from the Node checker."""
+    a, b = was.split(b"\n"), now.split(b"\n")
+    return len(a) == len(b) and all(
+        x == y or (STATUS_LINE.match(x) is not None and STATUS_VALUE.fullmatch(y) is not None)
+        for x, y in zip(a, b))
+
+
 def md_citations(root: Path, frm: str, text: str) -> list[tuple[str, int]]:
     """Every `*.md` path this file claims exists, with its offset.
 
@@ -235,7 +591,7 @@ def md_citations(root: Path, frm: str, text: str) -> list[tuple[str, int]]:
     """
     out: list[tuple[str, int]] = []
     linked_spans: list[tuple[int, int]] = []
-    for m in re.finditer(r"\[([^\]\n]*)\]\(([^)\s]+)\)", text):
+    for m in re.finditer(r"\[([^\]\n]*)\]\(([^) \t\r\n\f\v]+)\)", text, re.A):
         linked_spans.append((m.start(1), m.end(1)))
         target = m.group(2).split("#")[0]
         if target.endswith(".md"):
@@ -261,13 +617,16 @@ def read_table(text: str) -> list[dict]:
     offset = start if (start != -1 and end > start) else 0
     rows = []
     for m in re.finditer(r"^\|(.*)\|[ \t]*$", body, re.M):
-        cells = [c.strip() for c in m.group(1).split("|")]
+        # The same splitter A8 and A14 read a row with. Its own split-and-strip disagreed with
+        # Node's about U+0085 and U+FEFF, so a padded first cell was a row in one checker and not
+        # in the other — and a doc with no row is A10's loudest finding.
+        cells = table_cells(m.group(0))
         doc = re.fullmatch(r"`([^`]+)`", cells[0]) if cells else None
         if not doc:
             continue
         layer = None
         if len(cells) > 1:
-            lm = re.match(r"(\d)\b", cells[1])
+            lm = re.match(r"(\d)\b", cells[1], re.A)
             if lm:
                 layer = int(lm.group(1))
         rows.append({
@@ -284,21 +643,26 @@ def read_table(text: str) -> list[dict]:
 
 def sql_tables(sql: str) -> dict[str, set[str]]:
     out = {}
-    for m in re.finditer(r"create table (?:if not exists )?(\w+)\s*\((.*?)\n\);", sql, re.S | re.I):
-        cols = set(re.findall(r"^\s{2,}(\w+)\s", m.group(2), re.M))
+    for m in re.finditer(r"create table (?:if not exists )?(\w+)[ \t\r\n\f\v]*\((.*?)\n\);",
+                         sql, re.S | re.I | re.A):
+        cols = set(re.findall(r"^[ \t\r\n\f\v]{2,}(\w+)[ \t\r\n\f\v]", m.group(2),
+                              re.M | re.A))
         out[m.group(1)] = cols
     return out
 
 
 def sql_enum(sql: str, name: str) -> set[str] | None:
-    m = re.search(r"create type\s+" + re.escape(name) + r"\s+as enum\s*\((.*?)\);", sql, re.S | re.I)
+    m = re.search(r"create type[ \t\r\n\f\v]+" + re.escape(name)
+                  + r"[ \t\r\n\f\v]+as enum[ \t\r\n\f\v]*\((.*?)\);", sql,
+                  re.S | re.I | re.A)
     return set(re.findall(r"'([^']+)'", m.group(1))) if m else None
 
 
 def ts_unions(text: str) -> dict[str, set[str]]:
     out = {}
-    for m in re.finditer(r"(?:type|enum)\s+(\w+)\s*=?\s*\{?([^;}]*)[;}]", text):
-        members = set(re.findall(r"['\"]([\w-]+)['\"]", m.group(2)))
+    for m in re.finditer(r"(?:type|enum)[ \t\r\n\f\v]+(\w+)[ \t\r\n\f\v]*=?"
+                         r"[ \t\r\n\f\v]*\{?([^;}]*)[;}]", text, re.A):
+        members = set(re.findall(r"['\"]([\w-]+)['\"]", m.group(2), re.A))
         if members:
             out[m.group(1)] = members
     return out
@@ -324,7 +688,7 @@ DEFAULT_TOKEN_RES = [
     r"scripts/[\w.\-/]+\.(?:py|sql|mjs|js|ts|sh)",
     r"(?:npm|pnpm|yarn|bun) run [\w:.\-]+",
     r"node --test",
-    r"(?:^|&&|;|\|)\s*(?:pytest|ruff|mypy|eslint|tsc|cargo|go test)\b",
+    r"(?:^|&&|;|\|)[ \t\r\n\f\v]*(?:pytest|ruff|mypy|eslint|tsc|cargo|go test)\b",
     r"check:[a-z\-]+",
     r"docker build",
     r"drop schema public cascade",
@@ -354,7 +718,7 @@ def strip_comments(text: str) -> str:
                     quote = ""
             elif ch in "'\"":
                 quote = ch
-            elif ch == "#" and (i == 0 or line[i - 1].isspace()):
+            elif ch == "#" and (i == 0 or line[i - 1] in ASCII_WS):
                 cut = i
                 break
         out.append(line if cut is None else line[:cut])
@@ -366,10 +730,10 @@ def check_tokens(text: str, extra: list[str]) -> set[str]:
     text = strip_comments(text)
     found = set()
     for rx in DEFAULT_TOKEN_RES + list(extra):
-        for m in re.finditer(rx, text, re.M):
-            found.add(m.group(0).lstrip("&|; \n\t"))
+        for m in re.finditer(rx, text, re.M | re.A):
+            found.add(m.group(0).lstrip("&|;" + ASCII_WS))
     for m in TURBO_RE.finditer(text):
-        for task in m.group(1).split():
+        for task in split_ws(m.group(1)):
             found.add("turbo:" + task)
     return found
 
@@ -399,11 +763,11 @@ def run_payloads(yaml_text: str) -> list[tuple[int, str]]:
         j = i + 1
         while j < len(lines):
             line = lines[j]
-            if line.strip() == "":
+            if strip_ws(line) == "":
                 body.append("")
                 j += 1
                 continue
-            indent = len(line) - len(line.lstrip())
+            indent = len(line) - len(line.lstrip(ASCII_WS))
             if indent <= col:
                 break
             body.append(line)
@@ -419,40 +783,301 @@ def finding(fid: str, file: str, line: int, text: str, message: str) -> dict:
     return {"id": fid, "file": file, "line": line, "text": text, "message": message}
 
 
+# Each assertion's own lists, and the keys each entry is indexed by — None for a list of plain
+# strings. `plan_glob` is a string OR a list of them, so it is handled beside this.
+ENTRY_LISTS = (
+    ("A1", "intent_globs", None, ()),
+    ("A3", "doc_sections", ("file", "section"), ()),
+    ("A3", "local_only", None, ()),
+    ("A3", "ci_only", None, ()),
+    ("A3", "extra_tokens", None, ()),
+    ("A4", "artifacts", ("path",), ("parser",)),
+    ("A4", "not_fields", None, ()),
+    ("A4", "not_references", None, ()),
+    ("A4", "not_fields_override", None, ()),
+    ("A5", "vocabularies", ("file", "section", "enum"), ()),
+    ("A6", "retired", ("name",), ("became", "reason")),
+    ("A7", "reversed", ("pattern", "reason"), ("adr",)),
+    ("A9", "count_sites", ("pattern", "count_of"), ("file",)),
+    ("A15", "impl_globs", None, ()),
+    ("A15", "test_globs", None, ()),
+)
+GLOB_OR_LIST = ("A8", "A14")
+
+
+def config_shape_refusal(cfg: dict) -> str | None:
+    """The first config value no reader below can use, as the message to refuse with — or None.
+
+    One pass over the shapes, before anything indexes them. A value of the wrong shape was a
+    `KeyError` or an `AttributeError` here and a silent `undefined` in the Node emission, so the
+    same malformed config was a traceback on one side and a wrong answer on the other. A
+    traceback is never an acceptable ending for a malformed config: it is a refusal, with the
+    same message and the same exit in both languages.
+
+    The checks are in a fixed order and assertion ids are sorted, so a config broken in two ways
+    is refused for the same one by both.
+    """
+    is_obj = lambda v: isinstance(v, dict)
+    is_list = lambda v: isinstance(v, list)
+    is_name = lambda v: isinstance(v, str) and v != ""
+    checks: list[tuple[str, bool, str, str]] = []
+    table = given(cfg.get("table"), {})
+    checks.append(("table", is_obj(table), "an object",
+                   "it names the file that hosts the sources-of-truth table"))
+    if is_obj(table):
+        checks.append(("table.file", is_name(table.get("file")), "a path",
+                       "every doc's layer is recorded in that file, so without it there is "
+                       "nothing to hold a doc to"))
+    docs_rows = given(cfg.get("docs"), [])
+    checks.append(("docs", is_list(docs_rows), "a list",
+                   "A11 reads it row by row against the table"))
+    if is_list(docs_rows):
+        for i, d in enumerate(docs_rows):
+            checks.append((f"docs[{i}]", is_obj(d), "an object",
+                           "a docs row is a path and the layer it is on"))
+            if is_obj(d):
+                checks.append((f"docs[{i}].path", is_name(d.get("path")), "a path",
+                               "a row naming no doc says nothing about one"))
+    lb = given(cfg.get("load_bearing"), [])
+    checks.append(("load_bearing", is_list(lb), "a list", "A11 reads it as path globs"))
+    if is_list(lb):
+        for i, g in enumerate(lb):
+            checks.append((f"load_bearing[{i}]", isinstance(g, str), "a string",
+                           "each entry is a path glob"))
+
+    def entry_list(where, value, keys, reader, optional=()):
+        """A list the readers walk: `keys` None for a list of strings, else the keys each entry
+        is indexed by."""
+        checks.append((where, is_list(value), "a list", f"{reader} reads it as a list"))
+        if not is_list(value):
+            return
+        for i, e in enumerate(value):
+            if keys is None:
+                checks.append((f"{where}[{i}]", isinstance(e, str), "a string",
+                               f"{reader} reads every entry of it as a string"))
+                continue
+            named = ", ".join(f"`{k}`" for k in keys)
+            checks.append((f"{where}[{i}]", is_obj(e), "an entry",
+                           f"{reader} reads each entry's {named}"))
+            if not is_obj(e):
+                continue
+            for k in keys:
+                path_like = k in ("file", "path", "count_of")
+                checks.append((f"{where}[{i}].{k}", is_name(e.get(k)),
+                               "a path" if path_like else "a non-empty string",
+                               f"{reader} indexes the entry by it"))
+            # An optional key still has a shape when it is there: one that is read for its truth
+            # is `[]` — false here and TRUE in Node — and one that is interpolated into a
+            # finding's message prints differently in the two languages, and that message is part
+            # of the finding's baseline key.
+            for k in optional:
+                if e.get(k) is None:
+                    continue
+                checks.append((f"{where}[{i}].{k}", isinstance(e[k], str), "a string",
+                               f"{reader} reads it as one when it is there"))
+
+    entry_list("artifacts", given(cfg.get("artifacts"), []), ("path",), "A5")
+    for key, sub in (("adr", ("format", "file", "dir")), ("prd", ("dir",)),
+                     ("baseline", ("path",))):
+        value = given(cfg.get(key), {})
+        checks.append((key, is_obj(value), "an object", "it is read key by key"))
+        if not is_obj(value):
+            continue
+        for k in sub:
+            if value.get(k) is None:
+                continue                  # absent or null: the reader's own default applies
+            checks.append((f"{key}.{k}", isinstance(value[k], str), "a string",
+                           "it is read as one"))
+    A = given(cfg.get("assertions"), {})
+    checks.append(("assertions", is_obj(A), "an object",
+                   "every assertion's settings live under its id there"))
+    if is_obj(A):
+        for aid in sorted(A):
+            checks.append((f"assertions.{aid}", is_obj(A[aid]), "an object",
+                           "an assertion's settings are an object with an `enabled` switch"))
+            if not is_obj(A[aid]):
+                continue
+            conf = A[aid]
+            # The switch is read as a truth value, and the two languages disagree about which
+            # values are true: `bool([])` is False here and `Boolean([])` is true in Node, so
+            # `enabled: []` ran the assertion in one checker and not the other — and the enabled
+            # SET is what the provenance precondition compares, so one of them also refused.
+            for flag in ("enabled", "bare_sections"):
+                if conf.get(flag) is None:
+                    continue
+                checks.append((f"assertions.{aid}.{flag}", isinstance(conf[flag], bool),
+                               "true or false", "it is read as a switch"))
+            # The list and its entries only: an allow entry's `path` and `reason` have
+            # refusals of their own further down, which carry the method's reason for requiring
+            # them and are better messages than this pass can give.
+            if conf.get("allow") is not None:
+                allow = conf["allow"]
+                checks.append((f"assertions.{aid}.allow", is_list(allow), "a list",
+                               "an allow-list is a list of entries, each naming one path and the "
+                               "reason it will never be fixed"))
+                if is_list(allow):
+                    for i, e in enumerate(allow):
+                        checks.append((f"assertions.{aid}.allow[{i}]", is_obj(e), "an entry",
+                                       "an allow-list entry is an object with a `path` and a "
+                                       "`reason`"))
+            # Each assertion's own lists, in a fixed order. Their readers index an entry
+            # directly — `v["file"]`, `art["path"]`, `site["pattern"]` — which was a `KeyError`
+            # here and an `undefined` that reached a finding's baseline key in Node.
+            for owner, key, keys, optional in ENTRY_LISTS:
+                if owner != aid or conf.get(key) is None:
+                    continue
+                entry_list(f"assertions.{aid}.{key}", conf[key], keys, aid, optional)
+            if aid in GLOB_OR_LIST and conf.get("plan_glob") is not None:
+                g = conf["plan_glob"]
+                if isinstance(g, str):
+                    pass
+                elif is_list(g):
+                    for i, one in enumerate(g):
+                        checks.append((f"assertions.{aid}.plan_glob[{i}]", isinstance(one, str),
+                                       "a string", f"{aid} reads every entry of it as a glob"))
+                else:
+                    checks.append((f"assertions.{aid}.plan_glob", False,
+                                   "a string or a list of strings",
+                                   f"{aid} reads it as the globs its layer-5 docs match"))
+            if aid == "A3" and conf.get("workflow_glob") is not None:
+                checks.append(("assertions.A3.workflow_glob",
+                               isinstance(conf["workflow_glob"], str), "a string",
+                               "A3 reads it as the glob the workflows match"))
+    for where, ok, want, why in checks:
+        if ok:
+            continue
+        return (f"seam: {CONFIG_PATH} {where} is not {want} — {why}. The answers file is the "
+                f"source and this file is its projection, so write it there and regenerate "
+                f"(`seam-init --answers <file> --repo .`).")
+    return None
+
+
 def main() -> int:
     cfg_file = ROOT / CONFIG_PATH
     if not cfg_file.exists():
         print(f"seam: no {CONFIG_PATH} found above {Path(__file__).resolve().parent}",
               file=sys.stderr)
         return 2
-    cfg = json.loads(cfg_file.read_text())
-    A = cfg.get("assertions", {})
-    on = lambda k: bool(A.get(k, {}).get("enabled"))
-    opt = lambda k, name, default=None: A.get(k, {}).get(name, default)
+    # Two refusals, not one, and neither interpolates the engine's own sentence into the line the
+    # two languages are held to: `json`'s parse error and `JSON.parse`'s are differently worded,
+    # and a malformed config has to be one identical message. The detail is printed on a line of
+    # its own. `OSError` is caught because it is reachable — a mode-000 config, or a directory at
+    # that path — and it tracebacked here while Node's catch refused.
+    try:
+        raw = read_text(cfg_file)
+    except OSError:
+        print(f"seam: {CONFIG_PATH} could not be read. It is the file every knob is read from, so "
+              f"there is nothing to run — check its permissions, or write it with the wizard "
+              f"(`seam-init --answers <file> --repo .`).", file=sys.stderr)
+        return 2
+    try:
+        cfg = json.loads(raw)
+    except ValueError as e:
+        print(f"seam: {CONFIG_PATH} is not readable JSON. Regenerate it with the wizard "
+              f"(`seam-init --answers <file> --repo .`), which writes it from the answers file; "
+              f"the parser's own message is on the next line.", file=sys.stderr)
+        print(f"seam: the parser said: {e}", file=sys.stderr)
+        return 2
+    if not isinstance(cfg, dict):
+        print(f"seam: {CONFIG_PATH} is not an object. The config is what every knob is read "
+              f"from, so there is nothing to run — regenerate it with the wizard "
+              f"(`seam-init --answers <file> --repo .`).", file=sys.stderr)
+        return 2
+    shape = config_shape_refusal(cfg)
+    if shape is not None:
+        print(shape, file=sys.stderr)
+        return 2
+    A = given(cfg.get("assertions"), {})
+    # `given`, not `.get(k, default)`: a JSON null means the key is unset, which is how the Node
+    # emission's `??` reads it. A null reaching a reader was a crash on one side and a default on
+    # the other.
+    conf = lambda k: given(A.get(k), {})
+    on = lambda k: bool(conf(k).get("enabled"))
+    opt = lambda k, name, default=None: given(conf(k).get(name), default)
 
     # A checker that measures nothing cannot be told from one that passed, which is the thing
     # this whole layer exists to prevent. Refuse rather than exit 0.
-    enabled = [k for k in A if A[k].get("enabled")]
+    enabled = [k for k in A if conf(k).get("enabled")]
     if not enabled and not (ROOT / ".seam" / "assertions").is_dir():
         print(f"seam: no assertions are enabled in {CONFIG_PATH}, and there are none in "
               f".seam/assertions/ — this checker would measure nothing and exit 0, which cannot "
               f"be told apart from passing. Enable at least one.", file=sys.stderr)
         return 2
 
+    # ── The integrity precondition ──────────────────────────────────────────
+    #
+    # A16 compares this config with the answers file it was projected from, and **A16's own switch
+    # lives in this config**. Setting `assertions.A16.enabled` to false and editing the config in
+    # the same write was therefore silent: the only trace was the assertion count falling by one.
+    #
+    # So this is not an assertion. An assertion can be switched off, which is the problem. It runs
+    # here — before the loop, independent of every switch — and exits 2, because "the comparison
+    # could not be trusted" is a different claim from "a doc is wrong".
+    #
+    # The boundary, stated rather than implied: editing the config AND this record together still
+    # defeats it, the same way re-hashing defeats A16. What is closed is the silent single edit.
+    prov = None
+    try:
+        prov = json.loads(read_text(ROOT / PROVENANCE_PATH))
+    except (OSError, ValueError):
+        prov = None
+    regenerate = (f"Write it with the wizard: `seam-init --answers <file> --repo .`, which "
+                  f"rewrites {CONFIG_PATH} and this record together.")
+    if not isinstance(prov, dict):
+        print(f"seam: no readable {PROVENANCE_PATH}, so there is no record of which assertions "
+              f"were enabled when this checker was emitted — and a switch flipped in "
+              f"{CONFIG_PATH} is a silent change to what is measured, A16's own switch included. "
+              f"{regenerate}", file=sys.stderr)
+        return 2
+    recorded = prov.get("assertions_enabled")
+    if not isinstance(recorded, list) or not all(isinstance(x, str) for x in recorded):
+        print(f"seam: {PROVENANCE_PATH} has no `assertions_enabled` list, so the enabled set "
+              f"could not be compared with the one on record. An absent list is not \"none "
+              f"enabled\". {regenerate}", file=sys.stderr)
+        return 2
+    live = sorted(enabled)
+    want = sorted(recorded)
+    if live != want:
+        added = [x for x in live if x not in want]
+        gone = [x for x in want if x not in live]
+        print(f"seam: {CONFIG_PATH} does not enable the assertions {PROVENANCE_PATH} records."
+              + (f" Enabled here and not on record: {', '.join(added)}." if added else "")
+              + (f" On record and not enabled here: {', '.join(gone)}." if gone else "")
+              + f" The answers file is the source and the config is its projection, so a switch "
+                f"flipped by hand is a silent change to what this checker measures — which is why "
+                f"this is a refusal and not an assertion. {regenerate}", file=sys.stderr)
+        return 2
+
     # An allow-list entry means "this will never be fixed", so the method requires a written
     # reason. Nothing read the field, which made the requirement a sentence.
-    for aid, conf in sorted(A.items()):
-        for i, e in enumerate(conf.get("allow", []) or []):
-            if not str(e.get("reason", "")).strip():
+    #
+    # And it requires a PATH, because an exemption that names nothing cannot exempt anything. The
+    # three readers of that field disagreed about what a missing one was — a Python `KeyError`, a
+    # Node `undefined`, and `"None"` against `""` in the obsolescence message, whose text is part
+    # of a finding's baseline key — so it is refused here, once, before anything reads it.
+    # The shape of `allow` and of each entry is settled by `config_shape_refusal` above, so what
+    # is left here is what the entry SAYS.
+    for aid in sorted(A):
+        for i, e in enumerate(given(conf(aid).get("allow"), [])):
+            if not isinstance(e.get("path"), str) or e["path"] == "":
+                print(f"seam: {CONFIG_PATH} assertions.{aid}.allow[{i}].path is not a path. An "
+                      f"allow-list entry exempts one path from one assertion, so an entry naming "
+                      f"none exempts nothing — write the path, or delete the entry.",
+                      file=sys.stderr)
+                return 2
+            if not strip_ws(str(given(e.get("reason"), ""))):
+                # Quoted by hand and not with `!r`: Python's repr switches to double quotes for
+                # a string containing an apostrophe and the Node emission does not.
                 print(f"seam: {CONFIG_PATH} assertions.{aid}.allow[{i}] exempts "
-                      f"{e.get('path', '<no path>')!r} with no reason. An allow-list entry means "
+                      f"'{given(e.get('path'), '<no path>')}' with no reason. An allow-list entry "
+                      f"means "
                       f"\"this will never be fixed\" — write why, or use the baseline, which "
                       f"means \"not yet\".", file=sys.stderr)
                 return 2
 
     host = cfg["table"]["file"]
     docs = walk_md(ROOT)
-    text_of = {d: (ROOT / d).read_text() for d in docs if (ROOT / d).exists()}
+    text_of = {d: read_text(ROOT / d) for d in docs if (ROOT / d).exists()}
     anchors_of = {d: anchors(t) for d, t in text_of.items()}
     table = read_table(text_of.get(host, ""))
     findings: list[dict] = []
@@ -465,7 +1090,12 @@ def main() -> int:
     # A glob is not a citation of a file and is skipped.
     if on("A1"):
         ran += 1
-        allowed = {e["path"] for e in opt("A1", "allow", [])}
+        allow_list = opt("A1", "allow", [])
+        allowed = {e["path"] for e in allow_list}
+        # Which entries actually suppressed a finding. An allow entry means "this will never be
+        # fixed", so one that stopped doing work is a decision about nothing — and worse, it goes
+        # on skipping its path, so a citation that starts dangling again is skipped with it.
+        used_allow: set[str] = set()
         # A doc that describes work NOT YET DONE cites files as intentions, not as claims about
         # the tree: an implementation plan names what it is about to create. Those citations are
         # neither debt (a baseline means "not yet" and they evaporate on landing) nor approvals
@@ -475,13 +1105,38 @@ def main() -> int:
             if any(rx.match(d) for rx in intent):
                 continue
             for cited, at in md_citations(ROOT, d, text_of[d]):
-                if "*" in cited or cited in allowed:
+                if "*" in cited:
+                    continue
+                if cited in allowed:
+                    # Only a citation that WOULD have been reported earns the entry its place: one
+                    # that resolves needs no exemption.
+                    if resolve_md(ROOT, d, cited) is None:
+                        used_allow.add(cited)
                     continue
                 if resolve_md(ROOT, d, cited) is None:
                     findings.append(finding(
                         "A1", d, line_of(text_of[d], at), cited,
                         f"cites `{cited}`, which is not in the repo — fix or drop the citation, "
                         f"or add it to assertions.A1.allow with a reason"))
+        # An empty allow-list is not a finding: nothing is exempted, so nothing stopped doing
+        # work.
+        for e in allow_list:
+            path = e["path"]                  # a string, or the run was refused above
+            if path in used_allow:
+                continue
+            if "*" in path:
+                why = ("a glob, which A1 never consults — a cited path containing `*` names a "
+                       "form and is skipped before the allow-list is read, so this entry can "
+                       "exempt nothing")
+            elif (ROOT / path).exists():
+                why = "now in the repo, so every citation of it resolves and needs no exemption"
+            else:
+                why = "cited nowhere A1 reads, or cited only where every citation of it resolves"
+            findings.append(finding("A1", CONFIG_PATH, 1, path,
+                f"assertions.A1.allow exempts `{path}`, which is {why}. The entry suppressed "
+                f"nothing on this run, and an allow entry means \"this will never be fixed\" — so "
+                f"it is a decision about nothing, and it will go on skipping that path if it "
+                f"starts dangling again. Delete it and let A1 answer for the path"))
 
     # ── A2. Every `§ Section` citation names a heading that exists. ──────────
     #
@@ -505,12 +1160,12 @@ def main() -> int:
                 for m in TOKEN_RE.finditer(para):
                     backticked, bare, name = m.group(1), m.group(2), m.group(3)
                     if backticked is not None or bare is not None:
-                        tok = (backticked if backticked is not None else bare).strip()
-                        if re.fullmatch(r"[\w./@-]+\.md", tok) and "*" not in tok:
+                        tok = strip_ws(backticked if backticked is not None else bare)
+                        if re.fullmatch(r"[\w./@-]+\.md", tok, re.A) and "*" not in tok:
                             target = resolve_md(ROOT, d, tok) or tok
                             target_end = m.end()
                             shadow = None
-                        elif backticked is not None and re.fullmatch(r"[\w./@-]+", tok):
+                        elif backticked is not None and re.fullmatch(r"[\w./@-]+", tok, re.A):
                             # `some-skill` § The one gate names something that is not a file.
                             # Unresolvable is not a defect; a check that reds on a citation it
                             # cannot evaluate is a check that gets switched off.
@@ -518,7 +1173,7 @@ def main() -> int:
                         else:
                             shadow = None
                         continue
-                    cited = name.strip()
+                    cited = strip_ws(name)
                     if shadow is not None and m.start() - shadow_end <= 4 \
                             and ADJACENT_RE.match(para[shadow_end:m.start()]):
                         shadow = None
@@ -538,7 +1193,7 @@ def main() -> int:
                     if aset is None:
                         if not (ROOT / file).exists():
                             continue       # A1 owns a path that does not resolve
-                        aset = anchors((ROOT / file).read_text())
+                        aset = anchors(read_text(ROOT / file))
                         anchors_of[file] = aset
                     if not cites_section(aset, cited):
                         findings.append(finding(
@@ -597,7 +1252,7 @@ def main() -> int:
             else:
                 in_ci: dict[str, tuple[str, int]] = {}
                 for rel in workflows:
-                    for line_no, payload in run_payloads((ROOT / rel).read_text()):
+                    for line_no, payload in run_payloads(read_text(ROOT / rel)):
                         for tok in check_tokens(payload, extra):
                             in_ci.setdefault(tok, (rel, line_no))
                 for tok, (f, ln) in sorted(documented.items()):
@@ -631,12 +1286,12 @@ def main() -> int:
                     "resolved against it"))
                 continue
             if art.get("parser") == "sql":
-                tables.update(sql_tables(p.read_text()))
+                tables.update(sql_tables(read_text(p)))
             elif art.get("parser") == "ts":
-                tables.update({k: v for k, v in ts_unions(p.read_text()).items()})
+                tables.update({k: v for k, v in ts_unions(read_text(p)).items()})
         if tables:
             for d in docs:
-                for m in re.finditer(r"`(\w+)\.(\w+)`", text_of[d]):
+                for m in re.finditer(r"`(\w+)\.(\w+)`", text_of[d], re.A):
                     whole, left, right = m.group(0).strip("`"), m.group(1), m.group(2)
                     if right in not_fields or whole in not_refs or left not in tables:
                         continue
@@ -660,21 +1315,24 @@ def main() -> int:
                 findings.append(finding("A5", f, 1, name,
                     f"no section called § {name} in `{f}` — the vocabulary was not compared"))
                 continue
-            blocks = re.findall(r"```[\w]*\n(.*?)```", body, re.S)
+            blocks = re.findall(r"```[\w]*\n(.*?)```", body, re.S | re.A)
             if not blocks:
                 findings.append(finding("A5", f, 1, name,
                     f"§ {name} in `{f}` has no fenced block — the vocabulary was not compared"))
                 continue
-            stated = {w.strip() for w in re.split(r"[\s,]+", "\n".join(blocks)) if w.strip()}
+            stated = {w for w in re.split(r"[ \t\r\n\f\v,]+", "\n".join(blocks)) if w}
             defined = None
-            for art in opt("A4", "artifacts", []) or cfg.get("artifacts", []):
+            # `given`, not `or`: an A4 artifact list that is present and EMPTY is an answer, and
+            # `or` read it as absent and fell through to the top-level one — which the Node
+            # emission's `??` does not, so the two read different artifacts.
+            for art in given(opt("A4", "artifacts"), given(cfg.get("artifacts"), [])):
                 p = ROOT / art["path"]
                 if not p.exists():
                     continue
                 if art.get("parser") == "sql":
-                    defined = sql_enum(p.read_text(), v["enum"])
+                    defined = sql_enum(read_text(p), v["enum"])
                 elif art.get("parser") == "ts":
-                    defined = ts_unions(p.read_text()).get(v["enum"])
+                    defined = ts_unions(read_text(p)).get(v["enum"])
                 if defined is not None:
                     break
             at = line_of(text_of[f], max(text_of[f].find(name), 0))
@@ -693,13 +1351,20 @@ def main() -> int:
     if on("A6"):
         ran += 1
         for entry in opt("A6", "retired", []):
-            rx = re.compile(r"\b" + re.escape(entry["name"]) + r"\b", re.I)
+            # The boundaries are written out because JS word boundaries are ASCII-only whatever
+            # the flags. The folding is left Unicode here and Node carries `u` to match it: `re.A`
+            # would make both ASCII and silence `naïve` vs "NAÏVE", while `i` without `u` on
+            # the Node side is *narrower* than this, excluding U+017F LONG S and U+212A KELVIN
+            # SIGN. Both were measured divergences in turn; `re.I` here against `giu` there agrees.
+            rx = re.compile(r"(?<![A-Za-z0-9_])" + re.escape(entry["name"])
+                            + r"(?![A-Za-z0-9_])", re.I)
             for d in docs:
                 for m in rx.finditer(without_struck(text_of[d])):
                     findings.append(finding(
                         "A6", d, line_of(text_of[d], m.start()), entry["name"],
-                        f"`{entry['name']}` is retired — it became `{entry.get('became', '?')}`"
-                        f" ({entry.get('reason', 'no reason recorded')})"))
+                        f"`{entry['name']}` is retired — it became "
+                        f"`{given(entry.get('became'), '?')}`"
+                        f" ({given(entry.get('reason'), 'no reason recorded')})"))
 
     # ── A7. A reversed decision is not prescribed again. ────────────────────
     #
@@ -709,10 +1374,10 @@ def main() -> int:
     if on("A7"):
         ran += 1
         for entry in opt("A7", "reversed", []):
-            rx = re.compile(entry["pattern"])
+            rx = re.compile(entry["pattern"], re.A)
             for d in docs:
                 for m in rx.finditer(without_struck(text_of[d])):
-                    where = entry.get("adr", "the decision record")
+                    where = given(entry.get("adr"), "the decision record")
                     findings.append(finding(
                         "A7", d, line_of(text_of[d], m.start()), m.group(0),
                         f"prescribes a reversed decision: {entry['reason']} — see `{where}`"))
@@ -733,17 +1398,16 @@ def main() -> int:
                 f"switch A8 off; off is distinct from passing"))
         owners: dict[str, list[tuple[str, int]]] = {}
         for d in plans:
-            body = section_body(text_of[d], "The issues")
-            if body is None:
+            span = section_span(text_of[d], "The issues")
+            if span is None:
                 continue
-            base = text_of[d].split("\n").index(body.split("\n")[0]) + 1 if body.strip() else 0
-            for i, line in enumerate(body.split("\n")):
-                if not line.strip().startswith("|"):
-                    continue
-                cells = [c.strip() for c in line.strip().strip("|").split("|")]
+            body, base = span
+            for i, cells in table_rows(body):
+                # Unicode `\d`, deliberately: ASCII here narrowed toward SILENCE, and a
+                # numbered row in another script is still a numbered row.
                 if len(cells) < 2 or not re.fullmatch(r"~*\d+~*", cells[0]):
                     continue
-                m = re.search(r"#(\d+)", cells[1])
+                m = re.search(r"#(\d+)", cells[1], re.A)
                 if m:
                     owners.setdefault(m.group(1), []).append((d, base + i))
         for issue, places in sorted(owners.items(), key=lambda kv: int(kv[0])):
@@ -760,7 +1424,7 @@ def main() -> int:
     if on("A9"):
         ran += 1
         for site in opt("A9", "count_sites", []):
-            rx = re.compile(site["pattern"])
+            rx = re.compile(site["pattern"], re.A)
             actual = len(glob_files(ROOT, site["count_of"]))
             targets = [site["file"]] if site.get("file") else docs
             for d in targets:
@@ -768,7 +1432,9 @@ def main() -> int:
                     continue
                 for m in rx.finditer(without_struck(text_of[d])):
                     word = m.group(1)
-                    stated = int(word) if word.isdigit() else WORDS.get(word.lower())
+                    stated = ascii_int(word)
+                    if stated is None:
+                        stated = WORDS.get(word.lower())
                     if stated is None or stated == actual:
                         continue
                     findings.append(finding(
@@ -806,10 +1472,10 @@ def main() -> int:
     # ── A11. Config `load_bearing` and the table's Enforces column agree. ──
     if on("A11"):
         ran += 1
-        load_bearing = cfg.get("load_bearing", [])
+        load_bearing = given(cfg.get("load_bearing"), [])
         globs = [glob_re(g) for g in load_bearing]
         for row in table:
-            e = row["enforces"].strip()
+            e = strip_ws(row["enforces"])
             if not e:
                 continue
             # A path-shaped value is held to `load_bearing`; a command is not. The plan allows an
@@ -827,15 +1493,19 @@ def main() -> int:
         # doc's layer could be two different things with nothing reconciling them — which is the
         # exact failure the method's central rule exists to prevent.
         by_path = {r["doc"]: r for r in table}
-        for d in cfg.get("docs", []):
-            row = by_path.get(d.get("path"))
+        for d in given(cfg.get("docs"), []):
+            # Read once, through `given`: a null printed as `None` here and as `null` there, and
+            # the message is part of a finding's baseline key.
+            path = given(d.get("path"), "")
+            layer = given(d.get("layer"), "")
+            row = by_path.get(path)
             if row is None:
-                findings.append(finding("A11", CONFIG_PATH, 1, d.get("path", ""),
-                    f"{CONFIG_PATH} lists `{d.get('path')}` and `{host}` has no row for it"))
-            elif row["layer"] is not None and d.get("layer") != row["layer"]:
-                findings.append(finding("A11", host, row["line"], d.get("path", ""),
-                    f"`{d.get('path')}` is layer {row['layer']} in the table and "
-                    f"layer {d.get('layer')} in {CONFIG_PATH} — the layer fixes the edit rule, so "
+                findings.append(finding("A11", CONFIG_PATH, 1, path,
+                    f"{CONFIG_PATH} lists `{path}` and `{host}` has no row for it"))
+            elif row["layer"] is not None and layer != row["layer"]:
+                findings.append(finding("A11", host, row["line"], path,
+                    f"`{path}` is layer {row['layer']} in the table and "
+                    f"layer {layer} in {CONFIG_PATH} — the layer fixes the edit rule, so "
                     f"two answers is two edit rules"))
 
     # ── A12. Append-only layers are byte-frozen on the default branch. ─────
@@ -843,44 +1513,77 @@ def main() -> int:
     # Layers 3 and 4 only, and only because their edit rule says a file already on the branch is
     # final: a record is never wrong, and an intent version is superseded rather than corrected.
     # A layer-2 doc is byte-frozen by nothing, correctly.
+    #
+    # One exception, for one file: a single dated decisions file is a record that is appended to by
+    # design, so byte-equality would make it impossible to append to. For that path alone the
+    # branch's bytes must be an unbroken PREFIX of the working copy. Bytes, not decoded text: a
+    # decode would let invalid UTF-8 compare differently here than in the Node checker.
     if on("A12"):
         ran += 1
-        branch = opt("A12", "default_branch", cfg.get("repo", {}).get("default_branch", "main"))
+        # Unset, or null, means the repo's own default branch. Anything else must be a branch
+        # name: a `true` printed as `True` here and as `true` in the other language, and the
+        # finding's text is part of its baseline key, so one config had two keys. A15 was given
+        # this treatment and A12 was not; it is one pattern, not one site.
+        raw_branch = next((v for v in (opt("A12", "default_branch"),
+                                       given(cfg.get("repo"), {}).get("default_branch"))
+                           if v is not None), "main")
+        valid_branch = isinstance(raw_branch, str) and raw_branch != ""
+        branch = raw_branch if valid_branch else ""
+        adr_cfg = given(cfg.get("adr"), {})
+        append_only = (given(adr_cfg.get("file"), "docs/decisions.md")
+                       if adr_cfg.get("format") == "single" else None)
+        # The same directory and the same test for "a MADR record" that A13 uses.
+        madr_dir = (given(adr_cfg.get("dir"), "docs/adr")
+                    if adr_cfg.get("format") == "madr" else None)
         frozen = [glob_re(r["doc"]) for r in table if r["layer"] in (3, 4)]
-        try:
-            subprocess.run(["git", "rev-parse", "--verify", branch], cwd=ROOT, check=True,
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            have_branch = True
-        except Exception:
-            have_branch = False
-        if not have_branch:
+        ref = resolve_default_branch(branch) if valid_branch else None
+        if not valid_branch:
+            findings.append(finding("A12", CONFIG_PATH, 1, "default_branch",
+                "assertions.A12.default_branch is not a branch name — the byte-freeze comparison "
+                "was not made. Set it to a string naming the default branch, or switch A12 off; "
+                "off is distinct from passing"))
+        elif ref is None:
             findings.append(finding("A12", CONFIG_PATH, 1, branch,
-                f"no branch called `{branch}` — the byte-freeze comparison was not made. Set "
-                f"assertions.A12.default_branch, or switch A12 off; off is distinct from passing"))
+                f"no branch called `{branch}` and no `origin/{branch}` — the byte-freeze comparison "
+                f"was not made. Fetch the branch (in CI, `fetch-depth: 0` and the default branch "
+                f"fetched), set assertions.A12.default_branch, or switch A12 off; off is distinct "
+                f"from passing"))
         else:
             for d in docs:
                 if not any(rx.match(d) for rx in frozen) or not frozen_record(d):
                     continue
                 try:
-                    was = subprocess.run(["git", "show", f"{branch}:{d}"], cwd=ROOT, check=True,
+                    was = subprocess.run(["git", "show", f"{ref}:{d}"], cwd=ROOT, check=True,
                                          stdout=subprocess.PIPE, stderr=subprocess.DEVNULL).stdout
                 except Exception:
                     continue          # not on the branch yet: a new record, which is the point
                 now = (ROOT / d).read_bytes()
-                if was != now:
-                    layer = next(r["layer"] for _, rx, r in
-                                 [(x["doc"], glob_re(x["doc"]), x) for x in table] if rx.match(d))
+                layer = next(r["layer"] for _, rx, r in
+                             [(x["doc"], glob_re(x["doc"]), x) for x in table] if rx.match(d))
+                if d == append_only:
+                    if not now.startswith(was):
+                        findings.append(finding("A12", d, 1, d,
+                            f"is layer {layer} ({LAYER_NAMES[layer]}), append-only, and already on "
+                            f"`{ref}`: what is there must stay, byte for byte, at the top of "
+                            f"this file. An entry was edited, not appended. A reversal is a new "
+                            f"dated entry; a correction is not available here"))
+                elif was != now:
+                    madr = madr_dir is not None and d.startswith(madr_dir + "/")
+                    if madr and differs_only_in_status_lines(was, now):
+                        continue
                     findings.append(finding("A12", d, 1, d,
-                        f"is layer {layer} ({LAYER_NAMES[layer]}) and already on `{branch}`, so "
+                        f"is layer {layer} ({LAYER_NAMES[layer]}) and already on `{ref}`, so "
                         f"its bytes are final. A reversal is a new entry; a correction is not "
-                        f"available here"))
+                        f"available here"
+                        + (". Only its **Status:** line may change, to name what superseded it"
+                           if madr else "")))
 
     # ── A13. The append-only layers keep their shape. ──────────────────────
     if on("A13"):
         ran += 1
-        adr = cfg.get("adr", {})
+        adr = given(cfg.get("adr"), {})
         if adr.get("format") == "madr":
-            d_dir = adr.get("dir", "docs/adr")
+            d_dir = given(adr.get("dir"), "docs/adr")
             for d in docs:
                 if not d.startswith(d_dir + "/") or os.path.basename(d) in ("README.md", "template.md"):
                     continue
@@ -895,7 +1598,8 @@ def main() -> int:
                         "a decision record carries a **Status:** — proposed, accepted, or "
                         "superseded by NNNN"))
                 elif "superseded" in m.group(1).lower():
-                    succ = re.search(r"superseded by\s+(\d{4})", m.group(1), re.I)
+                    succ = re.search(r"superseded by[ \t\r\n\f\v]+(\d{4})", m.group(1),
+                                     re.I | re.A)
                     if not succ:
                         findings.append(finding("A13", d, line_of(text, m.start()), m.group(1),
                             "a superseded record names its successor by number, or the reversal "
@@ -904,21 +1608,23 @@ def main() -> int:
                         findings.append(finding("A13", d, line_of(text, m.start()), succ.group(1),
                             f"names {succ.group(1)} as its successor, and there is no such record"))
         else:
-            f = adr.get("file", "docs/decisions.md")
+            f = given(adr.get("file"), "docs/decisions.md")
             if f in text_of:
                 for m in re.finditer(r"^##[ \t]+(.*)$", text_of[f], re.M):
                     after = text_of[f][m.end():m.end() + 400]
-                    if not re.search(r"\d{4}-\d{2}-\d{2}", after.split("\n##")[0]):
+                    if not re.search(r"\d{4}-\d{2}-\d{2}", after.split("\n##")[0], re.A):
                         findings.append(finding("A13", f, line_of(text_of[f], m.start()),
                             m.group(1),
                             "a dated decisions file gives every entry a date — the layer is "
                             "append-only and dated, and the date is what makes it a record"))
-        prd = cfg.get("prd", {})
-        prd_dir = prd.get("dir", "docs/prd")
+        prd = given(cfg.get("prd"), {})
+        prd_dir = given(prd.get("dir"), "docs/prd")
         index = f"{prd_dir}/README.md"
         if index in text_of:
             for d in docs:
                 base = os.path.basename(d)
+                # Unicode `\d`: A13 exists so an unindexed version cannot hide, and
+                # `PRD-v\u0663.md` was invisible to both checkers while this was ASCII.
                 if not d.startswith(prd_dir + "/") or not re.fullmatch(r"PRD-v\d+\.md", base):
                     continue
                 # Findable by filename or by version label: an index row reading `| v0 | … |`
@@ -926,7 +1632,7 @@ def main() -> int:
                 # cannot hide, not so the index has to spell a filename.
                 label = base[4:-3]                       # PRD-v0.md -> v0
                 indexed = base in text_of[index] or re.search(
-                    r"(?<![\w-])" + re.escape(label) + r"(?![\w.-])", text_of[index])
+                    r"(?<![\w-])" + re.escape(label) + r"(?![\w.-])", text_of[index], re.A)
                 if not indexed:
                     findings.append(finding("A13", index, 1, base,
                         f"`{base}` is a PRD version and is named nowhere in the index — neither "
@@ -935,6 +1641,346 @@ def main() -> int:
         elif any(d.startswith(prd_dir + "/") for d in docs):
             findings.append(finding("A13", index, 1, "",
                 f"`{prd_dir}/` has versions and no `README.md` index"))
+
+    # ── A14. The units table has the shape it claims. ──────────────────────
+    if on("A14"):
+        ran += 1
+        globs = opt("A14", "plan_glob", "docs/plans/*.md")
+        globs = [globs] if isinstance(globs, str) else list(globs)
+        res = [glob_re(g) for g in globs]
+        # Enabled and matching nothing is not a pass: the same rule A8 follows.
+        plans = [d for d in docs if any(rx.match(d) for rx in res)]
+        if not plans:
+            findings.append(finding("A14", CONFIG_PATH, 1, ", ".join(globs),
+                f"assertions.A14 is enabled and `{', '.join(globs)}` matches no doc — the units "
+                f"comparison was not made. Point it at the layer-5 rows, or switch A14 off; off "
+                f"is distinct from passing"))
+        # What counts as an assertion is the repo's to say: a Go table test fails through
+        # `t.Fatalf` and contains no assertion word at all, so no default can be right for every
+        # repo. A pattern that cannot be read the same way by both checkers is reported, and only
+        # the comparison that needed it is skipped.
+        pat = opt("A14", "assertion_pattern", DEFAULT_ASSERTION_PATTERN)
+        assert_re = None
+        why = portable_regex(pat) if isinstance(pat, str) else "it is not a string"
+        if why is None:
+            try:
+                assert_re = re.compile(pat, re.A | re.M)
+            except re.error:
+                why = "it did not compile"
+        if why is not None:
+            shown = f" `{pat}`" if isinstance(pat, str) else ""
+            findings.append(finding("A14", CONFIG_PATH, 1, pat if isinstance(pat, str) else "",
+                f"assertions.A14.assertion_pattern{shown} could not be compiled — {why}. Whether "
+                f"a test file asserts anything was not compared; the rest of A14 ran. Write the "
+                f"pattern in the subset `references/assertions.md` § A14 describes, or remove the "
+                f"key for the default"))
+        for d in plans:
+            text = text_of[d]
+            span = section_span(text, "The units")
+            if span is None:
+                # Only a plan that sequences issues is a plan that owes its units. A layer-5 doc
+                # with neither section is another kind of file under the same glob, and says
+                # nothing here.
+                if section_body(text, "The issues") is not None:
+                    findings.append(finding("A14", d, 1, "The units",
+                        "has a `§ The issues` and no `§ The units` — the units comparison was "
+                        "not made. A plan names its units, each with the test that proves it, "
+                        "or nothing says what \"done\" is"))
+                continue
+            # Both from the scan: `text.find(body)` is a lookup by content, and a plan that
+            # quotes its own units table has those exact lines earlier in the file.
+            body, base = span
+            units = 0
+            for i, cells in table_rows(body):
+                # A bare numeral only: the header, the rule under it, and a struck-through unit
+                # are not units, so none of them is held to the shape.
+                # Unicode `\d`, as in A8's row test and for the same reason.
+                if not re.fullmatch(r"\d+", cells[0]):
+                    continue
+                units += 1
+                proves = cells[2] if len(cells) > 2 else ""
+                m = re.fullmatch(r"`([\w./-]+)`", proves, re.A)
+                if not m:
+                    findings.append(finding("A14", d, base + i, proves,
+                        f"unit {cells[0]} has no test path in its \"Proves it\" cell — a unit is "
+                        f"the smallest piece of work that carries its own test, so name the test "
+                        f"as a backticked path"))
+                    continue
+                # Only a plain repo-relative file path is read. An absolute one resolves differently
+                # in the two languages (pathlib's `/` replaces the root, join concatenates onto
+                # it), a trailing `/` does too (pathlib drops it, so the file is found; a stat in
+                # Node fails with ENOTDIR), and `..` leaves the repo, which a repo's own check has
+                # no business reading.
+                if (m.group(1).startswith("/") or m.group(1).endswith("/")
+                        or ".." in m.group(1).split("/")):
+                    findings.append(finding("A14", d, base + i, m.group(1),
+                        f"unit {cells[0]} names `{m.group(1)}` as its test, and that is not a file "
+                        f"path inside the repo — write it relative to the repo root, with no "
+                        f"leading `/`, no trailing `/` and no `..`"))
+                    continue
+                # A file that is there and cannot be opened is not a missing one, and it must not
+                # take the checker down: every assertion after this one would stop running, and
+                # a crash exits nonzero, which looks the same as findings.
+                state, content = "ok", ""
+                try:
+                    tp = ROOT / m.group(1)
+                    tp.stat()
+                    if tp.is_file():
+                        content = read_text(tp)
+                    else:
+                        state = "missing"
+                except OSError as e:
+                    state = "missing" if e.errno in (errno.ENOENT, errno.ENOTDIR) else "unreadable"
+                if state == "missing":
+                    findings.append(finding("A14", d, base + i, m.group(1),
+                        f"unit {cells[0]} names `{m.group(1)}` as its test, and there is no such "
+                        f"file"))
+                elif state == "unreadable":
+                    findings.append(finding("A14", d, base + i, m.group(1),
+                        f"unit {cells[0]} names `{m.group(1)}` as its test, and the file could "
+                        f"not be read — whether it asserts anything was not compared"))
+                elif assert_re is not None:
+                    # The pattern sees the file with line endings made `\n` and each run of
+                    # non-ASCII characters made one `~`, so `.`, `\s` and `$` mean the same to
+                    # both engines.
+                    flat = re.sub(r"[^\x00-\x7f]+", "~", content)
+                    if not assert_re.search(flat):
+                        findings.append(finding("A14", d, base + i, m.group(1),
+                            f"unit {cells[0]} names `{m.group(1)}` as its test, and the file "
+                            f"asserts nothing — nothing in it matches "
+                            f"`assertions.A14.assertion_pattern`"))
+            # A heading with nothing under it compared nothing, which is the missing section again.
+            if units == 0:
+                findings.append(finding("A14", d, 1, "The units",
+                    "has a `§ The units` with no unit in it — the units comparison was not made. "
+                    "A unit is a numbered row naming the test that proves it; a struck-through "
+                    "row is not one"))
+
+    # ── A15. A test arrives before the implementation it proves. ───────────
+    #
+    # Off by default: it needs two repo-specific lists. Reads the commits this branch has and the
+    # default branch has not, oldest first, and holds the files ADDED in them to the order a
+    # test-first method promises. A finding names the implementation file, line 1 — never a
+    # commit, because a sha is fresh on every branch and a finding carrying one could not be
+    # baselined.
+    if on("A15"):
+        # Unset, or null, means the repo's own default branch. Anything else must be a branch
+        # name: a `true` would print as `True` here and `true` in the other language, and the
+        # finding's text is part of its baseline key.
+        raw_branch = next((v for v in (opt("A15", "default_branch"),
+                                       given(cfg.get("repo"), {}).get("default_branch"))
+                           if v is not None), "main")
+        valid_branch = isinstance(raw_branch, str) and raw_branch != ""
+        branch = raw_branch if valid_branch else ""
+
+        def globs_of(key):
+            v = opt("A15", key, [])
+            v = [v] if isinstance(v, str) else v if isinstance(v, list) else []
+            return [g for g in v if isinstance(g, str) and g != ""]
+
+        impl_globs = globs_of("impl_globs")
+        test_globs = globs_of("test_globs")
+
+        def git(*args):
+            # Every way git can fail — a branch that is not there, a shallow clone, no git at
+            # all — is None, because each means the same thing here: the comparison cannot be made.
+            try:
+                return subprocess.run(["git", *args], cwd=ROOT, check=True, stdin=subprocess.DEVNULL,
+                                      stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
+                                      ).stdout.decode("utf-8", errors="replace")
+            except Exception:
+                return None
+
+        # The local branch, else `origin/<branch>`: see resolve_default_branch. `branch` stays the
+        # finding's text, so a baseline entry is keyed on the configured name whichever form
+        # resolved.
+        ref = resolve_default_branch(branch) if valid_branch else None
+        unreadable = (branch,
+            f"git could not read the commits in `{ref}..HEAD` — the test-first comparison was "
+            f"not made. Switch A15 off if this checkout cannot be given its history; off is "
+            f"distinct from passing")
+        not_made = None      # (text, message) when the comparison cannot be made
+        walked = False       # whether the range held a commit at all
+        late: list[str] = []     # implementation files added before any test
+        if not impl_globs or not test_globs:
+            empty = [k for k, g in (("impl_globs", impl_globs), ("test_globs", test_globs)) if not g]
+            names = " and ".join(f"`{k}`" for k in empty)
+            not_made = (", ".join(empty),
+                f"assertions.A15 is enabled with nothing in {names} — the test-first comparison "
+                f"was not made. A15 compares the paths that are implementation with the paths "
+                f"that are tests, so it needs both. Fill them in, or switch A15 off; off is "
+                f"distinct from passing")
+        elif not valid_branch:
+            not_made = ("default_branch",
+                "assertions.A15.default_branch is not a branch name — the test-first comparison "
+                "was not made. Set it to a string naming the default branch, or switch A15 off; "
+                "off is distinct from passing")
+        elif ref is None:
+            not_made = (branch,
+                f"git cannot resolve `{branch}` or `origin/{branch}` to a commit — the test-first "
+                f"comparison was not made. Fetch the branch (in CI, `fetch-depth: 0` and the "
+                f"default branch fetched), set assertions.A15.default_branch, or switch A15 off; "
+                f"off is distinct from passing")
+        elif git("merge-base", ref, "HEAD") is None:
+            # A shallow clone cuts the history off, so git shows every file in the oldest commit
+            # it has as added by it. Comparing that would be comparing nothing.
+            not_made = (branch,
+                f"HEAD and `{ref}` share no history git can see (a shallow clone is the usual "
+                f"cause), so which commits are this branch's is unknown and the test-first "
+                f"comparison was not made. Fetch the full history (in CI, `fetch-depth: 0`), or "
+                f"switch A15 off; off is distinct from passing")
+        else:
+            # Merges are skipped: what a merge brings in is either on the default branch already,
+            # and so outside the range, or another branch's commits, which the range lists in
+            # their own right.
+            listed = git("rev-list", "--reverse", "--topo-order", "--no-merges", f"{ref}..HEAD")
+            if listed is None:
+                not_made = unreadable
+            shas = [x for x in (listed or "").split("\n") if x != ""]
+            walked = len(shas) > 0
+            test_res = [glob_re(g) for g in test_globs]
+            impl_res = [glob_re(g) for g in impl_globs]
+            is_test = lambda p: any(rx.match(p) for rx in test_res)
+            is_impl = lambda p: any(rx.match(p) for rx in impl_res)
+            seen_test = False
+            for sha in shas:
+                # Once a test has arrived nothing after it can be early, so the walk only goes on
+                # for a file still outstanding: it has to be followed through a later rename, or
+                # it would be dropped as gone.
+                if seen_test and not late:
+                    break
+                # `-z` so a path with a space or a non-ASCII character is not quoted, `-M` so a
+                # rename is told from a new file, `-l` so the repo's `diff.renameLimit` cannot
+                # turn a batch of renames back into new files, `--relative` so a checker below
+                # the repo root sees its own paths. Plumbing, because `git show` obeys the user's
+                # config and diff-tree mostly does not.
+                out = git("diff-tree", "--no-commit-id", "--root", "-r", "-z", "-M", "-l32767",
+                          "--relative", "--name-status", sha)
+                if out is None:
+                    not_made = unreadable
+                    break
+                added = []
+                moved = []
+                toks = out.split("\0")
+                i = 0
+                while i < len(toks) and toks[i] != "":
+                    # A rename or copy entry carries two paths. Neither is an arrival.
+                    if toks[i][0] in "RC":
+                        if toks[i][0] == "R":
+                            moved.append((toks[i + 1], toks[i + 2]))
+                        i += 3
+                        continue
+                    if toks[i] == "A":
+                        added.append(toks[i + 1])
+                    i += 2
+                # A rename is not a delete: an outstanding file is still in the tree under its
+                # new name, as long as that name is still an implementation path, and not a test
+                # one: a path matching both lists is a test, as it is where a file is added.
+                for old, new in moved:
+                    if old not in late:
+                        continue
+                    late.remove(old)
+                    if is_impl(new) and not is_test(new) and new not in late:
+                        late.append(new)
+                if seen_test:
+                    continue
+                # Tests are checked before implementations, so a file matching both lists is a
+                # test: read as an implementation, a test beside the code it proves would be its
+                # own missing test.
+                if any(is_test(p) for p in added):
+                    seen_test = True
+                    continue
+                for p in added:
+                    if is_impl(p) and p not in late:
+                        late.append(p)
+        if not_made is not None:
+            ran += 1
+            findings.append(finding("A15", CONFIG_PATH, 1, not_made[0], not_made[1]))
+        elif not walked:
+            # After a squash merge a test and its implementation are always one commit, so on the
+            # default branch this check has nothing to compare. Saying so is not a finding, and
+            # silence would read as a pass. It is counted: A15 ran and reached a verdict, and a
+            # total that differed between branches for one config would say nothing about the
+            # config.
+            ran += 1
+            print(f"A15: not applicable on {ref} — a squash merge puts test and "
+                  f"implementation in one commit")
+        else:
+            ran += 1
+            # A file the branch added and later removed is not in the tree at HEAD: there is
+            # nothing to open and nothing to fix, and it proves nothing. `HEAD:./` is relative to
+            # where the checker runs, like the paths above.
+            for p in [q for q in late if git("cat-file", "-e", f"HEAD:./{q}") is not None]:
+                findings.append(finding("A15", p, 1, p,
+                    f"is an implementation file (`assertions.A15.impl_globs`) added in "
+                    f"`{ref}..HEAD` with no test (`assertions.A15.test_globs`) before it or in "
+                    f"the same commit — a test arrives before, or with, the implementation it "
+                    f"proves. Reorder the commits so a test comes first, or put one in the commit "
+                    f"that adds this file"))
+
+    # ── A16. The config is the projection of the answers file. ─────────────
+    #
+    # The answers file is the source and the config is its projection, so the config is never
+    # hand-edited. What is compared is **two whole-file hashes the wizard recorded at projection
+    # time**, not the projection re-derived here: this script is emitted in two languages and
+    # cannot import the wizard, so re-deriving would mean a second and a third copy of the one
+    # function this whole layer exists to keep single.
+    #
+    # Two hashes, because they catch opposite directions and only one of them is the bug this
+    # assertion is for. The ANSWERS hash catches a source that moved with nothing regenerated
+    # after it — a stale config. The CONFIG hash catches a config edited directly, which an
+    # answers hash cannot see at all, because editing the config leaves the answers file
+    # untouched.
+    if on("A16"):
+        ran += 1
+        is_hex = lambda v: isinstance(v, str) and re.fullmatch(r"[0-9a-f]{64}", v) is not None
+
+        # A file that is there and cannot be opened is not a missing one, and it must not take the
+        # checker down: the same rule A14 follows for a unit's test file.
+        def sha(rel: str) -> str | None:
+            try:
+                return hashlib.sha256((ROOT / rel).read_bytes()).hexdigest()
+            except OSError:
+                return None
+
+        regen = (f"Put the change in the answers file and regenerate "
+                 f"(`seam-init --answers <file> --repo .`), which rewrites {CONFIG_PATH} from it")
+        # `prov` is a readable dict here, or the integrity precondition above refused the run:
+        # a config with no record of what it enabled is not a config this checker trusts at all.
+        if not isinstance(prov.get("answers"), str) or prov["answers"] == "":
+            findings.append(finding("A16", PROVENANCE_PATH, 1, "answers",
+                f"`{PROVENANCE_PATH}` names no answers file inside this repo, so the comparison "
+                f"was not made — an answers file kept outside the tree cannot be read back from "
+                f"here. Commit it and regenerate, or switch A16 off; off is distinct from "
+                f"passing"))
+        elif not (ROOT / prov["answers"]).exists():
+            findings.append(finding("A16", PROVENANCE_PATH, 1, prov["answers"],
+                f"names `{prov['answers']}` as the answers file this config was projected from, "
+                f"and there is no such file — the comparison was not made. Restore it and "
+                f"regenerate, or switch A16 off; off is distinct from passing"))
+        elif not is_hex(prov.get("answers_sha256")) or not is_hex(prov.get("config_sha256")):
+            findings.append(finding("A16", PROVENANCE_PATH, 1, "sha256",
+                f"`{PROVENANCE_PATH}` carries no usable sha256 hash for the answers file and the "
+                f"config, so neither was compared. Regenerate to record both, or switch A16 off; "
+                f"off is distinct from passing"))
+        else:
+            ans_hash = sha(prov["answers"])
+            cfg_hash = sha(CONFIG_PATH)
+            for rel, got in ((prov["answers"], ans_hash), (CONFIG_PATH, cfg_hash)):
+                if got is not None:
+                    continue
+                findings.append(finding("A16", rel, 1, rel,
+                    f"could not be read, so its hash was not compared with the one "
+                    f"`{PROVENANCE_PATH}` records"))
+            if ans_hash is not None and ans_hash != prov["answers_sha256"]:
+                findings.append(finding("A16", prov["answers"], 1, prov["answers"],
+                    f"has changed since {CONFIG_PATH} was projected from it, so the config is "
+                    f"stale: it is the projection of an earlier version of this file. {regen}"))
+            if cfg_hash is not None and cfg_hash != prov["config_sha256"]:
+                findings.append(finding("A16", CONFIG_PATH, 1, CONFIG_PATH,
+                    f"was edited after it was emitted. The answers file is the source and this "
+                    f"file is its projection, so an edit here is reverted by the next "
+                    f"regeneration without a word — which has happened. {regen}"))
 
     # ── Repo-invented assertions. Discovered, never overwritten. ───────────
     adir = ROOT / ".seam" / "assertions"
@@ -950,8 +1996,8 @@ def main() -> int:
                 continue
             ran += 1
             for r in mod.run(ctx) or []:
-                findings.append(finding(r["id"], r["file"], int(r["line"]), r.get("text", ""),
-                                        r["message"]))
+                findings.append(finding(r["id"], r["file"], int(r["line"]),
+                                        given(r.get("text"), ""), r["message"]))
 
     # ── The baseline ───────────────────────────────────────────────────────
     #
@@ -959,7 +2005,7 @@ def main() -> int:
     # allow-list, whose entries carry a written reason and mean "this will never be fixed".
     # Matching is exact on (id, file, line, text), so a violation whose line no longer matches
     # drops out rather than being carried forever.
-    bpath = ROOT / cfg.get("baseline", {}).get("path", ".seam/baseline.json")
+    bpath = ROOT / given(given(cfg.get("baseline"), {}).get("path"), ".seam/baseline.json")
     key = lambda f: (f["id"], f["file"], f["line"], f["text"])
     findings.sort(key=lambda f: (f["id"], f["file"], f["line"], f["text"]))
 
@@ -978,8 +2024,8 @@ def main() -> int:
 
     baselined = set()
     if bpath.exists():
-        for e in json.loads(bpath.read_text()).get("entries", []):
-            baselined.add((e["id"], e["file"], e["line"], e.get("text", "")))
+        for e in given(json.loads(read_text(bpath)).get("entries"), []):
+            baselined.add((e["id"], e["file"], e["line"], given(e.get("text"), "")))
     new = [f for f in findings if key(f) not in baselined]
     carried = len(findings) - len(new)
 

@@ -38,4 +38,4 @@ widening.
 
 - Run `{{checker.path}}` and read its output, not just its exit code.
 - A doc your change makes wrong is part of your change, in the same commit.
-- Anything you noticed and did not do is named — folded in, filed, or one ledger row.
+- Anything you noticed is named — folded in, planned and folded in, filed, or one ledger row.

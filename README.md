@@ -33,7 +33,7 @@ It installs that layer into any repo — greenfield, or one that already has doc
 | | |
 |---|---|
 | 📋 **A sources-of-truth table** | In the repo's context file, listing every doc by *what it owns* and which **layer** it belongs to. |
-| 🔍 **A drift checker** | Generated into the repo in its own language — Python 3 or Node, no dependencies either side. Thirteen assertions, plus a baseline so day-one debt is a number rather than a wall. |
+| 🔍 **A drift checker** | Generated into the repo in its own language — Python 3 or Node, no dependencies either side. Sixteen assertions, plus a baseline so day-one debt is a number rather than a wall. |
 | 🏷️ **Tracker conventions** | Scope discipline made visible: one priority, one milestone, one or two domains, and four dispositions for everything you noticed along the way. |
 | 🔬 **A review policy** | Picks its level from what the diff touches rather than from habit, and stops after two rounds for a measured reason. |
 
@@ -117,8 +117,10 @@ lives in the config, never edited into the script" true, and therefore what make
 always safe. A repo's own assertions live in `.seam/assertions/*`, which the checker discovers and
 a regeneration never overwrites.
 
-Two things make it refuse to run at all, because the alternative is a check that looks like a pass:
-a config with no assertion enabled, and an allow-list entry with no written reason.
+Three things make it refuse to run at all, because the alternative is a check that looks like a
+pass: a config with no assertion enabled, an allow-list entry with no written reason or no path,
+and an enabled set that is not the one `.seam/provenance.json` records — the last so that a switch
+flipped by hand, A16's own included, cannot quietly change what is measured.
 
 ### The baseline
 
@@ -141,12 +143,34 @@ it exempts, in `.seam/config.json`. Two places, two rules, and the difference is
 - The repo's **context file** — the sources-of-truth table, between
   `<!-- seam:sources-of-truth start -->` and `<!-- seam:sources-of-truth end -->`. Nothing outside
   the markers is touched. The default host is `CLAUDE.md`; which file hosts it is a config key.
-- `.seam/config.json` — the machine-readable projection: each doc's path and layer, load-bearing
-  globs, `low`-review paths, domains, milestones, artifacts, assertion switches and their
-  allow-lists, and the checker's language and path.
+- `.seam/config.json` — the machine-readable projection: whether the repo is green or brown field,
+  each doc's path and layer, load-bearing globs, `low`-review paths, domains, milestones,
+  artifacts, assertion switches and their allow-lists, and the checker's language and path.
+
+  **Green or brown field is the interview's first question**, because the path, the proposal, the
+  baseline and the never-rewrite rule all branch on it — and it is **milestone 1** in the repo's
+  own `docs/taxonomy.md`, which the taxonomy template ships for every repo with the reason the
+  determination was made beside it. The row is green on arrival and never the active milestone, so
+  the repo's own build order is numbered from 2. An answers file recorded before that question
+  existed carries no `field`: the wizard refuses it by name until the determination and its
+  one-sentence reason are added.
   [`skills/seam-docs/references/interview.md`](skills/seam-docs/references/interview.md) § Schema
   is the full key list; the three priorities are not in it, because they are fixed by the method
   and live in the repo's own `docs/taxonomy.md`.
+- `.seam/provenance.json` — the answers file's path, two sha256 hashes (that file, and the config
+  just written), and the set of assertions this run enabled. Assertion A16 compares the hashes on
+  every run, because the answers file is the source and the config is its projection: a config
+  edited by hand is reverted by the next regeneration without a word, which is measured rather
+  than hypothetical. The enabled set is read by a **refusal** rather than an assertion, because
+  A16's own switch lives in the file A16 protects — so flipping it and editing the config in one
+  write would otherwise be silent.
+
+  **Upgrading from 0.1.x:** this file did not exist before 0.2.0, so a repo that adopted earlier has
+  no record. Its own 0.1.x checker carries no precondition and keeps passing; it is the **0.2.0
+  checker that exits 2 until `seam-init` is re-run**. Regenerating the checker alone is not
+  enough — the checker does not write the record, the wizard does. The refusal names the command.
+  Skipping the check when the record is absent was the obvious alternative and was rejected: it is
+  the same defeat with one extra step, since deleting the file would then buy silence.
 - `.seam/baseline.json` — day-one drift, written by `--write-baseline`.
 - The docs you approved, one per layer, from
   [`skills/seam-docs/templates/`](skills/seam-docs/templates).
@@ -156,7 +180,11 @@ it exempts, in `.seam/config.json`. Two places, two rules, and the difference is
   already exists, `init` prints the job and changes nothing — **so you add it yourself**, or
   assertion A3 reds on the first run with "documented as a check but no CI step runs it". That
   failure is unfinished setup, not baseline material. The byte-freeze also needs the default
-  branch's history, so the checkout step wants `fetch-depth: 0`.
+  branch's history, so the checkout step wants `fetch-depth: 0` — necessary, because a shallow
+  clone has nothing to compare against, but not sufficient by itself: a pull request is checked out
+  as a detached HEAD, where the default branch exists only as `origin/<branch>`. The checker tries
+  `<branch>` and then `origin/<branch>`, so a checkout that fetched the branch in either form
+  works; one that fetched neither reports the comparison as not made, and says so.
 
 On a repo that already has docs it **never rewrites an existing doc's body.** It proposes what each
 file currently owns and which layer it is; reshaping a file is a separate, opt-in step.
@@ -175,6 +203,8 @@ file currently owns and which layer it is; reshaping a file is a separate, opt-i
 |---|---|
 | `seam-docs` | The wizard: inventory, layer classification, the sources-of-truth table, the templates. |
 | `seam-checks` | Generating and maintaining the drift checker. |
+| `seam-build` | Working against the plan: naming the unit that owns a change, its test, and what done means. |
+| `seam-context` | How much of a session's window a piece of work may spend, and when work goes to a subagent. |
 | `seam-github` | Issues, branches, commits, PRs, and the commit gate. |
 | `seam-review` | How to pick a review level and run the rounds. |
 
@@ -189,9 +219,11 @@ layer's doc has to take live in exactly one place each, and these are the places
 | The six layers, their edit rules, and which assertions reach which layer | [`skills/seam-docs/references/layers.md`](skills/seam-docs/references/layers.md) |
 | The question set, and `.seam/config.json`'s full schema with every key | [`skills/seam-docs/references/interview.md`](skills/seam-docs/references/interview.md) |
 | Adopting a repo that already has docs, and what the evidence does not reach | [`skills/seam-docs/references/adopt.md`](skills/seam-docs/references/adopt.md) |
-| What each of the thirteen assertions reads, and what it deliberately does not | [`skills/seam-checks/references/assertions.md`](skills/seam-checks/references/assertions.md) |
+| What each of the sixteen assertions reads, and what it deliberately does not | [`skills/seam-checks/references/assertions.md`](skills/seam-checks/references/assertions.md) |
 | Issues, commits, PRs, the four dispositions, the gate | [`skills/seam-github/SKILL.md`](skills/seam-github/SKILL.md) · [`references/templates.md`](skills/seam-github/references/templates.md) |
 | The review level table, the bound, the three triggers | [`skills/seam-review/SKILL.md`](skills/seam-review/SKILL.md) |
+| The start and finish contracts, the test-first rule, and the three sizes | [`skills/seam-build/SKILL.md`](skills/seam-build/SKILL.md) · [`templates/current/building.md`](skills/seam-docs/templates/current/building.md) |
+| The context thresholds, what triggers a level, and when to dispatch | [`skills/seam-context/SKILL.md`](skills/seam-context/SKILL.md) · [`templates/current/context.md`](skills/seam-docs/templates/current/context.md) |
 
 ## Tech stack
 
@@ -233,11 +265,20 @@ as measured.
 
 ## Continuous integration
 
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs the test suite and seam's own generated
-checker. Assertion A3 holds the documented check list in
-[`docs/contributing.md`](docs/contributing.md) § Checks against that workflow, so the two cannot
-drift apart — the method applied to itself rather than only described. It caught its own author
-within a minute of being wired: the CI step existed and the list did not name it.
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs the test suite, seam's own generated
+checker, and the manifest validator. Assertion A3 holds the documented check list in
+[`docs/contributing.md`](docs/contributing.md) § Checks against that workflow **for every command
+it can tokenise**, so the two cannot drift apart on one of those — the method applied to itself
+rather than only described. It caught its own author within a minute of being wired: the CI step
+existed and the list did not name it.
+
+**A3 compares check tokens from a closed vocabulary, not command lines**, so a command it cannot
+tokenise is absent from the comparison rather than reported as missing — and a repo whose list is
+all `make`, `tox` or `bazel` targets gets a green A3 that compared two empty sets.
+`extra_tokens` is how the vocabulary widens, and it is what puts
+`claude plugin validate` inside the comparison here;
+[`skills/seam-checks/references/assertions.md`](skills/seam-checks/references/assertions.md) § A3
+states the limit in full.
 
 ## Docs & decisions
 
@@ -247,10 +288,15 @@ seam carries a sources-of-truth table of its own, and its own checker runs over 
 |---|---|---|
 | [`docs/contributing.md`](docs/contributing.md) | 2 Current | How work on seam is done, and the sources-of-truth table's host file |
 | [`docs/taxonomy.md`](docs/taxonomy.md) | 2 Current | The domain labels, the three priorities, and the milestones |
+| [`docs/decisions.md`](docs/decisions.md) | 3 Decisions | What was chosen, the options rejected, and why — plus in-flight rulings and direction corrections |
 
-Two things are open, and recorded as questions rather than guessed at: whether seam needs its own
-layer-3 decision track or whether its commit messages carry that weight, and whether it needs a
-layer-4 PRD given that this README is the intent and is public.
+Layer 3 is settled: `docs/decisions.md` holds decisions, rulings taken in flight, and direction
+corrections — the last because a live "not that way" otherwise dies in a session transcript. It is
+append-only, and assertion A12 holds it to that by checking that what is on the default branch is an
+unbroken prefix of the file, so an append passes and an edit does not.
+
+One thing is open, and recorded as a question rather than guessed at: whether seam needs a layer-4
+PRD, given that this README is the intent and is public.
 
 **Why the table lives in `docs/contributing.md` and not `CLAUDE.md`:** this repo is simultaneously
 the plugin and the project, and `claude plugin validate --strict` refuses a `CLAUDE.md` at a plugin

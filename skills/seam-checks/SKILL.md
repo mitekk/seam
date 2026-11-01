@@ -69,7 +69,7 @@ fails loudly instead.
 
 ## Adding an assertion
 
-1. Check `references/assertions.md` first: thirteen exist, and the one wanted is often an existing
+1. Check `references/assertions.md` first: sixteen exist, and the one wanted is often an existing
    one that needs scoping rather than a new one.
 2. If it is genuinely new and genuinely this repo's, write it to `.seam/assertions/`. Keep it
    local, offline and deterministic like the rest — a check that needs the network cannot run on a

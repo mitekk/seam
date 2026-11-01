@@ -26,8 +26,13 @@ layer **cites** a higher one and never restates it.
 |---|---|---|---|
 | `docs/contributing.md` | 2 Current | How work on seam is done, and this table's host file | `claude plugin validate --strict .` |
 | `docs/taxonomy.md` | 2 Current | The domain labels, the three priorities, and the milestones | `scripts/bootstrap-tracker.sh` |
+| `docs/building.md` | 2 Current | The start contract, the finish contract, the test-first rule, and the proportionality rule with its three sizes |  |
+| `docs/context.md` | 2 Current | The threshold table, what triggers a level, the dispatch rule, and where a session's own artifacts live |  |
+| `docs/routing.md` | 2 Current | The model and effort pinned per artifact, and this repo's agent shape |  |
+| `docs/decisions.md` | 3 Decisions | What was chosen, the options rejected, and why — plus in-flight rulings and direction corrections | `node --test tests/red-proof.test.mjs` |
 | `docs/superpowers/specs/*.md` | 5 Seam | Nothing — dated design documents. Superseded wholesale; a design that changes is rewritten or replaced, never amended into agreement with what shipped |  |
 | `docs/superpowers/plans/*.md` | 5 Seam | Nothing — implementation plans. Superseded wholesale; a plan whose shape changes is rewritten, never amended into agreement with what shipped |  |
+| `docs/findings-ledger.md` | 6 Ledger | Nothing — true observations about this tree that are not becoming work |  |
 
 **Layer** fixes the edit rule, because the question behind it is *what happens when this file
 turns out to be wrong*:
@@ -52,7 +57,7 @@ Authority is not one chain, because the layers answer different questions:
   the record rather than restating it.
 - **On what we intend:** Intent beats Seam.
 - **Seam and Ledger own nothing** and lose to everything by construction. They are in this table
-  so they are *findable*, not because they answer anything — here that is 5 Seam.
+  so they are *findable*, not because they answer anything — here that is 5 Seam and 6 Ledger.
 
 <!-- seam:sources-of-truth end -->
 
@@ -65,18 +70,45 @@ claude plugin validate --strict .              # manifests, skills, commands
 ```
 
 **seam runs its own checker on itself**, and `.github/workflows/ci.yml` runs it too — assertion A3
-compares this list against that workflow, so the two cannot drift apart. It caught its own author
-within a minute of being wired: the CI step existed and this list did not name it.
+compares this list against that workflow, **for every command it can tokenise**, so the two cannot
+drift apart on one of those. It caught its own author within a minute of being wired: the CI step
+existed and this list did not name it.
+
+**A green list here says nothing about CI, and on this branch that cost 100 tests.** Every command
+above is local, offline and run by whoever is at the keyboard; none of them looks at a workflow
+run. `.github/workflows/ci.yml` was red on **every push of the first branch** while the list was
+green on every machine, because the emitted Python carried a `SyntaxWarning` on the 3.12+ that
+`ubuntu-latest` runs and not on the 3.9 every implementer had, and the parity tests compare stderr
+byte for byte. Reading the runs is its own step and it is one command:
+
+```text
+gh run list --branch "$(git branch --show-current)" --limit 5
+```
+
+It is deliberately not in the list above: it needs the network and a remote, so it would make a
+green run mean something different on a plane than in CI — which is the property every assertion
+here is built to keep. Read it after a push instead, and read the **log** rather than the tick.
+
+**That scope is narrower than it reads, and all three commands above are inside it only because
+the third one was put there by hand.** A3 compares check tokens from a closed vocabulary, not
+command lines, and `claude plugin validate` is not in that vocabulary — `extra_tokens` in
+`.seam/config.json` is what adds it, and without that entry the command would be invisible to the
+comparison rather than reported as missing. `skills/seam-checks/references/assertions.md` § A3
+names the limit and what it costs a repo whose list the vocabulary cannot read at all.
 
 `node --test` takes **no positional argument**. `node --test tests/` fails on Node 24 with
 `Cannot find module .../tests` — a bare directory positional is resolved as a module rather than
 scanned — so discovery is left to node, which finds `tests/**/*.test.mjs` and skips
-`tests/helpers.mjs` because it is not named as a test.
+`tests/helpers.mjs` because it is not named as a test. Measured on Node 24.17.0: the bare form
+discovers and runs the suite, and the directory positional is the one that fails.
 
 `claude plugin validate --strict --profile directory .` additionally fails on a missing listing
 icon. That is a submission asset and not a correctness check, so it is not in the list above.
 
-The eval suite is a separate gate because it costs a model run per case:
+## The eval suite
+
+A separate gate, because it costs a model run per case — and **deliberately not in § Checks**, so
+that nothing in the list above spends money and A3 is not holding CI to a command CI must not run:
 
 ```bash
 claude plugin eval . --allow-tools Write Edit Bash --trust-plugin
@@ -123,6 +155,42 @@ an exemption; only "non-deterministic" is.
   the script" true, and therefore what makes regeneration safe.
 - **The wizard never rewrites an existing doc's body**, and touches `CLAUDE.md` only between its
   two markers.
+- **Prose wraps at about 100 columns. It is a target, not an assertion, and it has exemptions.**
+  The point is a diff that reads in one pane, so what is exempt is anything that **cannot** wrap
+  without changing meaning: a **markdown table row**, which would become two rows; a line inside
+  a **fenced block**, which is content; and a line held over the budget by **one unbreakable
+  token**, a URL or a path longer than the budget itself. Everything else is prose, and prose is
+  wrapped. This is written down because it was enforced on four tasks' worth of work while
+  appearing nowhere in the repo, and enforced wrongly — the interview reference, which is almost
+  entirely table, broke it 25 times, the longest row at 809 characters, and two of the longest
+  were written under the rule.
+
+  **`docs/superpowers/` is exempt as a tree**, and for a reason rather than for convenience: it is
+  layer 5, superseded wholesale, so its files are **rewritten, never amended** — rewrapping one
+  would be an edit its own edit rule does not have. Its long lines are therefore not offenders and
+  the command below does not report them.
+
+  **The tree does not hold to the target exactly**, which is why it is "about" and why nothing
+  asserts it. What a new paragraph is held to is the number; what the tree is held to is nobody
+  rewrapping a file to chase it. The overflow is one command, which implements the three
+  exemptions above and names the lines rather than a count that goes stale:
+
+  ```bash
+  for f in $(git ls-files '*.md' | grep -v '^docs/superpowers/'); do
+    awk -v F="$f" '
+      BEGIN { fencepat = "^[ \t]*" sprintf("%c%c%c", 96, 96, 96) }
+      $0 ~ fencepat { fence = !fence; next }
+      fence || /^[ \t]*\|/ { next }
+      length($0) <= 100 { next }
+      { longest = 0; n = split($0, t, /[ \t]+/)
+        for (i = 1; i <= n; i++) if (length(t[i]) > longest) longest = length(t[i])
+        if (longest <= 100) print F":" NR " (" length($0) ")" }
+    ' "$f"
+  done
+  ```
+
+  The fence test is built with `sprintf` rather than written as a literal, because three backticks
+  inside a fenced block would close the block this command lives in.
 
 ## Process
 
@@ -131,4 +199,12 @@ an exemption; only "non-deterministic" is.
 - Review level comes from `skills/seam-review/SKILL.md`'s table, applied to seam's own diffs:
   `high` for `bin/` and the checker templates, which are the measuring apparatus; `medium` for
   the skills and for this file.
+- **seam declined its own `docs/reviewing.md` row, and that is deliberate rather than an
+  oversight.** It is the one place this repo does not eat its own dog food: the review policy is
+  what seam distributes, and a second repo-side copy of it here would be a copy to keep in step
+  with no reader the skill does not already have. The cost is real and is the point of naming it —
+  `seam-review` finds no `docs/reviewing.md` on seam itself, so it falls back to
+  `$CLAUDE_PLUGIN_ROOT`, which is the path an adopter is never meant to take. The level above is
+  this file's row instead, and `skills/seam-docs/templates/current/reviewing.md` is the doc an
+  adopter gets.
 - Push and merge need an explicit OK, every time.

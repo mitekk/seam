@@ -1,6 +1,6 @@
 # The assertions
 
-Thirteen built in, plus whatever the repo invents. Each one says what it reads, what it needs from
+Sixteen built in, plus whatever the repo invents. Each one says what it reads, what it needs from
 `.seam/config.json`, and — the part that matters most — **what it deliberately does not reach**. A
 reader who thinks a check reaches further will trust a green run further than they should.
 
@@ -23,10 +23,13 @@ mean the same thing on a plane as in CI.
 | A11 | Config `load_bearing` matches the table's `Enforces` column | — | on |
 | A12 | Append-only layers are byte-frozen on the default branch | 3, 4 | on iff layer 3 or 4 exists |
 | A13 | ADRs carry a date and a status; PRD versions are indexed | 3, 4 | on iff layer 3 or 4 exists |
+| A14 | Every unit in a plan's `§ The units` names a test that exists and asserts | 5 | on iff a layer-5 doc exists |
+| A15 | A test arrives before, or with, the implementation it proves | — | **off** |
+| A16 | `.seam/config.json` is still the projection of the answers file it was emitted from | — | on iff the answers file is in the repo |
 
 **Off is not passing.** An assertion that needs a repo-specific list is off until the list exists,
 because an empty list that passes reads as evidence the thing is fine. Where an assertion is on
-and *cannot make its comparison*, it **fails** and says so — see A3 and A12.
+and *cannot make its comparison*, it **fails** and says so — see A3, A12 and A15.
 
 ## A1 — a cited markdown path resolves
 
@@ -34,7 +37,31 @@ Reads: every `` `path.md` `` in backticks, in every doc. Resolves against the re
 beside the citing file.
 
 Needs: `assertions.A1.allow`, a list of `{path, reason}`. A reason is required: an entry means
-"this file is absent on purpose and the sentence is about its absence".
+"this file is absent on purpose and the sentence is about its absence". Optionally
+`assertions.A1.intent_globs`, the docs whose citations are intentions rather than claims; it
+defaults to the **layer-5 rows of the table**, which is where a plan lives, and never to a fixed
+path — a glob naming a directory the repo does not have exempts nothing and says nothing about it.
+
+**An allow entry that suppressed nothing on the run is a finding**, at `.seam/config.json:1` with
+the entry's path as its text. The checker already refused an entry with no reason; nothing checked
+that the entry was still *needed*, so the exemption machinery — the one mechanism whose whole job
+is to be the narrow, reasoned exception — passed without making its comparison. Three ways an
+entry stops doing work, and the finding says which:
+
+- **the path is now in the repo**, so every citation of it resolves and needs no exemption;
+- **nothing A1 reads cites it any more** — the citation was deleted or renamed, or it is cited only
+  from files A1 does not scan (`skills/`, `evals/`) or only from a doc an `intent_glob` exempts;
+- **the path is a glob**, which A1 never consults at all: a cited path containing `*` names a form
+  and is skipped before the allow-list is read, so such an entry can exempt nothing by
+  construction.
+
+Why "suppressed nothing" rather than "the path resolves": it subsumes it, and it gives the
+allow-list the property the baseline already has, where an entry whose line no longer matches drops
+out by itself. Without it an obsolete entry **goes on skipping its path**, so a citation that starts
+dangling again is skipped with it and A1 stays green over a real defect.
+
+An **empty** allow-list is not a finding. Nothing is exempted, so nothing stopped doing work, and a
+repo with no exemptions is the normal case — this is not the "off is not passing" shape.
 
 Does not reach:
 
@@ -47,8 +74,12 @@ Does not reach:
   create, so by construction every one of those paths is absent — measured at 23 on this repo's
   own plan. `intent_globs` exempts the **doc**, not each path, because neither existing mechanism
   fits: a baseline entry means "not yet" and these evaporate the moment the work lands, and an
-  allow-list entry means "never". It defaults to `docs/superpowers/plans/*.md`, the one place this
-  is true by construction, and it exempts nothing else.
+  allow-list entry means "never". It defaults to the table's **layer-5 rows**, the one place this
+  is true by construction, and it exempts nothing else — read off the rows rather than fixed,
+  because a hardcoded plan directory is an exemption pointing somewhere the repo may not have.
+  **With no layer-5 row it does fall back to `docs/plans/*.md`**, which is a fixed path: the
+  fallback is harmless, since a glob matching nothing exempts nothing, but saying "never fixed"
+  here would be a claim the program does not keep.
 - **A backticked label inside a markdown link.** In ``[`api.md`](.claude/rules/api.md)`` the link
   **target** is the claim and the label is how it reads, so the target is what gets resolved and
   the label is dropped. Measured on a repo nothing was tuned against: a README listing eight
@@ -88,6 +119,16 @@ Does not reach:
   baseline is the mechanism — these go in on day one with a number on them, and a *new* one still
   reds. Bounding the capture tighter was tried and costs more than it buys: a heading's name has
   no reliable right edge in prose.
+- **A heading shown inside a fence.** A `## Heading` written inside a ```` ``` ```` block is a
+  heading being *quoted*, not declared, so it is not an anchor and a citation naming it reds. A
+  marker at any indentation opens or closes a block and an unterminated one runs to the end of the
+  file — stricter than a renderer, and the same rule the table and section readers already use.
+- **A citation padded with an exotic space.** Only ASCII whitespace is trimmed, in both checkers,
+  because `trim()` and `strip()` disagree about U+FEFF and U+0085 and the two emissions have to
+  read one doc the same way. So a backticked path with a U+FEFF inside the backticks is not a path,
+  and the `§` beside it is **skipped rather than reported** — the one place in A2 where this
+  narrowing buys silence rather than a finding. A `§ Name` padded the same way keeps the character
+  and reds, naming it.
 
 ## A3 — the documented check list against CI
 
@@ -96,9 +137,10 @@ part of a command that says *which* check it is rather than how it was invoked, 
 `psql -f scripts/check_schema.sql` and `psql -d "$URL" -f scripts/check_schema.sql` are the same
 token. Against the `run:` payloads of each matching workflow, reduced the same way.
 
-Needs: `doc_sections` (`[{file, section}]`), `workflow_glob`, and `local_only` / `ci_only` for the
-commands that legitimately live on one side — each of those is a claim, so keep the lists short and
-give each entry a reason in the doc.
+Needs: `doc_sections` (`[{file, section}]`), `workflow_glob`, `extra_tokens` for any check the
+built-in vocabulary cannot see, and `local_only` / `ci_only` for the commands that legitimately
+live on one side — each of the last three is a claim, so keep the lists short and give each entry
+a reason in the doc.
 
 **Both sides are section-scoped, and a configured section that is missing FAILS with exit 1,
 saying the comparison was not made.** That is distinct from a missing check and is never a silent
@@ -107,6 +149,23 @@ without the loud failure, a renamed heading takes half the list quietly out of s
 
 Does not reach:
 
+- **Anything it cannot tokenise, which is the limit that decides whether A3 does any work at
+  all.** It does not compare commands; it compares **check tokens**, and the vocabulary is a
+  closed list — `DEFAULT_TOKEN_RES` in `templates/checker.py.tmpl` and `templates/checker.mjs.tmpl`,
+  which `sed -n '/^DEFAULT_TOKEN_RES/,/^]/p' templates/checker.py.tmpl` prints. In shape it holds
+  the invocations a runner is recognisable by: a `scripts/…` path with a known extension, a
+  package-manager or `turbo` task, `node --test`, a bare test or lint binary, a `check:<name>`
+  script. A documented command outside it yields **no token on either side**, so the comparison
+  never sees it and A3 reports nothing about it — the `claude …` commands in seam's own list were
+  invisible to it for exactly that reason. A repo whose whole list is `make test`, `tox`,
+  `just check` or `bazel test` gets zero tokens from both sides and a green A3 that compared two
+  empty sets: the shape "off is not passing" objects to, arriving through a switch that is on.
+- **A command the vocabulary has no entry for, until `extra_tokens` gives it one.** Each entry is
+  a raw regex matched against both sides, and **the matched text is the token** — so an entry has
+  to match the same characters in the doc and in the workflow. A command invoked one way in the
+  doc and another in CI needs an entry matching the part they share, or it belongs on `local_only`
+  / `ci_only` with its reason. `extra_tokens` is the only way the vocabulary widens; without an
+  entry the command is not documented-but-missing, it is absent from the comparison.
 - **Whether a check is any good.** It compares two lists of names.
 - **A quoted `#`.** Comments are stripped, because a path named in a trailing comment used to
   satisfy its own token and mask the removal of the command that actually invokes it. A `#` inside
@@ -190,7 +249,10 @@ Needs: `plan_glob`.
 
 Does not reach: **whether the issue is still open.** That needs a network call, and every
 assertion here is offline. A plan claiming a closed issue is a procedural matter, not a
-mechanical one.
+mechanical one. Nor does it reach **an issue number written in non-ASCII digits**: a row numbered
+`٣` is a row, because a numbered row in another script is still one, but `#٣` in the issue column
+is not an issue — the number is sorted as an integer and the two checkers' integer parsers do not
+agree about `٣`, so ASCII is the only form both read alike.
 
 ## A9 — a stated count matches a computed one
 
@@ -203,7 +265,10 @@ detector reports every number in the repo.
 Does not reach: a count of anything that is not files matching a glob. Numerals are accepted
 alongside words, because "all 3 sibling plans" is the same defect as "all three" and skipping it
 silently is worse than not looking — a check that passes on the wrong shape of a sentence it claims
-to check reads as evidence the sentence is right.
+to check reads as evidence the sentence is right. **A numeral must be ASCII digits**, though: `٣`
+and `²` are both "a digit" to Python and neither is to Node, and `int('²')` raises where
+`Number('²')` is `NaN`, so a count in another script is passed over by both rather than compared
+by one.
 
 ## A10 — every doc is in the table, with a layer
 
@@ -243,9 +308,19 @@ per repo and not three.
 
 ## A12 — the append-only layers are byte-frozen
 
-Reads: `git show <branch>:<path>` for every layer-3 and layer-4 file, against the bytes on disk.
+Reads: `git show <ref>:<path>` for every layer-3 and layer-4 file, against the bytes on disk, where
+`<ref>` is `<branch>` if that resolves and `origin/<branch>` if it does not.
 
-Needs: `default_branch`.
+Needs: `default_branch`, and a checkout that has the branch's history.
+
+**Which ref, and what the checkout must have.** A local branch ref is not a given. A pull request's
+CI checkout is a **detached HEAD**, and the only copy it has of the default branch is the
+remote-tracking `origin/<branch>`: `git rev-parse --verify main` is fatal there while
+`origin/main` resolves. So A12 tries the local branch first and `origin/<branch>` second, and only
+if neither resolves does it report the comparison as not made. `fetch-depth: 0` is **still
+needed** — a shallow clone has no history to compare against — but it is not the whole of it: what
+the checkout must have is the default branch itself, as either form. Fetching only the pull
+request's own ref leaves neither.
 
 **Layers 3 and 4 only**, and only because their edit rule says a file already on the branch is
 final: a record is never wrong, and an intent version is superseded rather than corrected. A
@@ -253,7 +328,46 @@ layer-2 doc is byte-frozen by nothing, which is correct — wrong there is a bug
 fixed in place.
 
 - A file **not yet on the branch** is skipped. That is a new record, which is the point.
-- **No such branch fails**, saying the comparison was not made. Off is distinct from passing.
+
+  **This is scope, not a silent pass, and the difference is worth knowing before it bites.** A
+  file with no bytes on the default branch has nothing for A12 to compare against, so there is no
+  comparison to make — distinct from the case where there *is* one and it cannot be made, which
+  is the bullet below and a loud finding. **The consequence is that the whole track is unmeasured
+  until it merges.** The branch that creates a repo's layer-3 file can rearrange that file freely
+  and A12 will not say a word; the **first append after the merge** is the first time the
+  assertion runs against it for real. So a repo adopting these layers gets its first true A12
+  result one branch *later* than it expects, and an entry moved rather than appended during the
+  adopting branch is caught then, by its own CI, as a byte violation on a file somebody is in the
+  middle of appending to. The cheap guard while the file is still off the branch is a test that
+  builds the fixture itself — `tests/checker.test.mjs` does exactly that, which is why A12's rule
+  is covered on a branch where A12 cannot yet see the real file.
+- **A single dated decisions file is held to a prefix, not to equality.** When `adr.format` is
+  `single`, the one path `adr.file` is the record that every new decision is appended to, so
+  byte-equality would make an append-only file impossible to append to. For that path the bytes on
+  the branch must be an unbroken **prefix** of the working copy — compared as bytes, in both
+  checkers, never as decoded text. An append passes; an edit to anything already there, or a
+  deletion, fails, saying an entry was edited rather than appended and that a reversal is a new
+  dated entry. Every other layer-3 and layer-4 file keeps equality, with the one
+  exception in the next bullet. Text that merely extends the file's last line also passes: a prefix
+  is a byte relation, and A12 does not read entries.
+- **A MADR record's Status line may change; nothing else may.** When `adr.format` is `madr`, every
+  file under `adr.dir` must match the default branch line for line **except a line that opens
+  `**Status:**`** (on the branch and now), and the line count must be unchanged. This is the
+  one field the method itself says changes after merge: a reversal gives the old record
+  `superseded by NNNN`, and A13 requires that a superseded record names a successor that exists.
+  Asked of the same bytes, byte-equality and A13 could not both be satisfied the first time any
+  repo reversed a decision. The record's substance stays frozen — a Status flip beside any other
+  edit to the record still fails — and the exemption is **not** a way to correct a record: it is
+  one line, and it does not reach a PRD version, or a MADR record in a repo whose format is
+  `single`. **The line itself is bounded too:** its new value is at most 120 characters of letters,
+  digits, spaces and light punctuation (`. , ; : ( ) ' / # -`), with no carriage return inside it
+  — a markdown renderer shows a lone CR as a line break, so one could otherwise write new
+  paragraphs into a "Status" line while the line count stayed equal. The one CR before the `\n`
+  of a CRLF line is the terminator and is allowed. That is one bound, not a vocabulary: what a
+  status may say is A13's question, so `superseded by 0002` going back to `accepted` is not
+  something A12 reads. Compared as bytes, in both checkers.
+- **Neither `<branch>` nor `origin/<branch>` fails**, naming both forms it tried and saying the
+  comparison was not made. Off is distinct from passing.
 - **An index is not a record.** `README.md`, `index.md`, `template.md` and `PRD-current.md` inside
   a frozen track are exempt: an index grows by design — adding a version means appending a row —
   and a "current" file is replaced wholesale when a new version lands. Freezing either makes the
@@ -278,17 +392,279 @@ Needs: `adr.format` and `adr.dir` or `adr.file`; `prd.dir`.
 Does not reach: whether the record is *true*, or whether the decision was a good one. It checks the
 shape the layer promises.
 
-## Two refusals before anything is checked
+Two of its numbers are ASCII and one is not, on purpose. **A date and a successor number are ASCII**
+— `٢٠٢٦-٠١-٠١` is not an ISO date, and "this entry has no date" is the right, loud answer. **A PRD
+version number is any Unicode decimal digit**, because here ASCII would buy silence instead: this
+assertion exists so an unindexed version cannot hide, and `PRD-v٣.md` has to be a version for that
+to hold.
 
-Both are exit 2, and both exist because the alternative is a check that looks like a pass:
+## A14 — the units table has the shape it claims
 
+Reads: the `§ The units` table of each file matching the plan glob. For each row whose first cell
+is a bare numeral, the `Proves it` cell must be one backticked path inside the repo (no leading `/`,
+no trailing `/`, no `..`), that path must be a file, and the file must contain an assertion. A
+struck-through row (`~~2~~`) is not a unit and is skipped, as are the header and the rule under it.
+A row is read by dropping at most one pipe at each end and trimming ASCII whitespace only, which is
+what lets both emitted checkers read it the same way.
+
+**A side effect of that, stated plainly:** a numeral padded with a non-ASCII space — a no-break
+space (U+00A0) pasted from a web page is the likely one — is not trimmed by either checker, so the
+row is not recognised as a unit and **is silently not held to the shape**. The same goes for a row
+with a doubled leading pipe (`|| 1 | …`). If a unit seems to be going unchecked, look for an
+invisible character in its first cell.
+
+**What counts as an assertion** is set by `assertions.A14.assertion_pattern`, a regular expression
+searched for in the test file. It is configurable because no default can be right for every repo,
+and that is a measurement and not a worry: a Go table test fails through `t.Fatalf` and contains
+no assertion vocabulary at all, so it matches nothing. `Assert.AreEqual` (NUnit) and
+`XCTAssertEqual` (Swift) match nothing either, and no widening of one pattern fixes that — the
+vocabulary is repo-specific, so it lives in the config and not in the script. A repo whose tests
+say `t.Fatalf` sets `"assertion_pattern": "t\\.Fatal|t\\.Error"` (JSON doubles the backslash) and
+keeps the rest of A14; without the key, its only option would be to switch A14 off and lose the
+shape check too. The pattern is the repo's whole vocabulary, applied to every unit's test file.
+
+The default, used when the key is absent, accepts any of these as a whole word, case-sensitive:
+
+- `assert`, or `assert` followed by `_` or a capital: `assert x == 1`, `assert_eq!(a, b)`,
+  `assert_equal a, b`, `self.assertEqual(a, b)`, `assertEquals(a, b)`
+- `expect`, likewise: `expect(x).toBe(1)`
+- `ASSERT_…` and `EXPECT_…`, the googletest family: `ASSERT_EQ(a, b)`, `EXPECT_TRUE(x)`
+
+The word "assertion" or "expectation" in a comment is not one.
+
+**A pattern is held to a subset both emitted checkers read identically.** The Python checker and
+the Node one run the pattern in different engines, and those disagree about inline flags, named
+groups, a range out of a class escape, possessive quantifiers, `{,n}` and `\B` on an empty string.
+A checker that ran whatever its own engine accepted would pass a repo in one language and fail it in
+the other, which is the one thing the two are promised not to do. So the pattern is printable ASCII
+built from: literals; `.`; `^` and `$` (per line); `|`; groups `(…)` and `(?:…)` — no lookaround,
+flags or names; simple classes `[…]` and `[^…]`; the escapes `\w \W \d \D \s \S \b \n \r \t`, and a
+backslash before any other non-alphanumeric ASCII character (`\#\[test\]`, `assert_eq\!`), which both
+engines read as that character — but not before a letter or digit, so no `\B`, `\1`, `\p{…}` or
+`\A`; and the quantifiers `* + ? {n} {n,} {n,m}`, each with an optional lazy `?`. A class holds
+literals, `a-z` ranges between two literals, and those escapes; it may **not** be empty, hold an
+unescaped `[`, `&`, `~` or `|` (write `[\|]`), or have a `-` anywhere but at either end (so `[\w-.]`
+and `[a-z-_]` are refused, `[a-z_-]` is not). There is no case-insensitive flag; write `[Aa]ssert`.
+The file is matched with line endings made `\n` and each run of non-ASCII characters made one `~`,
+so `.`, `\s` and `$` cannot tell the engines apart either.
+
+A pattern outside that subset, empty, or not a string is reported as one finding at
+`.seam/config.json:1` saying it could not be compiled and why, and only the asserts-something
+comparison is skipped; everything else in A14 still runs.
+
+Fails loudly, with the comparison named as not made, in four cases: a plan with a `§ The issues`
+and no `§ The units`; a `§ The units` with no numbered row in it (a table whose rows are all struck
+through is the same case); an enabled glob that matches no doc; and a test file that is there but
+cannot be read — that one is reported rather than crashing the checker, because every assertion
+after A14 would then silently stop running. A plan with neither section is another kind of file
+and is left alone.
+
+Needs: `plan_glob`, which the wizard fills from the layer-5 rows exactly as it does for A8; and,
+optionally, `assertion_pattern`, which the wizard does not write — the default is right for most
+repos, and a repo that needs its own meets the finding above and comes here.
+
+Does not reach: **which files the work touches.** It asserts the *shape* of the table, not file
+coverage, and that is deliberate. A unit does not declare its paths, because an explicit path
+list per unit drifts within a day and is the ceremony that makes people stop filling the table
+in. Whether every changed file is covered by a unit is a procedural check made while building,
+not a mechanical one made here. It also does not reach whether the test is any good, or whether it
+passes — only that it exists and that it asserts something.
+
+A unit number is **any Unicode decimal digit**, the same as A8's row test, so a plan numbered in
+another script is still held to the shape. The `Proves it` path stays **ASCII** (`[\w./-]`): a path
+outside that is reported as "no test path", which is a finding rather than a skip.
+
+## A15 — a test arrives before the implementation it proves
+
+Reads: the commits on this branch that the default branch does not have, oldest first
+(`git rev-list --reverse --topo-order --no-merges <ref>..HEAD`, where `<ref>` is `<default_branch>`
+if that resolves to a commit and `origin/<default_branch>` if it does not — the same resolution A12
+uses, because a pull request's CI checkout is a detached HEAD with only the remote-tracking ref),
+and for each the paths it
+**added** (`git diff-tree`). A path matching `test_globs` is a test; one matching `impl_globs` is an
+implementation. Walking forward, every implementation file added in a commit before the first one
+that adds a test, and still in the tree at HEAD, is a finding. An implementation added in the
+**same** commit as the first test is fine: with, not after. Nothing added after the first test can
+be early, so the walk goes on past it only to follow a file still outstanding through a rename.
+
+A path matching both lists is a test. Only an added file counts: a modification of an
+implementation file is not an arrival, and neither is a rename or a copy, so moving code does not
+make it new. A rename is not a delete either: a file added with no test and then renamed is
+reported under its new name, as long as the new name still matches `impl_globs` and not `test_globs`
+(a file renamed out of the implementation paths, or into a path that matches both lists, is no
+longer an implementation file). A file added with no test,
+removed, and added again is reported once. Renames are detected with `-M -l32767`, so a repo's
+`diff.renameLimit` cannot turn a batch of renames back into new files.
+
+Off by default, because it needs two repo-specific lists and an empty one is not a sensible
+default: the interview asks which paths are implementation and which are tests, and writes
+`"A15": { "enabled": true, "impl_globs": […], "test_globs": […] }` only once it has both.
+
+Needs: `default_branch` (unset or null means `repo.default_branch`; anything else must be a branch
+name), `impl_globs` and `test_globs`, each a list of path globs written the way `plan_glob` is.
+`seam-init` refuses one list given without the other, naming the missing key.
+
+**A finding names the implementation file at line 1, with the file's path as its text** — never a
+commit. A sha is fresh on every branch, and a finding keyed on one could not be baselined.
+
+**Not applicable is not passing.** After a squash merge a test and its implementation are always in
+one commit, so on the default branch this check has nothing to compare, and a silent pass would be
+a check with no teeth pretending otherwise. When the range is empty the checker prints one line to
+stdout, `A15: not applicable on <ref> — a squash merge puts test and implementation in one
+commit`, and reports no finding. A15 is still **counted** among the assertions that ran: it reached
+a verdict, and the same config must print the same total on every branch.
+
+**Fails loudly, with the comparison named as not made**, as one finding at `.seam/config.json:1`, in
+five cases:
+
+- an enabled A15 with `impl_globs` or `test_globs` missing or empty — checked first, so it is
+  reported on every branch, the default one included;
+- a `default_branch` that is not a non-empty string. The finding names the key and not the value,
+  because its text is part of its baseline key and the two checkers print `true` and `True` apart;
+- a `default_branch` that neither `<default_branch>` nor `origin/<default_branch>` resolves to a
+  commit, which is also what no `git` binary or no repository looks like. The finding names both
+  forms it tried. `origin/<default_branch>` is tried for you, so a standard CI checkout needs no
+  configuration for it: the usual cause is a checkout that fetched neither form, and the fix is to
+  fetch the branch (`fetch-depth: 0` in CI), not to point `default_branch` at `origin/main`;
+- **a shallow clone** whose history was cut before the branch point. Git then shows every file in
+  the oldest commit it has as added by it, so the range would look like one enormous first commit
+  and the comparison would be against nothing. A15 asks `git merge-base`, and when it finds none it
+  says so and names `fetch-depth: 0`;
+- `git rev-list` or `git diff-tree` failing partway through.
+
+A detached HEAD is not a failure: the range is `<ref>..HEAD` either way.
+
+Does not reach: **an implementation file that is no longer there.** A file the branch added and
+later removed is not in the tree at HEAD, so there is nothing to open and nothing to fix, and the
+only way to clear a finding for it would be a baseline entry for a path that does not exist. It is
+skipped. And **which test proves which implementation.** One test file added anywhere at or
+before an implementation file satisfies it, however unrelated — the same boundary A14 draws, for the
+same reason: pairing them needs a declaration per file that drifts within a day. It does not read
+file contents, so it cannot tell a test that asserts something from one that does not (A14 reads that
+for the units table). It reads only the commits on the branch, so a test that already sits on the
+default branch does not count for an implementation added now. And it is only as good as the history:
+a branch squashed before it is checked has one commit, and passes.
+
+## A16 — the config is still the projection of its answers file
+
+The answers file is the **source**; `.seam/config.json` is its **projection**. Editing the
+projection cost two silent reversions in one hour while this layer was designed, one of which
+reached a pushed commit message as a false claim. Prose did not hold it, so this assertion does.
+
+Reads: `.seam/provenance.json`, written by the wizard beside the config in the same run, and the
+bytes of the two files it names. The block below is the key list; it is deliberately not preceded
+by a count, because the count is what went stale when `assertions_enabled` was added:
+
+```jsonc
+{
+  "seam_version": "0.2.0",
+  "answers": ".seam/answers.json",   // repo-relative, or null when the answers file is outside
+  "answers_sha256": "<64 hex>",      // the answers file as the wizard read it
+  "config_sha256": "<64 hex>",       // .seam/config.json as the wizard wrote it
+  "assertions_enabled": ["A1", …]    // read by the refusal below, NOT by A16
+}
+```
+
+**Two hashes, and they catch opposite directions.** The `config_sha256` mismatch is the bug this
+assertion exists for: a config edited by hand, which the next regeneration reverts without a word.
+The `answers_sha256` mismatch is the other one: a source that moved with nothing regenerated after
+it, so the config is the projection of an earlier version of the file. **An answers hash alone
+would not catch the first case at all** — editing the config leaves the answers file untouched.
+
+**Hashes, not the projection re-derived here.** The checker is a standalone, stdlib-only script
+emitted in two languages, and it cannot import `bin/seam-init.mjs`. "Re-run the projection and
+compare" therefore means writing `project()` a second time in Python and a third time in Node —
+two more copies of the one function this layer exists to keep single, each able to drift into
+agreeing with a wrong config. Whole-file hashes need no knowledge of how either file was
+serialised, which is exactly the knowledge a re-derivation would have to duplicate.
+
+Needs: nothing in `assertions.A16` beyond `enabled`. The provenance path is fixed, beside the
+config.
+
+**Default: on iff the answers file is inside the repo.** The wizard records `answers` as a
+repo-relative path when it is, and `null` when it is not, and sets `enabled` from that — because a
+comparison against a file no later run can read cannot be made at all. A repo that keeps its
+answers file outside the tree gets A16 **off**, and pays for it by having its config's provenance
+unchecked. That is the cost of keeping the source out of the repo, and it is the reason to commit
+it.
+
+**Fails loudly, as one finding, in four cases** — the comparison named as not made rather than
+passed:
+
+- **`answers` is absent or null** — the answers file is outside the repo, so nothing here can read
+  it back.
+- **`answers` names a file that is not there.**
+- **either hash missing or not 64 hex characters.**
+- **either file present and unreadable.** A file that cannot be opened is not a missing one, and it
+  must not take the checker down — the same rule A14 follows for a unit's test file.
+
+A missing or unreadable sidecar is **not** one of them: it is a refusal, below, because without it
+nothing can be trusted — A16's own switch included.
+
+**A16 cannot police its own switch, and a refusal does.** `assertions.A16.enabled` lives in the
+file A16 protects, so setting it to `false` and editing the config in the same write was silent:
+the only trace was the assertion count falling by one. The repair cannot be another assertion,
+since an assertion can be switched off. It is § The refusals' last entry, which reads
+`assertions_enabled` from the same sidecar and refuses to run on a mismatch, before any assertion
+runs and independent of every switch.
+
+Does not reach:
+
+- **Whether the projection rule itself is right.** A16 proves the two files are the pair the wizard
+  emitted together, not that `project()` did the correct thing with them. That is
+  `tests/seam-init.test.mjs`'s half.
+- **A config edited and then re-hashed**, and equally a switch flipped in the config *and* in
+  `assertions_enabled` together. **That is the boundary, stated rather than implied:** what both
+  mechanisms close is the silent **single** edit. Editing the config and its record in one pass
+  defeats them, as it would defeat any scheme short of re-deriving the projection in both
+  languages — which is the duplication this design exists to avoid. The point is that the cheap
+  path is loud, not that the determined path is impossible.
+- **An answers file that is valid and wrong.** A16 compares bytes. Whether the answers say what the
+  repo means is the interview's question.
+
+## The refusals before anything is checked
+
+All of them are exit 2, and all of them exist because the alternative is a check that looks like a
+pass:
+
+- **A config value whose shape no reader can use.** `table.file` missing, `docs` or
+  `load_bearing` not a list, a `docs` row that is not an object or names no path, an entry of
+  `load_bearing` that is not a string, `assertions` or one assertion's settings not an object, an
+  `allow` that is a list of strings or an object rather than a list of entries, an assertion's own
+  list of entries (`A3.doc_sections`, `A4.artifacts`, `A5.vocabularies`, `A6.retired`,
+  `A7.reversed`, `A9.count_sites`) whose entry names no `file`, `path` or `pattern`, a glob list
+  holding something that is not a string, `adr`/`prd`/`baseline` values that are not strings —
+  each is refused by name, saying what shape that value has to have and why a reader needs it. It is one pass
+  before anything indexes any of them, because the same malformed config was a `TypeError` in
+  Node and a `KeyError` or an `AttributeError` in Python: two different endings for one config,
+  and a traceback is never an acceptable ending for a malformed config **shaped like one the
+  wizard writes**. Three keys sit outside that: `A7.reversed[i].pattern`,
+  `A9.count_sites[i].pattern` and `A3.extra_tokens[i]` are compiled raw, so `"("` is a
+  `re.error` against a `SyntaxError` — reachable only from a hand-written config, and recorded
+  in the findings ledger rather than closed here, because scoping what a repo's own regex may
+  contain is a policy decision and not a shape check. Unreadable JSON, and a
+  config that is not an object at all, are refused the same way.
 - **No assertion enabled.** A config with no `assertions` block, or one with every switch off,
   would emit a checker that measures nothing and exits 0. That cannot be told apart from passing,
   which is the thing this whole layer exists to prevent. A repo that genuinely wants none should
   not have a checker.
-- **An allow-list entry with no reason.** An entry means "this will never be fixed", and the
-  method says it requires a written reason. Nothing read the field until this refusal existed,
-  which made the requirement a sentence.
+- **An allow-list entry with no reason, or with no path.** An entry means "this will never be
+  fixed", and the method says it requires a written reason. Nothing read the field until this
+  refusal existed, which made the requirement a sentence. The **path** is refused for a different
+  reason: an exemption that names nothing cannot exempt anything, and the three readers of that
+  field disagreed about what a missing one was — a Python `KeyError`, a Node `undefined`, and
+  `"None"` against `""` in a finding's text, which is part of its baseline key.
+- **The enabled set is not the one `.seam/provenance.json` records**, or there is no readable
+  sidecar at all. The sidecar is written by the wizard beside the config, in the same run, and it
+  names the assertions that were enabled then. A switch flipped in the config by hand is a silent
+  change to what the checker measures — **including A16's own switch, which lives in the file A16
+  protects**, so no assertion can police it. The refusal names which ids moved in which direction.
+  A legitimate change goes through the answers file, which rewrites both and agrees; an absent
+  sidecar is refused rather than skipped, because "no record" would otherwise be the switch-off
+  defeat with one extra step.
+
+An entry that is no longer *needed* is not a refusal: it is an ordinary A1 finding, because it is
+about the tree rather than about the config being readable. See § A1.
 
 ## Repo-invented assertions
 

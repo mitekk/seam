@@ -14,14 +14,14 @@ Where this file and {{artifact.citation}} disagree, the artifact wins and the dr
 ## What this does not own
 
 - **Why** anything here was chosen. That is layer 3, {{adr.citation}}.
-- **What we are trying to build.** That is layer 4, `{{prd.current}}`.
-- **Which units of work build it, in what order.** That is layer 5, under `{{plans.dir}}`.
+- **What we are trying to build.** That is layer 4, {{prd.citation}}.
+- **Which units of work build it, in what order.** That is layer 5, {{plans.citation}}.
 
 ## Open questions
 
-None recorded in this file. An unresolved question about *what we are building* lives in
-`{{prd.current}}` § Open questions; one lands here only once this doc is the file that will
-answer it, and it is written as a question rather than as a confident sentence.
+None recorded in this file. An unresolved question about *what we are building* belongs with the
+intent, {{prd.citation}}; one lands here only once this doc is the file that will answer it, and
+it is written as a question rather than as a confident sentence.
 
 ---
 

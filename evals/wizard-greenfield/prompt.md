@@ -39,6 +39,8 @@ create table apiaries (
   "in_scope": ["Recording a hive's state", "Listing the queenless hives"],
   "out_of_scope": ["Honey yield accounting", "More than one beekeeper per apiary"],
   "repo": { "name": "apiary", "default_branch": "main" },
+  "field": "greenfield",
+  "field_reason": "A new repo: a schema and a package manifest, and nothing under docs/ at all.",
   "table": { "file": "CLAUDE.md" },
   "checker": { "language": "python", "path": "scripts/check_docs.py" },
   "adr": { "format": "madr", "dir": "docs/adr" },
@@ -54,7 +56,7 @@ create table apiaries (
   "load_bearing": ["db/schema.sql"],
   "low_review_paths": [],
   "domains": [{ "name": "hives", "covers": "Hive state and inspection scheduling" }],
-  "milestones": [{ "n": 1, "title": "Queenless list", "green": "the list renders from the database" }],
+  "milestones": [{ "n": 2, "title": "Queenless list", "green": "the list renders from the database", "active": true }],
   "agents": [],
   "assertions": {},
   "open_questions": ["Whether inspections need to work offline, in a field with no signal."]

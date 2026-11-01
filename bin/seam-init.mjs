@@ -17,11 +17,42 @@
 // No dependencies, by the rule in docs/contributing.md § Hard conventions.
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from "node:fs";
-import { join, dirname, basename, sep, relative } from "node:path";
+import { join, dirname, basename, sep, relative, resolve, isAbsolute } from "node:path";
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const TEMPLATES = join(HERE, "..", "skills", "seam-docs", "templates");
+const PLUGIN = join(HERE, "..");
+const TEMPLATES = join(PLUGIN, "skills", "seam-docs", "templates");
+
+/** This plugin's own version, read rather than held as a constant.
+ *
+ * It was `"0.1.0"` inline, so a 0.2.0 wizard stamped 0.1.0 onto any answers file that
+ * omitted the key and nothing compared the two — the version a config records is supposed
+ * to be the version of the wizard that wrote it, and `.seam/provenance.json` carries the
+ * same field for A16. `bin/generate-checker.mjs` already reads it from here, so the pattern
+ * existed and this was the one place not using it.
+ *
+ * Refused rather than guessed when it cannot be read: the manifest ships beside this file,
+ * so an unreadable one is a broken install, and a stamped guess is a wrong provenance
+ * record that reads as a fact later. */
+function seamVersion() {
+  const manifest = join(PLUGIN, ".claude-plugin", "plugin.json");
+  let v;
+  try {
+    v = JSON.parse(readFileSync(manifest, "utf8")).version;
+  } catch (e) {
+    die(`cannot read ${manifest} to learn this plugin's own version — ${e.message}. That`
+      + ` file ships beside the wizard, so this is a broken install rather than a repo`
+      + ` problem. Nothing is written: the version reaches .seam/config.json and`
+      + ` .seam/provenance.json, where a guess would read as a fact later.`);
+  }
+  if (typeof v !== "string" || !v) {
+    die(`${manifest} carries no \`version\` string, so the wizard cannot say which seam`
+      + ` wrote this config. Nothing is written.`);
+  }
+  return v;
+}
 
 const LAYERS = {
   1: { name: "Artifact", rule: "changes with the code" },
@@ -34,8 +65,26 @@ const LAYERS = {
 
 // Keys that carry a human's words. They reach the docs and never the machine config: a config is
 // read by a script, and a script has no use for a sentence it cannot check.
-const PROSE_KEYS = ["purpose", "open_questions", "users", "in_scope", "out_of_scope"];
+const PROSE_KEYS = ["purpose", "open_questions", "users", "in_scope", "out_of_scope",
+  "field_reason"];
 const PROSE_SUBKEYS = { docs: ["owns"], domains: ["covers"], milestones: ["green"], agents: ["covers"] };
+
+// Beside the config, written by the same run: the two hashes assertion A16 compares, so that a
+// hand-edited config and a config whose answers file moved under it are both loud rather than
+// silently reverted by the next regeneration. It is provenance ABOUT the projection and not part
+// of it, which is why it is a sidecar: `project()` stays a pure function of the answers, and the
+// config keeps the one-key-namespace property the interview's schema documents.
+const PROVENANCE_PATH = ".seam/provenance.json";
+
+const sha256 = (data) => createHash("sha256").update(data).digest("hex");
+
+/** The answers file's path relative to the repo, or null when it is outside the tree. A16 can
+ *  only compare what a later run can read back, so "outside" is what switches it off. */
+function answersInRepo(repo, answersPath) {
+  const rel = relative(resolve(repo), resolve(answersPath));
+  if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) return null;
+  return rel.split(sep).join("/");
+}
 
 const MARK_START = "<!-- seam:sources-of-truth start -->";
 const MARK_END = "<!-- seam:sources-of-truth end -->";
@@ -121,6 +170,41 @@ function validate(a) {
     "must be a list of paths, or absent, which means empty — and empty is the right answer for"
     + " most repos");
 
+  // Optional by construction. Most repos have nothing to take down after a merge beyond the
+  // branch itself, so absent and "" both mean "deleting the branch is the whole teardown", and an
+  // empty answer is a complete one rather than a key nobody filled in. A non-string is the one
+  // answer that can mean neither: a list would have to be sequenced by whoever ran it, and the
+  // skill runs what this key names, as written.
+  need(a.teardown_command === undefined || typeof a.teardown_command === "string",
+    "teardown_command",
+    `must be one shell command as a string, not ${JSON.stringify(a.teardown_command)} — or absent,`
+    + ` which means the repo has no teardown step beyond deleting the branch`);
+  // "One shell command" is what the interview asks for and what the skill runs, as written, so a
+  // value carrying a newline is two commands whose order would be the caller's to guess. A repo
+  // with two things to take down writes a script and names the script here.
+  if (typeof a.teardown_command === "string" && /[\r\n]/.test(a.teardown_command)) {
+    bad.push(`teardown_command: carries a newline, so it is more than one command — put the`
+      + ` sequence in a script of the repo's own and name that script here`);
+  }
+
+  // A15 compares two lists, and one without the other is a comparison with one side empty: it
+  // could only ever fail, or only ever pass. The checker reports an enabled A15 with an empty
+  // list; this catches the half-answered interview before a config is written at all.
+  const a15 = a.assertions?.A15;
+  if (a15 && typeof a15 === "object") {
+    const keys = ["impl_globs", "test_globs"];
+    for (const k of keys) {
+      need(a15[k] === undefined || Array.isArray(a15[k]), `assertions.A15.${k}`,
+        "must be a list of path globs");
+    }
+    need(a15.default_branch === undefined || (typeof a15.default_branch === "string" && a15.default_branch),
+      "assertions.A15.default_branch", "must be the name of a branch");
+    for (const [k, other] of [keys, keys.slice().reverse()]) {
+      need(a15[k] === undefined || a15[other] !== undefined, `assertions.A15.${other}`,
+        `${k} is given and ${other} is not — A15 compares the two, so it needs both`);
+    }
+  }
+
   (a.artifacts ?? []).forEach((art, i) => {
     need(typeof art.path === "string" && art.path, `artifacts[${i}].path`, "an artifact needs a path");
     // Layer 1 wins over every doc on what is true now, so an artifact carries weight by
@@ -132,7 +216,105 @@ function validate(a) {
       + ` doc, so it is load-bearing by construction`);
   });
 
+  // The follow-up qualifier's third clause is "it blocks the active milestone", and a clause can
+  // only be checked against one fact. So `active` is a boolean on every row — not truthy, not
+  // absent-means-false, which would give a config whose key means different things on different
+  // rows — and exactly one row is true. Zero milestones is fine: the build order is asked for,
+  // and "none yet" is an answer.
+  need(a.milestones === undefined || Array.isArray(a.milestones), "milestones",
+    "must be a list, or absent, which means none yet");
+  const ms = Array.isArray(a.milestones) ? a.milestones : [];
+  ms.forEach((m, i) => {
+    // `n` and `title` are the table's first two columns, built from the row rather than
+    // substituted per key — so a row without them renders `| undefined | undefined |`.
+    need(isLabel(m?.n), `milestones[${i}].n`,
+      "a milestone needs its number — it is the first column of the table this row builds, and a"
+      + " row without it renders as `| undefined |`");
+    need(isLabel(m?.title), `milestones[${i}].title`,
+      "a milestone needs its title, for the same reason as its number");
+    const got = m?.active === undefined ? "missing" : JSON.stringify(m.active);
+    need(typeof m?.active === "boolean", `milestones[${i}].active`,
+      `must be true or false, not ${got} — exactly one milestone is active, and every row says`
+      + ` whether it is. Mark the one being built now with "active": true and every other row`
+      + ` "active": false`);
+  });
+  if (ms.length && ms.every((m) => typeof m?.active === "boolean")) {
+    const on = ms.flatMap((m, i) => (m.active ? [i] : []));
+    if (on.length === 0) {
+      bad.push(`milestones[].active: none of the milestones is active — exactly one`
+        + ` must be, because the follow-up qualifier's third clause ("blocks the active`
+        + ` milestone") reads it. Mark the one being built now with "active": true`);
+    } else if (on.length > 1) {
+      bad.push(`milestones[${on[1]}].active: milestones[${on[0]}] is already active — exactly one`
+        + ` milestone is active at a time, so the qualifier's third clause has one thing to check`
+        + ` against`);
+    }
+  }
+
+  // `agents[]` had no validation block at all, and neither did `domains[]`. Both reach a template,
+  // and the two leak differently: `agent/agent.md` substitutes per key, and `render()` returns an
+  // unresolved `{{key}}` as itself, so a row with no `model` writes `model: {{agent.model}}` into
+  // the frontmatter the harness parses to choose that agent's model — and `{{` opens a YAML flow
+  // mapping, so the block does not parse at all and the agent does not load. The taxonomy tables
+  // are built from their rows instead, so a row with no label renders the literal `undefined`.
+  // Both are this program writing a broken artifact into a repo and exiting 0.
+  //
+  // `covers` on a DOMAIN row and `green` on a milestone row are deliberately not here: each has an
+  // honest `_not recorded_` fallback, which is the wizard saying what it was not told rather than
+  // writing a value it does not have. `covers` on an AGENT row is required, because it is that
+  // agent's `description:` and the template substitutes it per key.
+  const AGENT_KEYS = {
+    name: "the agent's filename and its `name:` frontmatter",
+    covers: "the agent's `description:`, which is what a dispatch matches on",
+    model: "the `model:` frontmatter the harness reads to choose the model",
+    effort: "the `effort:` frontmatter the harness reads to choose the level",
+  };
+  need(a.agents === undefined || Array.isArray(a.agents), "agents",
+    "must be a list, or absent, which means the repo named no agents — which is a complete answer");
+  (Array.isArray(a.agents) ? a.agents : []).forEach((g, i) => {
+    for (const [k, why] of Object.entries(AGENT_KEYS)) {
+      need(typeof g?.[k] === "string" && g[k], `agents[${i}].${k}`,
+        `${why}. The template substitutes it per key, so a row without it writes`
+        + ` \`{{agent.${k}}}\` into the repo as itself`);
+    }
+  });
+
+  need(a.domains === undefined || Array.isArray(a.domains), "domains",
+    "must be a list, or absent, which means none yet");
+  (Array.isArray(a.domains) ? a.domains : []).forEach((d, i) => {
+    need(typeof d?.name === "string" && d.name, `domains[${i}].name`,
+      "a domain row needs its label — the taxonomy table is built from the rows, so a row with no"
+      + " name renders as `| `undefined` |` and the doc carries a label nobody can apply");
+  });
+
+  // The field determination: milestone 1 for every repo, and the interview's first question. Both
+  // halves are required and neither has a fallback, for two different reasons.
+  //
+  // `field` is an enum the taxonomy template renders into the milestone-1 row, so an absent or
+  // misspelled value would ship `{{field}}` into that row as itself — the same class as
+  // `{{agent.model}}` in a frontmatter, one layer up.
+  //
+  // `field_reason` has no `_not recorded_` fallback, unlike `domains[].covers` and
+  // `milestones[].green`, because the determination is a judgement about the tree **as it stands**
+  // and not about its history: a repo whose every doc was written by this method is still a repo
+  // that has docs. Without the reason beside it, the determination reads as an error later.
+  const FIELDS = ["greenfield", "brownfield"];
+  need(FIELDS.includes(a.field), "field",
+    `must be ${FIELDS.map((f) => JSON.stringify(f)).join(" or ")}, not`
+    + ` ${JSON.stringify(a.field)} — whether this repo already has docs is the first thing the`
+    + ` interview establishes, because the proposal, the baseline and the never-rewrite rule all`
+    + ` branch on it, and the taxonomy template renders it as milestone 1`);
+  need(typeof a.field_reason === "string" && a.field_reason.trim() !== "", "field_reason",
+    "the determination needs the reason it was made, in words, because it is a judgement about the"
+    + " tree as it stands rather than about its history — without it, the answer reads as an error"
+    + " to whoever finds it next");
+
   if (bad.length) die(bad[0]);
+}
+
+/** A table cell's value: a non-empty string, or a number. Anything else renders as `undefined`. */
+function isLabel(v) {
+  return (typeof v === "string" && v !== "") || (typeof v === "number" && Number.isFinite(v));
 }
 
 // ── The config projection ─────────────────────────────────────────────────────
@@ -199,7 +381,7 @@ function layer5Globs(a) {
   return paths.length === 1 ? paths[0] : paths;
 }
 
-function defaultAssertions(a) {
+function defaultAssertions(a, answersRel) {
   const layers = new Set((a.docs ?? []).map((d) => d.layer));
   const has = (n) => layers.has(n);
   const artifacts = a.artifacts ?? [];
@@ -207,9 +389,13 @@ function defaultAssertions(a) {
     // A1, A2 and A10 run everywhere: a citation a reader cannot open is a defect whatever the
     // layer, and a doc missing from the table is drift by definition.
     // `intent_globs` names the docs whose citations are intentions rather than claims — an
-    // implementation plan names the files it will create. Defaults to the plan directory a
-    // writing-plans workflow uses, because that is the one place it is true by construction.
-    A1: { enabled: true, allow: [], intent_globs: ["docs/superpowers/plans/*.md"] },
+    // implementation plan names the files it will create, so by construction those paths are
+    // absent. The globs come from the layer-5 rows themselves, for the same reason A8's do: a
+    // hardcoded `docs/superpowers/plans/*.md` was seam's own layout, so an adopter whose plans
+    // sit anywhere else got an exemption pointing at a directory they do not have — and every
+    // file-creation citation in their plan reds A1 on day one, while the glob itself matches
+    // nothing and produces no finding to say so.
+    A1: { enabled: true, allow: [], intent_globs: [layer5Globs(a)].flat() },
     A2: { enabled: true },
     // A3 compares two sides. Until a workflow exists and someone confirms it is wired, the
     // comparison would be vacuous — so it is off, and off is distinct from passing.
@@ -227,18 +413,36 @@ function defaultAssertions(a) {
     A11: { enabled: true },
     A12: { enabled: has(3) || has(4), default_branch: a.repo?.default_branch ?? "main" },
     A13: { enabled: has(3) || has(4) },
+    // A14 reads the same plans A8 does, so it takes the same glob for the same reason.
+    A14: { enabled: has(5), plan_glob: layer5Globs(a) },
+    // A15 compares two repo-specific lists — which paths are implementation and which are tests —
+    // and an empty list is not a sensible default, so it is off until the interview has both.
+    A15: {
+      enabled: false,
+      default_branch: a.repo?.default_branch ?? "main",
+      impl_globs: [],
+      test_globs: [],
+    },
+    // On iff the answers file is inside the repo, because that is the only case where a later
+    // run can read it back and compare. A repo that keeps its answers file elsewhere gets A16
+    // off rather than a permanent red — and pays for it by having its config's provenance
+    // unchecked, which `references/assertions.md` § A16 states as the cost it is.
+    A16: { enabled: answersRel !== null },
   };
 }
 
-function project(a) {
-  const assertions = { ...defaultAssertions(a) };
+function project(a, answersRel = null) {
+  const assertions = { ...defaultAssertions(a, answersRel) };
   for (const [id, override] of Object.entries(a.assertions ?? {})) {
     assertions[id] = { ...(assertions[id] ?? {}), ...override };
   }
   // Explicit key order, so two runs on one answers file produce one byte sequence.
   const cfg = {
-    seam_version: a.seam_version ?? "0.1.0",
+    seam_version: a.seam_version ?? seamVersion(),
     repo: a.repo ?? { name: basename(process.cwd()), default_branch: "main" },
+    // Green or brown field. A machine key, not prose: it is a two-valued fact about the tree, and
+    // the skills branch on it. Its reason is prose and stays in the answers file.
+    field: a.field,
     table: a.table,
     checker: {
       language: a.checker.language,
@@ -251,6 +455,9 @@ function project(a) {
     docs: stripProse(a.docs, PROSE_SUBKEYS.docs),
     load_bearing: a.load_bearing ?? [],
     low_review_paths: a.low_review_paths ?? [],
+    // Always present, so the skill's conditional has something to read either way: "" is the
+    // repo saying the branch delete is the whole teardown, not a key the interview skipped.
+    teardown_command: a.teardown_command ?? "",
     domains: stripProse(a.domains ?? [], PROSE_SUBKEYS.domains),
     milestones: stripProse(a.milestones ?? [], PROSE_SUBKEYS.milestones),
     agents: stripProse(a.agents ?? [], PROSE_SUBKEYS.agents),
@@ -289,20 +496,51 @@ function templateVars(a, cfg) {
     : `\`${a.adr.file}\``;
   const prdDir = cfg.prd.dir;
   const version = cfg.prd.version ?? 1;
-  const planRow = (a.docs ?? []).find((d) => d.layer === 5);
+  // EVERY layer-5 directory, deduped, in row order — not the first row's. A repo with two layer-5
+  // rows (a specs track and a plans track, which is this repo's own shape) got a doc naming
+  // whichever came first and omitting the other, and A1 cannot see it: it is a directory, not a
+  // `*.md` citation. `layer5Globs` above already reads all of them.
+  const planDirs = [...new Set((a.docs ?? []).filter((d) => d.layer === 5)
+    .map((d) => dirname(d.path)))];
   const artifact = (a.artifacts ?? [])[0];
+  const agents = a.agents ?? [];
+  // Every agent row carries both levels or the run was refused (`validate`), so there is no
+  // unpinned state to render here. The `—` in this table is the literal cell on the rows the
+  // template fixes — planning, review — and it means "not pinned by this repo".
   return {
     date: a.date ?? new Date().toISOString().slice(0, 10),
     repo: cfg.repo,
     table: cfg.table,
     checker: { path: cfg.checker.path, language: cfg.checker.language },
     adr: { ...cfg.adr, citation: adrCitation },
-    prd: { dir: prdDir, version, next_version: version + 1, current: `${prdDir}/PRD-current.md` },
-    plans: { dir: planRow ? dirname(planRow.path) : "docs/plans" },
+    // A citation, like `adr.citation` and `artifact.citation`: a repo with no layer-4 row has no
+    // PRD file, so a backticked path to one is a citation A1 reds on the day the doc is written —
+    // measured on a fresh two-layer adoption, two findings before anyone had typed anything.
+    prd: {
+      dir: prdDir,
+      version,
+      next_version: version + 1,
+      current: `${prdDir}/PRD-current.md`,
+      citation: (a.docs ?? []).some((d) => d.layer === 4)
+        ? `\`${prdDir}/PRD-current.md\``
+        : "wherever this repo writes it down",
+    },
+    // A phrase, not a path, for the same reason `adr.citation` is one: with several directories
+    // there is nothing for a template's own pair of backticks to wrap, and with none there is no
+    // directory to name at all.
+    plans: {
+      citation: planDirs.length
+        ? "under " + planDirs.map((x) => `\`${x}\``).join(" and ")
+        : "wherever this repo writes its plans down",
+    },
     artifact: {
       citation: artifact ? `\`${artifact.path}\`` : "the code itself (layer 1)",
       path: artifact?.path ?? "",
     },
+    // Milestone 1, for every repo. The template ships the row and takes both halves from here,
+    // which is why neither is optional: there is no honest cell to render without them.
+    field: a.field,
+    field_reason: a.field_reason,
     purpose: a.purpose ?? "_Not recorded. `/seam:init` asks for this; it is never inferred._",
     purpose_short: (a.purpose ?? "not recorded").replace(/\s+/g, " ").slice(0, 80),
     users: a.users ?? "_Not recorded — an open question, not an assumption._",
@@ -318,8 +556,29 @@ function templateVars(a, cfg) {
       : "| _none recorded_ | `/seam:init` asks for these; they are never inferred |",
     milestones_table: (a.milestones ?? []).length
       ? (a.milestones ?? []).map((m) =>
-          `| ${m.n} | ${m.title} | ${m.green ?? "_not recorded_"} |`).join("\n")
-      : "| — | _none recorded_ | _the build order is asked for, not inferred_ |",
+          `| ${m.n} | ${m.title} | ${m.green ?? "_not recorded_"} | ${m.active ? "yes" : "no"} |`)
+          .join("\n")
+      : "| — | _none recorded_ | _the build order is asked for, not inferred_ | — |",
+    // The levels the answers pin are written into the doc that claims to be their only copy, the
+    // same way the taxonomy doc's tables are. The program knows them — it writes them into each
+    // agent's frontmatter and into the config — so a hand-fill instruction would leave the
+    // authoritative table as the one place they are missing.
+    implement_rows: agents.length
+      ? agents.map((g) => `| Implement — ${g.name} | \`.claude/agents/${g.name}.md\` `
+          + `| \`${g.model}\` | \`${g.effort}\` |`).join("\n")
+      : "| Implement | `.claude/agents/<name>.md` | — | — |",
+    // A header over no rows reads as a table someone forgot to fill, and an empty list is a real
+    // answer here, so the whole block is the variable rather than just its rows.
+    agents_table: agents.length
+      ? [
+          "| Agent | Scope | Reads before changing |",
+          "|---|---|---|",
+          ...agents.map((g) => `| \`${g.name}\` | ${g.covers ?? "_not recorded_"} `
+            + "| `<the source-of-truth row it is accountable to>` |"),
+        ].join("\n")
+      : "**This repo named no agents**, so there is no table here — an empty list is a complete\n"
+        + "answer, for the reason above. The day one is written it gets a row, with the model and\n"
+        + "the effort it is pinned to.",
   };
 }
 
@@ -472,12 +731,14 @@ function writeDoc(w, a, vars, d) {
       return;
     case 2: {
       // A layer-2 doc whose name says what it owns gets the template for that, rather than the
-      // generic one: a repo's taxonomy and its review policy have a shape, and a blank layer-2
-      // doc asking the user to invent one is the wizard not doing its job.
+      // generic one: a repo's taxonomy, its review policy and its build contract have a shape,
+      // and a blank layer-2 doc asking the user to invent one is the wizard not doing its job.
       const named = {
         "taxonomy.md": "current/taxonomy.md",
         "reviewing.md": "current/reviewing.md",
         "routing.md": "current/routing.md",
+        "building.md": "current/building.md",
+        "context.md": "current/context.md",
       };
       const special = named[basename(d.path)];
       w.create(d.path, render(tmpl(special && existsTemplate(special) ? special : "current/doc.md"), v));
@@ -518,18 +779,37 @@ function writeDoc(w, a, vars, d) {
 function main() {
   const args = parseArgs(process.argv.slice(2));
   let answers;
+  let answersBytes;
   try {
-    answers = JSON.parse(readFileSync(args.answers, "utf8"));
+    answersBytes = readFileSync(args.answers);
+    answers = JSON.parse(answersBytes.toString("utf8"));
   } catch (e) {
     die(`cannot read ${args.answers}: ${e.message}`);
   }
   validate(answers);
 
-  const cfg = project(answers);
+  const answersRel = answersInRepo(args.repo, args.answers);
+  const cfg = project(answers, answersRel);
   const vars = templateVars(answers, cfg);
   const w = new Writer(args.repo, args.dryRun);
 
-  w.put(".seam/config.json", JSON.stringify(cfg, null, 2) + "\n");
+  const cfgBody = JSON.stringify(cfg, null, 2) + "\n";
+  w.put(".seam/config.json", cfgBody);
+  // Hashed as the bytes on disk, both of them, so the comparison A16 makes needs no knowledge of
+  // how either file was serialised — the trap in asking a second language to re-derive it.
+  w.put(PROVENANCE_PATH, JSON.stringify({
+    seam_version: cfg.seam_version,
+    answers: answersRel,
+    answers_sha256: sha256(answersBytes),
+    config_sha256: sha256(cfgBody),
+    // The set the emitted checker refuses to run without agreeing with. A16's own switch lives in
+    // the file A16 protects, so flipping it and editing the config in one write was silent — the
+    // cheapest defeat there is. This is the record the checker's integrity precondition compares
+    // against, and a precondition rather than an assertion precisely because an assertion can be
+    // switched off.
+    assertions_enabled: Object.keys(cfg.assertions)
+      .filter((k) => cfg.assertions[k]?.enabled).sort(),
+  }, null, 2) + "\n");
 
   for (const d of answers.docs) {
     if (d.create === false) {

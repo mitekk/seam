@@ -18,6 +18,13 @@ Owns: the rationale for every significant choice in this repo. A layer-2 doc tha
 **NNNN-kebab-title.md**. Copy `{{adr.dir}}/template.md` and take the next number. Every record carries a Date and a
 Status; a superseded one names its successor.
 
+**A ruling taken in flight is a record of its own too**, named `NNNN-ruling-<slug>.md`, and never
+one record collecting a branch's worth of them. A record is byte-frozen once it is on
+`{{repo.default_branch}}`, so a batch record cannot be appended to after that branch merges, and
+a record per ruling also gives each one a number to be cited by. The filename prefix is what keeps
+the listing readable: the index below is chronological, as an append-only dated track is, and the
+kind is visible without opening the file.
+
 ## Index
 
 | # | Decision | Date | Status |

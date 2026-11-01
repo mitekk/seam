@@ -4,8 +4,8 @@
 **bug**, so the edit rule is **amend in place**.
 
 Owns: the **domain labels**, the **three priorities**, and the **milestones**. Nothing else may
-define them — `.seam/config.json` carries the machine mirror, and the checker asserts the two
-agree.
+define them — `.seam/config.json` carries the machine mirror. The two are kept in step by hand:
+no checker assertion compares them, so a drift between them is not caught.
 
 ## Domains
 
@@ -42,13 +42,44 @@ priority scheme stops meaning anything: everything becomes `p1` and the board st
 
 The build order. Each ends green before the next starts, and each produces a reviewable diff.
 
-| # | Milestone | Green when |
-|---|---|---|
+**"Green when" is a completion condition, not a level.** The word carries a second sense in this
+method — a share of the session window a piece of work has spent, where Green is the lowest
+band — and the two live in different files for different readers. Nothing here is a budget: a
+milestone's cell is what has to be *true* before the next row starts. Where this repo also writes
+a context budget down, that doc owns the other sense and this table never refers to it.
+
+| # | Milestone | Green when | Active |
+|---|---|---|---|
+| 1 | Establish the field — this repo is **{{field}}** | the determination is recorded, with the reason it was made | no |
 {{milestones_table}}
 
-**The active milestone is the one the priority rule reads**, so it has to be unambiguous: exactly
-one milestone is active at a time, and clause 3 of the follow-up qualifier — "blocks the active
-milestone" — is answered from this table rather than from how important something feels.
+**Milestone 1 is the method's, and it is green on arrival.** Establishing whether a repo is green
+or brown field is the first step to getting anything else straight, and everything after it
+depends on it: which path the wizard runs, what the proposal may claim, how big the baseline is,
+and which assertions can run at all. It is recorded before this file can exist — the wizard cannot
+write the row without the answer — so its Active cell is `no` rather than `yes`: marking it active
+would park the priority rule on a milestone nobody can work on, and leave this repo's own first
+milestone queued behind one that was already satisfied. **This repo's own build order is numbered
+from 2**, below it.
+
+**Why this repo is {{field}}:** {{field_reason}}
+
+It is a judgement about the tree **as it stands**, not about its history. A repo whose every doc
+was written by this method is still, as a tree, a repo that already has docs.
+
+**The active milestone is the one the priority rule reads**, so it has to be unambiguous: once
+there are milestones of this repo's own, exactly one is active — the row marked `yes` above,
+`milestones[].active` in `.seam/config.json`, which carries those rows and not milestone 1 — and
+clause 3 of the follow-up qualifier, "blocks the active milestone", is answered from it rather
+than from how important something feels.
+
+**Advancing it is one edit, and the answers file is where it goes.** The `yes` moves when the row
+carrying it is green by its own column and the next row is started — not when it feels finished,
+and not as a tidy-up afterwards. Flip `active` in `.seam/answers.json`, regenerate, and change
+this column in the same commit, because the two are kept in step by hand as this file says above.
+Editing `.seam/config.json` instead is the one way that fails silently: the config is a projection
+of the answers file, so the next regeneration reverts the edit without a word, and assertion A16
+is what reports it.
 
 ## What this does not own
 

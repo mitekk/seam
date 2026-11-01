@@ -1,0 +1,18 @@
+{
+  "seam_version": "0.2.0",
+  "answers": ".seam/answers.json",
+  "answers_sha256": "6c4360ca09bc170a845a63b1db052e10662d54994acaa8a72216ed9934b4cdb6",
+  "config_sha256": "727a186b7d418bfb36cdde6a8ce6172bc9f807dada7161806f65c021c7dc48e8",
+  "assertions_enabled": [
+    "A1",
+    "A10",
+    "A11",
+    "A12",
+    "A13",
+    "A14",
+    "A16",
+    "A2",
+    "A3",
+    "A8"
+  ]
+}

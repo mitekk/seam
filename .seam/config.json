@@ -1,9 +1,10 @@
 {
-  "seam_version": "0.1.0",
+  "seam_version": "0.2.0",
   "repo": {
     "name": "seam",
     "default_branch": "master"
   },
+  "field": "brownfield",
   "table": {
     "file": "docs/contributing.md"
   },
@@ -34,6 +35,30 @@
       "create": false
     },
     {
+      "path": "docs/building.md",
+      "layer": 2,
+      "enforces": "",
+      "create": true
+    },
+    {
+      "path": "docs/context.md",
+      "layer": 2,
+      "enforces": "",
+      "create": true
+    },
+    {
+      "path": "docs/routing.md",
+      "layer": 2,
+      "enforces": "",
+      "create": true
+    },
+    {
+      "path": "docs/decisions.md",
+      "layer": 3,
+      "enforces": "node --test tests/red-proof.test.mjs",
+      "create": true
+    },
+    {
       "path": "docs/superpowers/specs/*.md",
       "layer": 5,
       "enforces": "",
@@ -44,6 +69,12 @@
       "layer": 5,
       "enforces": "",
       "create": false
+    },
+    {
+      "path": "docs/findings-ledger.md",
+      "layer": 6,
+      "enforces": "",
+      "create": true
     }
   ],
   "load_bearing": [
@@ -53,6 +84,7 @@
     "scripts/bootstrap-tracker.sh"
   ],
   "low_review_paths": [],
+  "teardown_command": "",
   "domains": [
     {
       "name": "wizard"
@@ -76,7 +108,43 @@
       "name": "docs"
     }
   ],
-  "milestones": [],
+  "milestones": [
+    {
+      "n": 2,
+      "title": "Skeleton",
+      "active": false
+    },
+    {
+      "n": 3,
+      "title": "The doc wizard, greenfield",
+      "active": false
+    },
+    {
+      "n": 4,
+      "title": "The adopt path",
+      "active": false
+    },
+    {
+      "n": 5,
+      "title": "The drift checker",
+      "active": false
+    },
+    {
+      "n": 6,
+      "title": "GitHub conventions",
+      "active": false
+    },
+    {
+      "n": 7,
+      "title": "The review policy",
+      "active": false
+    },
+    {
+      "n": 8,
+      "title": "First real adoption",
+      "active": true
+    }
+  ],
   "agents": [],
   "assertions": {
     "A1": {
@@ -91,23 +159,16 @@
           "reason": "a filename form: skills/<name>/SKILL.md. Every real one is cited with its directory and resolves"
         },
         {
-          "path": "docs/building.md",
-          "reason": "a doc an ADOPTING repo has, named in prose about what the templates produce — not a file in this repo. Same class as CLAUDE.md above"
-        },
-        {
-          "path": "docs/decisions.md",
-          "reason": "its ABSENCE is the subject of the sentence citing it — whether seam gets a layer-3 decision track is an open question, and docs/superpowers/specs/2026-10-30-plan-first-implementation-design.md is where it is posed"
-        },
-        {
-          "path": "docs/routing.md",
-          "reason": "a doc an ADOPTING repo has, named in prose about what the templates produce — not a file in this repo. Same class as CLAUDE.md above"
-        },
-        {
           "path": "prompt.md",
           "reason": "the filename inside an eval case directory, cited as a form. Every real one is at evals/<case>/prompt.md and resolves"
+        },
+        {
+          "path": "docs/reviewing.md",
+          "reason": "seam deliberately has no repo-side review-policy doc: the policy is what seam distributes, so a second copy here would be one more thing to keep in step. docs/contributing.md § Process is the sentence about that absence, and names what it costs — seam-review falls back to $CLAUDE_PLUGIN_ROOT on seam itself"
         }
       ],
       "intent_globs": [
+        "docs/superpowers/specs/*.md",
         "docs/superpowers/plans/*.md"
       ]
     },
@@ -124,6 +185,9 @@
         }
       ],
       "workflow_glob": ".github/workflows/*.yml",
+      "extra_tokens": [
+        "claude plugin validate"
+      ],
       "local_only": [],
       "ci_only": []
     },
@@ -161,11 +225,27 @@
       "enabled": true
     },
     "A12": {
-      "enabled": false,
+      "enabled": true,
       "default_branch": "master"
     },
     "A13": {
-      "enabled": false
+      "enabled": true
+    },
+    "A14": {
+      "enabled": true,
+      "plan_glob": [
+        "docs/superpowers/specs/*.md",
+        "docs/superpowers/plans/*.md"
+      ]
+    },
+    "A15": {
+      "enabled": false,
+      "default_branch": "master",
+      "impl_globs": [],
+      "test_globs": []
+    },
+    "A16": {
+      "enabled": true
     }
   },
   "baseline": {
