@@ -1329,12 +1329,23 @@ test("no command seam-github ships reads a path by splitting on whitespace", () 
   // that survives it; this asserts the class, so the same read cannot arrive in another command.
   const sdir = join(REPO, "skills/seam-github");
   const files = readdirSync(sdir, { recursive: true }).map(String).filter((f) => f.endsWith(".md"));
+  // What the scan actually read, because this test's subject is a pattern it hopes never to find:
+  // with nothing matched it passes, and its pass would mean "no fenced block ships a bad read"
+  // when it meant "no fenced block was found at all". That is what the **indented** fence — a
+  // block inside a numbered list item, which is where § Teardown's commands live — did to the
+  // first version of this regex: it anchored on column zero, so every one of those blocks was
+  // outside the scan while the test stayed green.
+  let read = 0;
+  let worktreeReads = 0;
   for (const f of files) {
     const text = readFileSync(join(sdir, f), "utf8");
     // Fenced blocks only: prose may well quote the broken idiom to say not to use it, as the
-    // bullet under this example does.
-    const fenced = [...text.matchAll(/^```[a-z]*\n([\s\S]*?)^```$/gm)].map((m) => m[1]).join("\n");
+    // bullet under this example does. Indentation is allowed on both markers.
+    const fenced = [...text.matchAll(/^[ \t]*```[a-z]*\n([\s\S]*?)^[ \t]*```[ \t]*$/gm)]
+      .map((m) => m[1]).join("\n");
     for (const line of fenced.split("\n")) {
+      if (line.trim()) read += 1;
+      if (/git worktree list/.test(line)) worktreeReads += 1;
       assert.ok(!/awk\s+'\{\s*print\s+\$\d/.test(line),
         `${f} ships a command that splits a path on whitespace, which truncates at the first`
         + ` space and leaves the session where it was: ${line.trim()}`);
@@ -1344,6 +1355,12 @@ test("no command seam-github ships reads a path by splitting on whitespace", () 
           + ` column rather than after \`worktree \`: ${line.trim()}`);
     }
   }
+  assert.ok(read >= 20, `the fence scan read ${read} command lines across`
+    + ` ${files.length} files, which is too few to be the skill — the regex stopped matching and`
+    + ` every assertion above passed on an empty subject`);
+  assert.ok(worktreeReads >= 2, `the fence scan found ${worktreeReads} lines reading`
+    + ` \`git worktree list\`, and § Teardown ships at least two — the one read this test exists`
+    + ` to police is outside its own scan`);
 });
 
 test("the clean fixture carries every top-level key the wizard projects", () => {

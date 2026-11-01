@@ -198,3 +198,41 @@ into it naturally — which is what this very section does.
 
 **Enforced by:** `scripts/check_docs.mjs`, assertion A12, and `tests/prescribed.test.mjs`, which
 performs every prescribed action in both formats and fails if one of them reds the checker.
+
+### Ruling — § Teardown's steps carry their commands, so a fixture can perform them
+
+The merge teardown in `skills/seam-github/SKILL.md` is the most-followed logic the plugin ships
+and was the only logic with no test: three orderings of it shipped wrong, every one read
+plausibly, and every one was caught by a human or an agent **executing** the steps in a scratch
+repo rather than by a test, an assertion, `claude plugin validate` or a careful read. Three ways
+to test a documented procedure were open — parse the prose as it stood, make the prose
+machine-runnable, or transcribe the steps into the test and assert the transcription still matches
+the prose.
+
+**Settled:** the second. § Teardown's five steps and § Merging's step 4 each carry a fenced `bash`
+block, parameterised by four `$SEAM_*` values the section names, and `tests/teardown.test.mjs`
+runs those blocks **in document order** against four real repositories — plain checkout; worktree
+from the main checkout; worktree from inside it; worktree with no teardown command — asserting the
+four end-state facts the sequence promises, the fast-forwarded pull included.
+
+**Why, measured:** parsing the prose as it stood could not work, and the fixture was written first
+to find that out — it failed naming each step with zero runnable blocks, because the steps gave
+their commands as prose and as inline fragments with placeholders (`git worktree remove "<path>"`,
+"switch to the default branch"). Transcribing is the restatement defect this method exists to
+prevent: a test carrying its own copy of a sequence passes while the skill says something else,
+and asserting that the copy still matches the prose adds a second comparison to keep in step
+instead of removing the copy.
+
+**It discriminates, which is the part D-003 asks for.** Swapping steps 1 and 2 — round 1's
+command-first order — reds exactly one shape, the session inside the worktree. Swapping steps 4
+and 5 — delete before removal — reds exactly one other, the worktree repo with no teardown
+command, with git's own `cannot delete branch … used by worktree`. The other three shapes stay
+green in both, so the fixture tells one wrong ordering from another rather than merely failing.
+
+**Costs if wrong:** a prose file now ships shell that has to keep working, so editing § Teardown
+for readability can red a test. That is the intended direction and the reason the blocks are
+there, but it is a real constraint, and it is scoped to one section of one skill rather than taken
+as a rule for the method.
+
+**Enforced by:** `tests/teardown.test.mjs`, which reads the blocks out of the skill and performs
+them; a step that stops being runnable fails the parse rather than passing on an empty sequence.

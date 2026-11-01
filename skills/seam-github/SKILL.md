@@ -298,6 +298,10 @@ It is a sequence rather than one command, and § Teardown below is the last step
    change that just shipped. A pull that cannot fast-forward is a divergence to look at rather
    than something to put a merge commit on.
 
+   ```bash
+   git pull --ff-only
+   ```
+
 Steps 2 to 4 are **not behind the gate**: they are local and touch nothing outward-facing. Not
 running them is how a wrong board and a stale branch point get left behind, so they are part of
 finishing the work rather than cleanup for later.
@@ -310,19 +314,46 @@ be done**: `gh pr merge --delete-branch` deletes the local branch as well as the
 command that removes a worktree takes its branch with it. **A step already done is skipped rather
 than retried** — the sequence is idempotent, and `branch not found` here is that, not a failure.
 
+**Each step below carries the command it is**, so the sequence can be run rather than paraphrased,
+and seam's own `tests/teardown.test.mjs` performs these blocks — these five and § Merging's
+step 4 — in document order against four real repositories. Prose here that stops working goes
+red there instead of on somebody's merge, which is the whole reason the blocks are here. The
+block is the step; the prose above it is what explains the step, and neither is a copy of the
+other. Four values are filled in before the first block, and a session that cannot name all four
+is not ready to start:
+
+- `$SEAM_BRANCH` — the branch that just merged.
+- `$SEAM_DEFAULT_BRANCH` — the one `repo.default_branch` names.
+- `$SEAM_WORKTREE` — the branch's worktree path, **empty** if it has none.
+- `$SEAM_TEARDOWN` — `teardown_command` with the issue number in place of `<n>`, **empty** if the
+  key is empty or absent.
+
 1. **Leave the worktree: run the rest from the main checkout**, which
    `git worktree list --porcelain` names on its first line, after `worktree `. Read it that way
    rather than splitting the line on whitespace: a repo path may contain spaces, and the split
    returns a truncated path the `cd` then fails on, leaving the session in the worktree. "The repo
    root" is not the instruction — in a worktree repo the worktree is one too, and it is the wrong
    one.
+
+   ```bash
+   cd "$(git worktree list --porcelain | sed -n '1s/^worktree //p')"
+   ```
 2. **Run the repo's own teardown command, if `.seam/config.json` names one** in
    `teardown_command`, with the issue number in place of `<n>`. It goes before the delete because
    it owns whatever the branch was given, and because it commonly deletes the branch too.
+
+   ```bash
+   # A session runs that command itself; `eval` is how a block takes it from the config.
+   if [ -n "$SEAM_TEARDOWN" ]; then eval "$SEAM_TEARDOWN"; fi
+   ```
 3. **Switch to the default branch**, the one § Merging's step 4 names. This is the step that makes
    the next one possible: **`git branch -d` and `-D` both refuse a branch that is checked out**, in
    a worktree or in the repo root alike, and the error names the worktree rather than the flag, so
    it reads as a tooling fault rather than as the ordinary state it is.
+
+   ```bash
+   git switch "$SEAM_DEFAULT_BRANCH"
+   ```
 4. **Remove the branch's worktree, if it still has one** — `git worktree remove "<path>"`, quoted,
    and `git worktree list` is what says whether it does. **A branch checked out in a worktree
    cannot be deleted while that worktree exists**, with either flag, so without this step the next
@@ -331,12 +362,25 @@ than retried** — the sequence is idempotent, and `branch not found` here is th
    look at what it is, and do not force past it unasked.** `--force` deletes files that exist
    nowhere else; gitignored contents do not trigger the refusal, so what it is reporting is real
    work, not the norm.
+
+   ```bash
+   # Skipped when step 2's command already took it — `git worktree list` is what says.
+   if [ -n "$SEAM_WORKTREE" ] \
+     && git worktree list --porcelain | grep -qxF "worktree $SEAM_WORKTREE"; then
+     git worktree remove "$SEAM_WORKTREE"
+   fi
+   ```
 5. **Delete the local branch, if it is still there, and expect `-D` rather than `-d`.** A squash
    gives the default branch a new commit, so the branch tip is never an ancestor of it and `-d`'s
    merged check cannot hold: while `refs/remotes/origin/<branch>` is still present it reports the
    branch merged **to its upstream**, which is not the comparison it looks like, and after a
    `fetch --prune` it refuses outright. `-D` loses nothing here, because the squash carries the
    content and the PR carries the history.
+
+   ```bash
+   # Skipped when the merge's --delete-branch or step 2's command already took it.
+   if git show-ref --quiet "refs/heads/$SEAM_BRANCH"; then git branch -D "$SEAM_BRANCH"; fi
+   ```
 
 **Steps 1 and 4 are both measured, and skipping either ends somewhere undiagnosable.** Run step 2
 from inside the worktree and a teardown command that removes it **deletes the directory the session
