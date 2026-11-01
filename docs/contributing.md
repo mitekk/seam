@@ -74,6 +74,21 @@ compares this list against that workflow, **for every command it can tokenise**,
 drift apart on one of those. It caught its own author within a minute of being wired: the CI step
 existed and this list did not name it.
 
+**A green list here says nothing about CI, and on this branch that cost 100 tests.** Every command
+above is local, offline and run by whoever is at the keyboard; none of them looks at a workflow
+run. `.github/workflows/ci.yml` was red on **every push of the first branch** while the list was
+green on every machine, because the emitted Python carried a `SyntaxWarning` on the 3.12+ that
+`ubuntu-latest` runs and not on the 3.9 every implementer had, and the parity tests compare stderr
+byte for byte. Reading the runs is its own step and it is one command:
+
+```text
+gh run list --branch "$(git branch --show-current)" --limit 5
+```
+
+It is deliberately not in the list above: it needs the network and a remote, so it would make a
+green run mean something different on a plane than in CI — which is the property every assertion
+here is built to keep. Read it after a push instead, and read the **log** rather than the tick.
+
 **That scope is narrower than it reads, and all three commands above are inside it only because
 the third one was put there by hand.** A3 compares check tokens from a closed vocabulary, not
 command lines, and `claude plugin validate` is not in that vocabulary — `extra_tokens` in

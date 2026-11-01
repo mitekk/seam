@@ -2149,6 +2149,60 @@ test("this repo's committed checker is what the template now emits", () => {
   rm(dir);
 });
 
+test("the emitted Python says nothing of its own, with warnings as errors", () => {
+  // Round 2's Critical, and the reason CI failed 158/100 on a tree that passed 258/0 locally.
+  // `ascii_int`'s docstring was a NON-RAW triple-quoted string containing `/^\d+$/`. `\d` is not
+  // a valid Python escape: on 3.9 that is a hidden DeprecationWarning, and from 3.12 it is a
+  // visible `SyntaxWarning` **on stderr**. `both()` compares raw stderr byte for byte against the
+  // Node emission, which has no such line, so the interpreter's own warning failed every parity
+  // test on `ubuntu-latest` and none of them here.
+  //
+  // The property asserted is the SHIPPED ARTIFACT's, not the test harness's: a checker that
+  // prints anything of its own is noisy at an adopter, and **stderr is where findings go** — a
+  // warning there is indistinguishable from the thing the checker exists to say. So this is not
+  // "the parity tests agree"; it is "the emitted file compiles silently".
+  const cfg = readFileSync(join(REPO, ".seam", "config.json"), "utf8");
+  const dir = scratch("seam-pyquiet-");
+  mkdirSync(join(dir, ".seam"), { recursive: true });
+  writeFileSync(join(dir, ".seam", "config.json"), cfg);
+  const out = "check_docs.py";
+  const g = run("generate-checker.mjs", ["--repo", dir, "--language", "python", "--out", out]);
+  assert.equal(g.status, 0, g.stderr);
+  const script = join(dir, out);
+
+  // Compiling is enough and is what emits the warning. `with` rather than a bare `open()`, so
+  // that `-W error` fails on the checker's escapes and never on this probe's own ResourceWarning.
+  const probe = [
+    "import sys",
+    "with open(sys.argv[1], encoding='utf-8') as f:",
+    "    src = f.read()",
+    "compile(src, sys.argv[1], 'exec')",
+  ].join("\n");
+
+  // Two runs, because they catch different things. `-W error` promotes every warning the
+  // interpreter has — the DeprecationWarning this is on 3.9 and the SyntaxWarning it is on 3.12+
+  // alike — so it is version-independent. The plain run is the adopter's: nobody passes
+  // `-W error`, and what matters to them is that the file is silent by default.
+  for (const argv of [["-W", "error", "-I", "-c", probe], ["-I", "-c", probe]]) {
+    let r;
+    try {
+      const stdout = execFileSync("python3", [...argv, script],
+        { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+      r = { status: 0, stdout, stderr: "" };
+    } catch (e) {
+      r = { status: e.status ?? 1, stdout: e.stdout?.toString() ?? "",
+            stderr: e.stderr?.toString() ?? "" };
+    }
+    const how = argv[0] === "-W" ? "with warnings as errors" : "with the interpreter's defaults";
+    assert.equal(r.stderr, "", `the emitted Python wrote to stderr ${how}. stderr is where`
+      + ` findings go, and \`both()\` compares it byte for byte against an emission that has no`
+      + ` such line:\n${r.stderr}`);
+    assert.equal(r.stdout, "", `the emitted Python wrote to stdout ${how}:\n${r.stdout}`);
+    assert.equal(r.status, 0, `compiling the emitted Python ${how} exited ${r.status}`);
+  }
+  rm(dir);
+});
+
 /** Rewrite the whole config of a fixture, after the checkers were generated from it. */
 function patchCfg(dir, fn) {
   const p = join(dir, ".seam", "config.json");

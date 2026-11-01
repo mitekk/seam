@@ -97,13 +97,20 @@ DIGITS_RE = re.compile(r"[0-9]+")
 
 
 def ascii_int(word: str):
-    """`word` as an int when it is a run of ASCII digits, else None.
+    r"""`word` as an int when it is a run of ASCII digits, else None.
 
     `str.isdigit()` is Unicode-aware and `int()` is not consistent with it: `'\u0663'.isdigit()`
     is True and `int('\u0663')` is 3, where Node's `/^\d+$/` is false — a count compared on one
     side and skipped on the other — while `'\u00b2'.isdigit()` is True and `int('\u00b2')`
     RAISES, so the checker died here and skipped there. The same reason `isalnum()` needed
     `alnum`.
+
+    Raw, and that is load-bearing rather than tidy: `\d` is not a valid Python escape, so a
+    plain docstring made this file a `SyntaxWarning` on **stderr** from Python 3.12 on — a
+    hidden `DeprecationWarning` on 3.9 — and the parity tests compare stderr byte for byte
+    against the Node emission, which has no such line. It failed 100 of them in CI while
+    passing every one locally. The `\u0663`s read as text here too, which is what the
+    sentence means; unraw they were the character itself.
     """
     return int(word) if DIGITS_RE.fullmatch(word) else None
 
