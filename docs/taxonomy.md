@@ -99,6 +99,9 @@ the paragraph above says why it is never the active one.
 
 ## The tracker itself
 
-There is no remote yet. Creating the GitHub repo, the labels and the milestones is outward-facing
-and needs an explicit OK; until then this file is the taxonomy and `scripts/bootstrap-tracker.sh`
-is what creates it.
+**The remote exists and CI runs on it.** `git remote -v` and
+`gh run list --branch "$(git branch --show-current)"` are what say so, and neither is a claim this
+file should carry: a sentence here saying otherwise is what made a reader infer CI had never run
+while it had failed on every push, which cost 100 tests. The **labels and milestones** are what is
+not created yet — that is outward-facing and needs an explicit OK; until then this file is the
+taxonomy and `scripts/bootstrap-tracker.sh` is what creates them.
