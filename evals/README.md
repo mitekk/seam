@@ -17,6 +17,7 @@ anyway.
 | `wizard-greenfield` | the **files written** from a recorded answers file, and that no claim was invented |
 | `wizard-interview` | the **questions asked**, and that nothing was written before the interview finished |
 | `wizard-adopt` | the **layer classification**, the overlap, the layer violation, and that it stayed a proposal |
+| `wizard-field-first` | **indicative, 2 of 3 runs** — the *position* of one rule: that green-or-brown field is settled before any doc set is proposed |
 | `github-issue-shape` | domain, priority, milestone, the Context citation, externally checkable criteria, `--body-file` |
 | `github-pr-shape` | five follow-up items, on a case built so that size and the qualifier give different answers |
 | `github-size-citation` | the repo's **own** `docs/building.md` winning as the size vocabulary — `Migration`, a size no template has |
@@ -28,7 +29,33 @@ anyway.
 | `review-rounds` | the bound, the named third-round trigger, and that a third round is recommended rather than run |
 | `build-start-contract` | no unit owns the work: the row written, written *before* the source changes, and nothing stopping to ask |
 | `build-finish-contract` | a unit whose named test never ran: which of the four clauses is unmet, and the test actually run |
+| `build-finish-no-doc` | the same unit with **no `docs/building.md` in the fixture**: that a four-clause contract is reached at all, rather than the plan's `Done when` standing in for one |
 | `context-level` | the level read off the figure not the agent count, the Orange action in full, and no invented threshold |
+
+## Authoring a case: two rules, both measured
+
+Neither is a preference. Each is a property of this runner that decides whether a case's number
+means anything, and both were learned by paying for runs that measured nothing.
+
+**1. A fixture that quotes the doc answering the question measures nothing about the plugin.**
+A fixture has to be inline here, so a quoted doc is in the model's context before any skill
+loads — the skill is then redundant and may not fire at all. The two numbers that establish it:
+Task 10's two **Δ 0.00** cases are both that shape, while `github-merge`, whose method exists only
+in its `SKILL.md` and whose fixture is six lines of JSON, fired on every run and carries this
+suite's only **Δ +1.00**. So a `with-without` delta is evidence about the plugin **only** for a
+case whose fixture does not quote the answering doc. Quote the *situation* and withhold the
+*rule*: `build-finish-no-doc` and `wizard-field-first` are both built that way, and the shape to
+reach for when a fixture must carry a doc is to ask something that doc does not answer.
+
+**2. `runs: 1` against a threshold of `1.0` is not a gate, so a claim about a case states the run
+count it was made over.** Four of fourteen cases came back red on one run each on Task 10's
+full-suite run, and two of the four had not been touched by it — `wizard-greenfield` at 0.79 and
+`wizard-interview` at 0.63, whose `questions-asked` grader had passed on an earlier run with no
+change to it since. Either a figure here carries its run count, or the case is marked
+**indicative** the way `github-merge-gate` is. **Do not fix this by raising every case's `runs`:**
+that multiplies a real dollar cost across sixteen cases, and the number is what was missing, not
+the runs. The tables below carry the count in their own column, and a case with no row in them is
+unmeasured rather than zero.
 
 ## What the graders can and cannot do
 
@@ -72,20 +99,66 @@ there the skill's `$CLAUDE_PLUGIN_ROOT` fallback is what supplies the sizes and 
 contract — a run of the latter said so in as many words: *"The repo has no `docs/building.md`, so
 I used the build skill's default steps."*
 
-**The fallback is reliable for the start contract and measurably not for the finish contract.**
-Removing `docs/building.md` from `build-finish-contract`'s fixture was tried, over three runs, and
-the skill fired twice while reading the template **none** of the three: it offered to write the doc
-and then fell back to the plan's `Done when` column alone — *"This repo has no `docs/building.md`,
-so the only finish contract is the plan's 'Done when' column."* That is the same shape Ruling 100
-fixed for the size vocabulary, in the other skill, so the fixture keeps its `docs/building.md` and
-the finding is written up rather than papered over.
+**Which arm each build case is, and both are shipped.** `build-finish-contract`'s fixture
+**has** a `docs/building.md`, quoted in full, so it is the **doc-present** arm; and because a
+quoted doc is in the model's context before any skill loads, it cannot see anything about the
+route the contract was reached by. `build-finish-no-doc` is the same unit, the same graders and
+the same question with that fixture file **removed** — the **doc-absent** arm, and the only case
+in the suite that can see whether the finish contract is reached through the skill's
+`$CLAUDE_PLUGIN_ROOT` fallback or not reached at all. Earlier readings of this file and of Task
+10's report had those two the other way round; the shipped tree is what is described here.
+
+**Both cases ship RED, and the reason is a measured defect rather than a grader asking more than
+the method does.** Loosening either to green would be the thing this whole file argues against.
+Their rates, each `--ablation none`, measured either side of the `seam-build` § Step 0 change
+that gave the finish contract a named source and an ending for the case where it has none:
+
+| Case | Before | After | What moved |
+|---|---|---|---|
+| `build-finish-no-doc` | 0 of 3 · 0.28 | 1 of 3 · 0.56 | the contract was reached: **3 of 3** name the file they ran it from and walk four clauses, against **0 of 3** before, which answered from the plan's `Done when` and offered to write the doc |
+| `build-finish-contract` | 2 of 5 · 0.53 | 1 of 5 · 0.47 | nothing the score can separate; `skill-fired` went 3 of 5 → **5 of 5** and the test was run twice — failed, fixed, re-run — in 5 of 5 against 0 of 5 |
+
+**The weight-4 judge on the doc-present arm does not discriminate the two correct endings**, which
+is why its score moved the wrong way on a change that fixed the thing it was written for. Its
+criteria bless *"going on to fix the implementation, re-run the test green, and then say unit 2 is
+done"*, and also require that the response "does not accept unit 2 as done as presented" — and a
+response ending *"Unit 2 wasn't done when you asked. It is now"* satisfies the first while reading
+like a breach of the second. Four runs of near-identical text split `PASS FAIL PASS` /
+`FAIL FAIL FAIL`, the same boundary variance Ruling 103 measured on `github-pr-shape`.
+
+**Three runs an arm is below this file's own five-run bar, and the no-doc row above says so by
+being read for its mechanism rather than its score.** What 3 of 3 against 0 of 3 carries is not a
+rate: it is that every run after the change named the file it ran the contract from and walked
+four clauses, and no run before it did either. The score on that row is indicative; the mechanism
+is what the claim rests on, and it is readable in the runs themselves.
+
+**`wizard-field-first` is the other three-run number here: 2 of 3, score 0.75.** It grades a
+**position** — that green-or-brown field is settled before any doc set is proposed — and a
+position over prose is the one claim in this suite that no deterministic grader can make, which is
+why its criteria read the `trace` and why it carries no `regex` arm. Its one failing run settles
+the question correctly in its first section, in the method's own words, and lost 2 of 3 judge
+votes; that is the variance § A single red run is not a finding measures, not a miss.
+
+**Its criteria were sharpened once before it shipped, and that is worth copying.** The first
+version went 1 of 3, and one of the two failures was a plan that settled the field first and
+reasoned it from the tree without using the words *green* or *brown* field — so the grader was
+reading for the method's **vocabulary** while the case exists to measure the **order**. Sharpening
+it to accept the determination in the tree's own words took it to 2 of 3 over the same three runs'
+worth of money. The run that failed before and still fails is the one the case is for: it fired a
+skill, proposed a doc set and checker settings, and never settled the field at all — the word does
+not appear in its trace.
+**Stated by direction, because that decides what to do about it:** the error is a false FAIL on a
+correct answer, which gets investigated, and not a silent pass on a wrong one — so writing it down
+here is an acceptable ending, where for the other direction it would not be. The sharpening when
+someone next pays for runs on this case is to require the verdict **on the state as presented** to
+be "not done", separately from whatever the run then went on to do about it.
 
 ### Which cases the plugin actually changes
 
-`--ablation with-without` is the number worth reading. **Six of the fifteen cases have been
+`--ablation with-without` is the number worth reading. **Six of the sixteen cases have been
 measured both ways**, and over the runs stated those six sort into cases that earn their keep and
-cases that are regression guards. The other nine carry no row here, which means unmeasured, not
-zero:
+cases that are regression guards. The other ten carry no row here, which means unmeasured, not
+zero — `build-finish-no-doc` among them, whose numbers above are a plugin arm only:
 
 | Case | with | without | Δ | runs |
 |---|---|---|---|---|
@@ -95,6 +168,10 @@ zero:
 | `github-merge-no-command` | 1.00 | 1.00 | 0.00 | 2 |
 | `github-merge-gate` | 0.27–0.47 | 0.20 | +0.07…+0.27 | 7 |
 | `build-finish-contract` | 0.52 | 0.68 | −0.16 | 10 |
+
+The last row is from **before** the § Step 0 change, and the paragraph above has that case's
+numbers after it. Its `without` arm is unaffected by a change to a skill, so the delta is the one
+figure there that a later run would have to re-measure rather than carry forward.
 
 **What separates them is whether the prompt quotes the doc that answers the question.** A fixture
 has to be inline here, and a quoted doc is in the model's context before any skill loads — so a
@@ -126,8 +203,10 @@ than explored here.
 says nothing about *when* to read the level again, so the four moments — before a dispatch, when a
 verbose result lands, at a phase boundary, and when a tool result is not what was expected — are
 the skill's or they are a guess. The same technique applied to `build-finish-contract` did **not**
-move its delta, which is why that case is documented as a guard and its cause routed rather than
-patched. A Δ at or below zero is a case to re-read, not a case to delete: `build-finish-contract`
+move its delta, which is why that case is documented as a guard rather than a discriminator — and
+why the defect behind it was eventually measured on an arm that could see it,
+`build-finish-no-doc`, rather than on this one. A Δ at or below zero is a case to re-read, not a
+case to delete: `build-finish-contract`
 reds when a response reaches "not done" through the plan's `Done when` alone, and that is worth
 catching whether or not the base model would have managed the rest.
 
