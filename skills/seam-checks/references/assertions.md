@@ -112,6 +112,16 @@ Does not reach:
   baseline is the mechanism — these go in on day one with a number on them, and a *new* one still
   reds. Bounding the capture tighter was tried and costs more than it buys: a heading's name has
   no reliable right edge in prose.
+- **A heading shown inside a fence.** A `## Heading` written inside a ```` ``` ```` block is a
+  heading being *quoted*, not declared, so it is not an anchor and a citation naming it reds. A
+  marker at any indentation opens or closes a block and an unterminated one runs to the end of the
+  file — stricter than a renderer, and the same rule the table and section readers already use.
+- **A citation padded with an exotic space.** Only ASCII whitespace is trimmed, in both checkers,
+  because `trim()` and `strip()` disagree about U+FEFF and U+0085 and the two emissions have to
+  read one doc the same way. So a backticked path with a U+FEFF inside the backticks is not a path,
+  and the `§` beside it is **skipped rather than reported** — the one place in A2 where this
+  narrowing buys silence rather than a finding. A `§ Name` padded the same way keeps the character
+  and reds, naming it.
 
 ## A3 — the documented check list against CI
 
@@ -214,7 +224,10 @@ Needs: `plan_glob`.
 
 Does not reach: **whether the issue is still open.** That needs a network call, and every
 assertion here is offline. A plan claiming a closed issue is a procedural matter, not a
-mechanical one.
+mechanical one. Nor does it reach **an issue number written in non-ASCII digits**: a row numbered
+`٣` is a row, because a numbered row in another script is still one, but `#٣` in the issue column
+is not an issue — the number is sorted as an integer and the two checkers' integer parsers do not
+agree about `٣`, so ASCII is the only form both read alike.
 
 ## A9 — a stated count matches a computed one
 
@@ -227,7 +240,10 @@ detector reports every number in the repo.
 Does not reach: a count of anything that is not files matching a glob. Numerals are accepted
 alongside words, because "all 3 sibling plans" is the same defect as "all three" and skipping it
 silently is worse than not looking — a check that passes on the wrong shape of a sentence it claims
-to check reads as evidence the sentence is right.
+to check reads as evidence the sentence is right. **A numeral must be ASCII digits**, though: `٣`
+and `²` are both "a digit" to Python and neither is to Node, and `int('²')` raises where
+`Number('²')` is `NaN`, so a count in another script is passed over by both rather than compared
+by one.
 
 ## A10 — every doc is in the table, with a layer
 
@@ -338,6 +354,12 @@ Needs: `adr.format` and `adr.dir` or `adr.file`; `prd.dir`.
 Does not reach: whether the record is *true*, or whether the decision was a good one. It checks the
 shape the layer promises.
 
+Two of its numbers are ASCII and one is not, on purpose. **A date and a successor number are ASCII**
+— `٢٠٢٦-٠١-٠١` is not an ISO date, and "this entry has no date" is the right, loud answer. **A PRD
+version number is any Unicode decimal digit**, because here ASCII would buy silence instead: this
+assertion exists so an unindexed version cannot hide, and `PRD-v٣.md` has to be a version for that
+to hold.
+
 ## A14 — the units table has the shape it claims
 
 Reads: the `§ The units` table of each file matching the plan glob. For each row whose first cell
@@ -409,6 +431,10 @@ list per unit drifts within a day and is the ceremony that makes people stop fil
 in. Whether every changed file is covered by a unit is a procedural check made while building,
 not a mechanical one made here. It also does not reach whether the test is any good, or whether it
 passes — only that it exists and that it asserts something.
+
+A unit number is **any Unicode decimal digit**, the same as A8's row test, so a plan numbered in
+another script is still held to the shape. The `Proves it` path stays **ASCII** (`[\w./-]`): a path
+outside that is reported as "no test path", which is a finding rather than a skip.
 
 ## A15 — a test arrives before the implementation it proves
 
@@ -540,7 +566,7 @@ nothing can be trusted — A16's own switch included.
 **A16 cannot police its own switch, and a refusal does.** `assertions.A16.enabled` lives in the
 file A16 protects, so setting it to `false` and editing the config in the same write was silent:
 the only trace was the assertion count falling by one. The repair cannot be another assertion,
-since an assertion can be switched off. It is § The refusals' third entry, which reads
+since an assertion can be switched off. It is § The refusals' last entry, which reads
 `assertions_enabled` from the same sidecar and refuses to run on a mismatch, before any assertion
 runs and independent of every switch.
 
@@ -563,6 +589,18 @@ Does not reach:
 All of them are exit 2, and all of them exist because the alternative is a check that looks like a
 pass:
 
+- **A config value whose shape no reader can use.** `table.file` missing, `docs` or
+  `load_bearing` not a list, a `docs` row that is not an object or names no path, an entry of
+  `load_bearing` that is not a string, `assertions` or one assertion's settings not an object, an
+  `allow` that is a list of strings or an object rather than a list of entries, an assertion's own
+  list of entries (`A3.doc_sections`, `A4.artifacts`, `A5.vocabularies`, `A6.retired`,
+  `A7.reversed`, `A9.count_sites`) whose entry names no `file`, `path` or `pattern`, a glob list
+  holding something that is not a string, `adr`/`prd`/`baseline` values that are not strings —
+  each is refused by name, saying what shape that value has to have and why a reader needs it. It is one pass
+  before anything indexes any of them, because the same malformed config was a `TypeError` in
+  Node and a `KeyError` or an `AttributeError` in Python: two different endings for one config,
+  and a traceback is never an acceptable ending for a malformed config. Unreadable JSON, and a
+  config that is not an object at all, are refused the same way.
 - **No assertion enabled.** A config with no `assertions` block, or one with every switch off,
   would emit a checker that measures nothing and exits 0. That cannot be told apart from passing,
   which is the thing this whole layer exists to prevent. A repo that genuinely wants none should
@@ -581,16 +619,6 @@ pass:
   A legitimate change goes through the answers file, which rewrites both and agrees; an absent
   sidecar is refused rather than skipped, because "no record" would otherwise be the switch-off
   defeat with one extra step.
-
-- **A config value whose shape no reader can use.** `table.file` missing, `docs` or
-  `load_bearing` not a list, a `docs` row that is not an object or names no path, an entry of
-  `load_bearing` that is not a string, `assertions` or one assertion's settings not an object, an
-  `allow` that is a list of strings or an object rather than a list of entries — each is refused
-  by name, saying what shape that value has to have and why a reader needs it. It is one pass
-  before anything indexes any of them, because the same malformed config was a `TypeError` in
-  Node and a `KeyError` or an `AttributeError` in Python: two different endings for one config,
-  and a traceback is never an acceptable ending for a malformed config. Unreadable JSON, and a
-  config that is not an object at all, are refused the same way.
 
 An entry that is no longer *needed* is not a refusal: it is an ordinary A1 finding, because it is
 about the tree rather than about the config being readable. See § A1.

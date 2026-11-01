@@ -93,6 +93,21 @@ def alnum(ch: str) -> bool:
     return ch != "" and ALNUM_RE.fullmatch(ch) is not None
 
 
+DIGITS_RE = re.compile(r"[0-9]+")
+
+
+def ascii_int(word: str):
+    """`word` as an int when it is a run of ASCII digits, else None.
+
+    `str.isdigit()` is Unicode-aware and `int()` is not consistent with it: `'\u0663'.isdigit()`
+    is True and `int('\u0663')` is 3, where Node's `/^\d+$/` is false — a count compared on one
+    side and skipped on the other — while `'\u00b2'.isdigit()` is True and `int('\u00b2')`
+    RAISES, so the checker died here and skipped there. The same reason `isalnum()` needed
+    `alnum`.
+    """
+    return int(word) if DIGITS_RE.fullmatch(word) else None
+
+
 def given(value, default):
     """`value`, or `default` when the key was absent or JSON `null`.
 
@@ -757,6 +772,28 @@ def finding(fid: str, file: str, line: int, text: str, message: str) -> dict:
     return {"id": fid, "file": file, "line": line, "text": text, "message": message}
 
 
+# Each assertion's own lists, and the keys each entry is indexed by — None for a list of plain
+# strings. `plan_glob` is a string OR a list of them, so it is handled beside this.
+ENTRY_LISTS = (
+    ("A1", "intent_globs", None, ()),
+    ("A3", "doc_sections", ("file", "section"), ()),
+    ("A3", "local_only", None, ()),
+    ("A3", "ci_only", None, ()),
+    ("A3", "extra_tokens", None, ()),
+    ("A4", "artifacts", ("path",), ("parser",)),
+    ("A4", "not_fields", None, ()),
+    ("A4", "not_references", None, ()),
+    ("A4", "not_fields_override", None, ()),
+    ("A5", "vocabularies", ("file", "section", "enum"), ()),
+    ("A6", "retired", ("name",), ("became", "reason")),
+    ("A7", "reversed", ("pattern", "reason"), ("adr",)),
+    ("A9", "count_sites", ("pattern", "count_of"), ("file",)),
+    ("A15", "impl_globs", None, ()),
+    ("A15", "test_globs", None, ()),
+)
+GLOB_OR_LIST = ("A8", "A14")
+
+
 def config_shape_refusal(cfg: dict) -> str | None:
     """The first config value no reader below can use, as the message to refuse with — or None.
 
@@ -796,6 +833,50 @@ def config_shape_refusal(cfg: dict) -> str | None:
         for i, g in enumerate(lb):
             checks.append((f"load_bearing[{i}]", isinstance(g, str), "a string",
                            "each entry is a path glob"))
+
+    def entry_list(where, value, keys, reader, optional=()):
+        """A list the readers walk: `keys` None for a list of strings, else the keys each entry
+        is indexed by."""
+        checks.append((where, is_list(value), "a list", f"{reader} reads it as a list"))
+        if not is_list(value):
+            return
+        for i, e in enumerate(value):
+            if keys is None:
+                checks.append((f"{where}[{i}]", isinstance(e, str), "a string",
+                               f"{reader} reads every entry of it as a string"))
+                continue
+            named = ", ".join(f"`{k}`" for k in keys)
+            checks.append((f"{where}[{i}]", is_obj(e), "an entry",
+                           f"{reader} reads each entry's {named}"))
+            if not is_obj(e):
+                continue
+            for k in keys:
+                path_like = k in ("file", "path", "count_of")
+                checks.append((f"{where}[{i}].{k}", is_name(e.get(k)),
+                               "a path" if path_like else "a non-empty string",
+                               f"{reader} indexes the entry by it"))
+            # An optional key still has a shape when it is there: one that is read for its truth
+            # is `[]` — false here and TRUE in Node — and one that is interpolated into a
+            # finding's message prints differently in the two languages, and that message is part
+            # of the finding's baseline key.
+            for k in optional:
+                if e.get(k) is None:
+                    continue
+                checks.append((f"{where}[{i}].{k}", isinstance(e[k], str), "a string",
+                               f"{reader} reads it as one when it is there"))
+
+    entry_list("artifacts", given(cfg.get("artifacts"), []), ("path",), "A5")
+    for key, sub in (("adr", ("format", "file", "dir")), ("prd", ("dir",)),
+                     ("baseline", ("path",))):
+        value = given(cfg.get(key), {})
+        checks.append((key, is_obj(value), "an object", "it is read key by key"))
+        if not is_obj(value):
+            continue
+        for k in sub:
+            if value.get(k) is None:
+                continue                  # absent or null: the reader's own default applies
+            checks.append((f"{key}.{k}", isinstance(value[k], str), "a string",
+                           "it is read as one"))
     A = given(cfg.get("assertions"), {})
     checks.append(("assertions", is_obj(A), "an object",
                    "every assertion's settings live under its id there"))
@@ -803,8 +884,23 @@ def config_shape_refusal(cfg: dict) -> str | None:
         for aid in sorted(A):
             checks.append((f"assertions.{aid}", is_obj(A[aid]), "an object",
                            "an assertion's settings are an object with an `enabled` switch"))
-            if is_obj(A[aid]) and A[aid].get("allow") is not None:
-                allow = A[aid]["allow"]
+            if not is_obj(A[aid]):
+                continue
+            conf = A[aid]
+            # The switch is read as a truth value, and the two languages disagree about which
+            # values are true: `bool([])` is False here and `Boolean([])` is true in Node, so
+            # `enabled: []` ran the assertion in one checker and not the other — and the enabled
+            # SET is what the provenance precondition compares, so one of them also refused.
+            for flag in ("enabled", "bare_sections"):
+                if conf.get(flag) is None:
+                    continue
+                checks.append((f"assertions.{aid}.{flag}", isinstance(conf[flag], bool),
+                               "true or false", "it is read as a switch"))
+            # The list and its entries only: an allow entry's `path` and `reason` have
+            # refusals of their own further down, which carry the method's reason for requiring
+            # them and are better messages than this pass can give.
+            if conf.get("allow") is not None:
+                allow = conf["allow"]
                 checks.append((f"assertions.{aid}.allow", is_list(allow), "a list",
                                "an allow-list is a list of entries, each naming one path and the "
                                "reason it will never be fixed"))
@@ -813,6 +909,29 @@ def config_shape_refusal(cfg: dict) -> str | None:
                         checks.append((f"assertions.{aid}.allow[{i}]", is_obj(e), "an entry",
                                        "an allow-list entry is an object with a `path` and a "
                                        "`reason`"))
+            # Each assertion's own lists, in a fixed order. Their readers index an entry
+            # directly — `v["file"]`, `art["path"]`, `site["pattern"]` — which was a `KeyError`
+            # here and an `undefined` that reached a finding's baseline key in Node.
+            for owner, key, keys, optional in ENTRY_LISTS:
+                if owner != aid or conf.get(key) is None:
+                    continue
+                entry_list(f"assertions.{aid}.{key}", conf[key], keys, aid, optional)
+            if aid in GLOB_OR_LIST and conf.get("plan_glob") is not None:
+                g = conf["plan_glob"]
+                if isinstance(g, str):
+                    pass
+                elif is_list(g):
+                    for i, one in enumerate(g):
+                        checks.append((f"assertions.{aid}.plan_glob[{i}]", isinstance(one, str),
+                                       "a string", f"{aid} reads every entry of it as a glob"))
+                else:
+                    checks.append((f"assertions.{aid}.plan_glob", False,
+                                   "a string or a list of strings",
+                                   f"{aid} reads it as the globs its layer-5 docs match"))
+            if aid == "A3" and conf.get("workflow_glob") is not None:
+                checks.append(("assertions.A3.workflow_glob",
+                               isinstance(conf["workflow_glob"], str), "a string",
+                               "A3 reads it as the glob the workflows match"))
     for where, ok, want, why in checks:
         if ok:
             continue
@@ -828,12 +947,25 @@ def main() -> int:
         print(f"seam: no {CONFIG_PATH} found above {Path(__file__).resolve().parent}",
               file=sys.stderr)
         return 2
+    # Two refusals, not one, and neither interpolates the engine's own sentence into the line the
+    # two languages are held to: `json`'s parse error and `JSON.parse`'s are differently worded,
+    # and a malformed config has to be one identical message. The detail is printed on a line of
+    # its own. `OSError` is caught because it is reachable — a mode-000 config, or a directory at
+    # that path — and it tracebacked here while Node's catch refused.
     try:
-        cfg = json.loads(read_text(cfg_file))
+        raw = read_text(cfg_file)
+    except OSError:
+        print(f"seam: {CONFIG_PATH} could not be read. It is the file every knob is read from, so "
+              f"there is nothing to run — check its permissions, or write it with the wizard "
+              f"(`seam-init --answers <file> --repo .`).", file=sys.stderr)
+        return 2
+    try:
+        cfg = json.loads(raw)
     except ValueError as e:
-        print(f"seam: {CONFIG_PATH} is not readable JSON ({e}). Regenerate it with the wizard "
-              f"(`seam-init --answers <file> --repo .`), which writes it from the answers file.",
-              file=sys.stderr)
+        print(f"seam: {CONFIG_PATH} is not readable JSON. Regenerate it with the wizard "
+              f"(`seam-init --answers <file> --repo .`), which writes it from the answers file; "
+              f"the parser's own message is on the next line.", file=sys.stderr)
+        print(f"seam: the parser said: {e}", file=sys.stderr)
         return 2
     if not isinstance(cfg, dict):
         print(f"seam: {CONFIG_PATH} is not an object. The config is what every knob is read "
@@ -875,7 +1007,7 @@ def main() -> int:
     # defeats it, the same way re-hashing defeats A16. What is closed is the silent single edit.
     prov = None
     try:
-        prov = json.loads((ROOT / PROVENANCE_PATH).read_text())
+        prov = json.loads(read_text(ROOT / PROVENANCE_PATH))
     except (OSError, ValueError):
         prov = None
     regenerate = (f"Write it with the wizard: `seam-init --answers <file> --repo .`, which "
@@ -1017,7 +1149,7 @@ def main() -> int:
                 for m in TOKEN_RE.finditer(para):
                     backticked, bare, name = m.group(1), m.group(2), m.group(3)
                     if backticked is not None or bare is not None:
-                        tok = (backticked if backticked is not None else bare).strip()
+                        tok = strip_ws(backticked if backticked is not None else bare)
                         if re.fullmatch(r"[\w./@-]+\.md", tok, re.A) and "*" not in tok:
                             target = resolve_md(ROOT, d, tok) or tok
                             target_end = m.end()
@@ -1030,7 +1162,7 @@ def main() -> int:
                         else:
                             shadow = None
                         continue
-                    cited = name.strip()
+                    cited = strip_ws(name)
                     if shadow is not None and m.start() - shadow_end <= 4 \
                             and ADJACENT_RE.match(para[shadow_end:m.start()]):
                         shadow = None
@@ -1208,7 +1340,14 @@ def main() -> int:
     if on("A6"):
         ran += 1
         for entry in opt("A6", "retired", []):
-            rx = re.compile(r"\b" + re.escape(entry["name"]) + r"\b", re.I | re.A)
+            # The boundaries are written out and the folding is left Unicode. `re.A` would make
+            # both ASCII, and it is the FOLDING that must not be: `\bna\u00efve\b` against "The
+            # NA\u00cfVE thing" matches in Node and under plain `re.I`, and not under `re.I|re.A`
+            # — so one flag applied across sites whose right answers differ turned A6 into a
+            # finding in Node and silence here. JS word boundaries are ASCII-only whatever the
+            # flags, which is what the lookarounds say out loud.
+            rx = re.compile(r"(?<![A-Za-z0-9_])" + re.escape(entry["name"])
+                            + r"(?![A-Za-z0-9_])", re.I)
             for d in docs:
                 for m in rx.finditer(without_struck(text_of[d])):
                     findings.append(finding(
@@ -1254,7 +1393,9 @@ def main() -> int:
                 continue
             body, base = span
             for i, cells in table_rows(body):
-                if len(cells) < 2 or not re.fullmatch(r"~*\d+~*", cells[0], re.A):
+                # Unicode `\d`, deliberately: ASCII here narrowed toward SILENCE, and a
+                # numbered row in another script is still a numbered row.
+                if len(cells) < 2 or not re.fullmatch(r"~*\d+~*", cells[0]):
                     continue
                 m = re.search(r"#(\d+)", cells[1], re.A)
                 if m:
@@ -1281,7 +1422,9 @@ def main() -> int:
                     continue
                 for m in rx.finditer(without_struck(text_of[d])):
                     word = m.group(1)
-                    stated = int(word) if word.isdigit() else WORDS.get(word.lower())
+                    stated = ascii_int(word)
+                    if stated is None:
+                        stated = WORDS.get(word.lower())
                     if stated is None or stated == actual:
                         continue
                     findings.append(finding(
@@ -1470,8 +1613,9 @@ def main() -> int:
         if index in text_of:
             for d in docs:
                 base = os.path.basename(d)
-                if not d.startswith(prd_dir + "/") or not re.fullmatch(r"PRD-v\d+\.md", base,
-                                                                      re.A):
+                # Unicode `\d`: A13 exists so an unindexed version cannot hide, and
+                # `PRD-v\u0663.md` was invisible to both checkers while this was ASCII.
+                if not d.startswith(prd_dir + "/") or not re.fullmatch(r"PRD-v\d+\.md", base):
                     continue
                 # Findable by filename or by version label: an index row reading `| v0 | … |`
                 # makes the version perfectly findable, and A13 exists so an unindexed version
@@ -1540,7 +1684,8 @@ def main() -> int:
             for i, cells in table_rows(body):
                 # A bare numeral only: the header, the rule under it, and a struck-through unit
                 # are not units, so none of them is held to the shape.
-                if not re.fullmatch(r"\d+", cells[0], re.A):
+                # Unicode `\d`, as in A8's row test and for the same reason.
+                if not re.fullmatch(r"\d+", cells[0]):
                     continue
                 units += 1
                 proves = cells[2] if len(cells) > 2 else ""

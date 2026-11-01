@@ -75,6 +75,14 @@ const splitWs = (s) => s.split(/[ \t\r\n\f\v]+/).filter(Boolean);
  *  in a non-ASCII letter was a word boundary on one side and not on the other. */
 const alnum = (ch) => ch !== undefined && ch !== "" && /^[a-z0-9]$/i.test(ch);
 
+/** `word` as a number when it is a run of ASCII digits, else undefined.
+ *
+ *  Python's `str.isdigit()` is Unicode-aware and `int()` does not agree with it: `'٣'.isdigit()`
+ *  is True and `int('٣')` is 3, where `/^\d+$/` here is false — a count compared on one side and
+ *  skipped on the other — while `'²'.isdigit()` is True and `int('²')` raises, so the Python
+ *  checker died where this one skipped. The same reason `isalnum()` needed `alnum`. */
+const asciiInt = (word) => (/^[0-9]+$/.test(word) ? Number(word) : undefined);
+
 /** Two strings in CODE POINT order, which is how Python compares them.
  *
  *  `localeCompare` is a collation: it puts `alpha.md` before `Zeta.md` and Python puts it after,
@@ -540,7 +548,10 @@ function readTable(text) {
       doc: doc[1],
       layer,
       owns: cells.length > 2 ? cells[2] : "",
-      enforces: cells.length > 3 ? cells[3].replaceAll("`", "") : "",
+      // The backticks at the ENDS only, which is what Python's `strip("`")` takes: removing
+      // every one of them made a cell naming two paths two different finding texts, and a
+      // finding's text is part of its baseline key.
+      enforces: cells.length > 3 ? cells[3].replace(/^`+|`+$/g, "") : "",
       line: lineOf(text, offset + m.index),
     });
   }
@@ -674,6 +685,27 @@ function runPayloads(yamlText) {
 
 const finding = (id, file, line, text, message) => ({ id, file, line, text, message });
 
+// Each assertion's own lists, and the keys each entry is indexed by — null for a list of plain
+// strings. `plan_glob` is a string OR a list of them, so it is handled beside this.
+const ENTRY_LISTS = [
+  ["A1", "intent_globs", null, []],
+  ["A3", "doc_sections", ["file", "section"], []],
+  ["A3", "local_only", null, []],
+  ["A3", "ci_only", null, []],
+  ["A3", "extra_tokens", null, []],
+  ["A4", "artifacts", ["path"], ["parser"]],
+  ["A4", "not_fields", null, []],
+  ["A4", "not_references", null, []],
+  ["A4", "not_fields_override", null, []],
+  ["A5", "vocabularies", ["file", "section", "enum"], []],
+  ["A6", "retired", ["name"], ["became", "reason"]],
+  ["A7", "reversed", ["pattern", "reason"], ["adr"]],
+  ["A9", "count_sites", ["pattern", "count_of"], ["file"]],
+  ["A15", "impl_globs", null, []],
+  ["A15", "test_globs", null, []],
+];
+const GLOB_OR_LIST = ["A8", "A14"];
+
 /**
  * The first config value no reader below can use, as the message to refuse with — or null.
  *
@@ -717,6 +749,48 @@ function configShapeRefusal(cfg) {
     lb.forEach((g, i) => checks.push([`load_bearing[${i}]`, typeof g === "string", "a string",
       "each entry is a path glob"]));
   }
+  /** A list the readers walk: `keys` null for a list of strings, else the keys each entry is
+   *  indexed by. */
+  const entryList = (where, value, keys, reader, optional = []) => {
+    checks.push([where, isList(value), "a list", `${reader} reads it as a list`]);
+    if (!isList(value)) return;
+    value.forEach((e, i) => {
+      if (keys === null) {
+        checks.push([`${where}[${i}]`, typeof e === "string", "a string",
+          `${reader} reads every entry of it as a string`]);
+        return;
+      }
+      const named = keys.map((k) => `\`${k}\``).join(", ");
+      checks.push([`${where}[${i}]`, isObj(e), "an entry",
+        `${reader} reads each entry's ${named}`]);
+      if (!isObj(e)) return;
+      for (const k of keys) {
+        const pathLike = k === "file" || k === "path" || k === "count_of";
+        checks.push([`${where}[${i}].${k}`, isName(e[k]),
+          pathLike ? "a path" : "a non-empty string", `${reader} indexes the entry by it`]);
+      }
+      // An optional key still has a shape when it is there: one that is read for its truth is
+      // `[]` — true here and FALSE in Python — and one that is interpolated into a finding's
+      // message prints differently in the two languages, and that message is part of the
+      // finding's baseline key.
+      for (const k of optional) {
+        if ((e[k] ?? null) === null) continue;
+        checks.push([`${where}[${i}].${k}`, typeof e[k] === "string", "a string",
+          `${reader} reads it as one when it is there`]);
+      }
+    });
+  };
+  entryList("artifacts", cfg.artifacts ?? [], ["path"], "A5");
+  for (const [key, sub] of [["adr", ["format", "file", "dir"]], ["prd", ["dir"]],
+    ["baseline", ["path"]]]) {
+    const value = cfg[key] ?? {};
+    checks.push([key, isObj(value), "an object", "it is read key by key"]);
+    if (!isObj(value)) continue;
+    for (const k of sub) {
+      if ((value[k] ?? null) === null) continue;   // absent or null: the reader's default applies
+      checks.push([`${key}.${k}`, typeof value[k] === "string", "a string", "it is read as one"]);
+    }
+  }
   const A = cfg.assertions ?? {};
   checks.push(["assertions", isObj(A), "an object",
     "every assertion's settings live under its id there"]);
@@ -724,8 +798,22 @@ function configShapeRefusal(cfg) {
     for (const aid of Object.keys(A).sort(cmp)) {
       checks.push([`assertions.${aid}`, isObj(A[aid]), "an object",
         "an assertion's settings are an object with an `enabled` switch"]);
-      if (isObj(A[aid]) && (A[aid].allow ?? null) !== null) {
-        const allow = A[aid].allow;
+      if (!isObj(A[aid])) continue;
+      const conf = A[aid];
+      // The switch is read as a truth value, and the two languages disagree about which values
+      // are true: `Boolean([])` is true here and `bool([])` is False in Python, so `enabled: []`
+      // ran the assertion in one checker and not the other — and the enabled SET is what the
+      // provenance precondition compares, so one of them also refused.
+      for (const flag of ["enabled", "bare_sections"]) {
+        if ((conf[flag] ?? null) === null) continue;
+        checks.push([`assertions.${aid}.${flag}`, typeof conf[flag] === "boolean",
+          "true or false", "it is read as a switch"]);
+      }
+      // The list and its entries only: an allow entry's `path` and `reason` have refusals of
+      // their own further down, which carry the method's reason for requiring them and are
+      // better messages than this pass can give.
+      if ((conf.allow ?? null) !== null) {
+        const allow = conf.allow;
         checks.push([`assertions.${aid}.allow`, isList(allow), "a list",
           "an allow-list is a list of entries, each naming one path and the reason it will never "
           + "be fixed"]);
@@ -733,6 +821,30 @@ function configShapeRefusal(cfg) {
           allow.forEach((e, i) => checks.push([`assertions.${aid}.allow[${i}]`, isObj(e),
             "an entry", "an allow-list entry is an object with a `path` and a `reason`"]));
         }
+      }
+      // Each assertion's own lists, in a fixed order. Their readers index an entry directly —
+      // `v.file`, `art.path`, `site.pattern` — which was a `KeyError` in Python and an
+      // `undefined` that reached a finding's baseline key here.
+      for (const [owner, key, keys, optional] of ENTRY_LISTS) {
+        if (owner !== aid || (conf[key] ?? null) === null) continue;
+        entryList(`assertions.${aid}.${key}`, conf[key], keys, aid, optional);
+      }
+      if (GLOB_OR_LIST.includes(aid) && (conf.plan_glob ?? null) !== null) {
+        const g = conf.plan_glob;
+        if (typeof g === "string") {
+          /* one glob, which is the other form this key takes */
+        } else if (isList(g)) {
+          g.forEach((one, i) => checks.push([`assertions.${aid}.plan_glob[${i}]`,
+            typeof one === "string", "a string",
+            `${aid} reads every entry of it as a glob`]));
+        } else {
+          checks.push([`assertions.${aid}.plan_glob`, false, "a string or a list of strings",
+            `${aid} reads it as the globs its layer-5 docs match`]);
+        }
+      }
+      if (aid === "A3" && (conf.workflow_glob ?? null) !== null) {
+        checks.push(["assertions.A3.workflow_glob", typeof conf.workflow_glob === "string",
+          "a string", "A3 reads it as the glob the workflows match"]);
       }
     }
   }
@@ -755,13 +867,29 @@ async function main() {
       + `${dirname(fileURLToPath(import.meta.url))}\n`);
     return 2;
   }
+  // Two refusals, not one, and neither interpolates the engine's own sentence into the line the
+  // two languages are held to: `JSON.parse`'s parse error and Python `json`'s are differently
+  // worded, and a malformed config has to be one identical message. The detail is printed on a
+  // line of its own. The read is separate from the parse because a mode-000 config, or a
+  // directory at that path, is a different thing to say — and it tracebacked in Python while
+  // this side's catch refused.
+  let raw;
+  try {
+    raw = readText(cfgFile);
+  } catch {
+    process.stderr.write(`seam: ${CONFIG_PATH} could not be read. It is the file every knob is `
+      + `read from, so there is nothing to run — check its permissions, or write it with the `
+      + `wizard (\`seam-init --answers <file> --repo .\`).\n`);
+    return 2;
+  }
   let cfg;
   try {
-    cfg = JSON.parse(readText(cfgFile));
+    cfg = JSON.parse(raw);
   } catch (e) {
-    process.stderr.write(`seam: ${CONFIG_PATH} is not readable JSON (${e.message}). Regenerate `
-      + `it with the wizard (\`seam-init --answers <file> --repo .\`), which writes it from the `
-      + `answers file.\n`);
+    process.stderr.write(`seam: ${CONFIG_PATH} is not readable JSON. Regenerate it with the `
+      + `wizard (\`seam-init --answers <file> --repo .\`), which writes it from the answers `
+      + `file; the parser's own message is on the next line.\n`);
+    process.stderr.write(`seam: the parser said: ${e.message}\n`);
     return 2;
   }
   if (typeof cfg !== "object" || cfg === null || Array.isArray(cfg)) {
@@ -807,7 +935,7 @@ async function main() {
   // defeats it, the same way re-hashing defeats A16. What is closed is the silent single edit.
   let prov = null;
   try {
-    prov = JSON.parse(readFileSync(join(ROOT, PROVENANCE_PATH), "utf8"));
+    prov = JSON.parse(readText(join(ROOT, PROVENANCE_PATH)));
   } catch { /* handled below */ }
   const regenerate = `Write it with the wizard: \`seam-init --answers <file> --repo .\`, which`
     + ` rewrites ${CONFIG_PATH} and this record together.`;
@@ -944,7 +1072,7 @@ async function main() {
           const bare = m[2];
           const name = m[3];
           if (backticked !== undefined || bare !== undefined) {
-            const tok = (backticked !== undefined ? backticked : bare).trim();
+            const tok = stripWs(backticked !== undefined ? backticked : bare);
             if (/^[\w./@-]+\.md$/.test(tok) && !tok.includes("*")) {
               target = resolveMd(ROOT, d, tok) ?? tok;
               targetEnd = m.index + m[0].length;
@@ -957,7 +1085,7 @@ async function main() {
             }
             continue;
           }
-          const cited = name.trim();
+          const cited = stripWs(name);
           if (shadow !== null && m.index - shadowEnd <= 4
               && ADJACENT_RE.test(para.slice(shadowEnd, m.index))) {
             shadow = null;
@@ -1165,7 +1293,12 @@ async function main() {
   if (on("A6")) {
     ran += 1;
     for (const entry of opt("A6", "retired", [])) {
-      const rx = new RegExp("\\b" + entry.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b", "gi");
+      // The boundaries are written out, and `u` is deliberately NOT set: a `\b` here is
+      // ASCII-only whatever the flags, which the lookarounds say out loud, and the FOLDING must
+      // stay Unicode so `naïve` still matches "NAÏVE" — which is what Python's `re.I` does
+      // without `re.A`.
+      const rx = new RegExp("(?<![A-Za-z0-9_])"
+        + entry.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?![A-Za-z0-9_])", "gi");
       for (const d of docs) {
         for (const m of withoutStruck(textOf[d]).matchAll(rx)) {
           findings.push(finding("A6", d, lineOf(textOf[d], m.index), entry.name,
@@ -1212,7 +1345,9 @@ async function main() {
       if (span === null) continue;
       const [body, base] = span;
       for (const [i, cells] of tableRows(body)) {
-        if (cells.length < 2 || !/^~*\d+~*$/.test(cells[0])) continue;
+        // `\p{Nd}` under `u`, deliberately: ASCII here narrowed toward SILENCE, and a numbered
+        // row in another script is still a numbered row.
+        if (cells.length < 2 || !/^~*\p{Nd}+~*$/u.test(cells[0])) continue;
         const m = cells[1].match(/#(\d+)/);
         if (m) {
           if (!owners.has(m[1])) owners.set(m[1], []);
@@ -1245,7 +1380,7 @@ async function main() {
         if (!(d in textOf)) continue;
         for (const m of withoutStruck(textOf[d]).matchAll(rx)) {
           const word = m[1];
-          const stated = /^\d+$/.test(word) ? Number(word) : WORDS[word.toLowerCase()];
+          const stated = asciiInt(word) ?? WORDS[word.toLowerCase()];
           if (stated === undefined || stated === actual) continue;
           findings.push(finding("A9", d, lineOf(textOf[d], m.index), m[0],
             `states ${word} (${stated}) where \`${site.count_of}\` matches ${actual}`));
@@ -1437,7 +1572,9 @@ async function main() {
     if (index in textOf) {
       for (const d of docs) {
         const base = basename(d);
-        if (!d.startsWith(prdDir + "/") || !/^PRD-v\d+\.md$/.test(base)) continue;
+        // `\p{Nd}`: A13 exists so an unindexed version cannot hide, and `PRD-v٣.md` was
+        // invisible to both checkers while this was ASCII.
+        if (!d.startsWith(prdDir + "/") || !/^PRD-v\p{Nd}+\.md$/u.test(base)) continue;
         // Findable by filename or by version label: an index row reading `| v0 | … |` makes the
         // version perfectly findable, and A13 exists so an unindexed version cannot hide, not so
         // the index has to spell a filename.
@@ -1508,7 +1645,8 @@ async function main() {
       for (const [i, cells] of tableRows(body)) {
         // A bare numeral only: the header, the rule under it, and a struck-through unit are not
         // units, so none of them is held to the shape.
-        if (!/^\d+$/.test(cells[0])) continue;
+        // `\p{Nd}`, as in A8's row test and for the same reason.
+        if (!/^\p{Nd}+$/u.test(cells[0])) continue;
         units += 1;
         const proves = cells[2] ?? "";
         const m = proves.match(/^`([\w./-]+)`$/);
