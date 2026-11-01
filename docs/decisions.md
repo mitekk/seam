@@ -94,6 +94,69 @@ reachable only for work not worth doing, so the two questions above replace it.
 takes is a judgement made in flight; `skills/seam-github/SKILL.md` § Follow-ups is the procedural
 owner, and `evals/github-pr-shape` is the only measurement.
 
+## D-003 — An assertion is not done until its RED has been observed
+
+*2026-11-01 · settled*
+
+Seventeen checks on this branch passed without making the comparison they were written to make.
+Not one was caught by `claude plugin validate`, by the checker, by the type system or by reading
+the diff; every one was caught by **executing** the thing. A check that cannot fail is
+indistinguishable from a check that holds, and it is worse than no check at all, because the
+reader stops looking.
+
+**Settled:** shipping an assertion means shipping **the command that makes it fail and that
+command's real output**. This binds the checker's assertions, the test suite and the eval graders
+alike — anything whose job is to notice something. Four sub-rules, each earned by an instance
+rather than reasoned:
+
+1. **Off is not passing.** An assertion that is enabled but cannot make its comparison fails
+   loudly, and that failure is distinct from the one where its comparison *subject* is
+   legitimately empty.
+2. **A proof must discriminate, not merely fail.** A check can fail for the wrong reason and look
+   healthy. The test that caught this measured the *shape* of a proposal rather than that
+   anything was proposed — rewriting the row it guarded to "never proposed" still gave 43 pass /
+   0 fail.
+3. **State a check's limits by direction, not as one list** — and where the check guards a gate,
+   prefer the direction that fails **closed**. A false positive gets investigated; a false
+   negative passes the violation in silence. "It is documented" is an acceptable ending for the
+   first and not for the second.
+4. **The round written to close an instance is where the next one appears.** Five of the
+   seventeen arrived inside a fix round, two of those written by whoever was reviewing. So a fix
+   round's own output gets the same RED proof as the work it was fixing, and the re-review reads
+   the fix for the defect it was closing.
+
+**Why, measured** — seventeen as of this branch, across eleven tasks. Three make the case on
+their own:
+
+- a grader asserting a gate matched the model's own free-text `description` of its command rather
+  than the command, so it fired on the read-only inspection the gate *requires* while still
+  firing on what the gate forbids, and could not tell the two apart;
+- `(gh pr merge|git merge)\b` firing on `git merge-base` and `git merge-tree`, because `\b` is a
+  word end before `-`: three false positives on exactly the commands a session legitimately runs;
+- a fix to a size vocabulary that left the owning template asserting "this table is the only copy
+  of the sizes" on the day a second copy shipped, with the assertion that would have compared
+  them switched off.
+
+**Rejected:** a convention that a new assertion gets a test, which is what the suite already had
+while all seventeen shipped — the test existing is not the proof, the test having been *watched*
+failing is. And locking this entry: `**Locked**` means not corrected, not softened, not ever, and
+this branch corrected four of its own rules while writing them. A rule this young has not earned
+a marker that forbids its own correction, so **D-003 is deliberately not locked**.
+
+**Costs if wrong:** a RED proof per assertion is real work, and on a cheap assertion it can cost
+more than the assertion does. The mitigation is that the proof is a command and its output, not a
+second test — usually one mutation, run once, pasted. Where even that is not worth it, the honest
+ending is to say the assertion is unproven rather than to imply it was checked.
+
+**Enforced by:** `tests/red-proof.test.mjs`, **and only the mechanical half of this entry.** That
+test reads the ids `.seam/config.json` switches on and fails when one is named by no test that
+expects it in the checker's findings, so an assertion added and enabled with no failure path
+cannot ship quietly. Whether a given proof actually *discriminates* — sub-rule 2 — is a
+judgement and is not mechanizable; the test says so in its own header, and names the direction in
+which it fails.
+That asymmetry is the useful part of this entry: a guard claimed but absent, inside an entry about
+checks that do not check, would be the defect wearing the entry's own clothes.
+
 ## R-001 — rulings taken while building the plan-first layer
 
 *2026-11-01 · in flight*
