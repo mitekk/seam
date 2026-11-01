@@ -78,7 +78,7 @@ rather than asking open questions about them.
 
 ```jsonc
 {
-  "seam_version": "0.1.0",
+  "seam_version": "0.2.0",
   "repo":    { "name": "apiary", "default_branch": "main" },
   "field":   "greenfield" | "brownfield",        // asked first; no default
   "table":   { "file": "CLAUDE.md" },            // which file hosts the sources-of-truth table
@@ -135,7 +135,9 @@ rather than asking open questions about them.
 | `assertions.A8/A14` | on iff a layer-5 doc exists | |
 | `assertions.A1.intent_globs` | the layer-5 rows | The docs whose citations are intentions rather than claims — a plan names the files it is about to create, so by construction those paths are absent. The same rows `A8.plan_glob` reads, and never a fixed path: a glob naming a directory this repo does not have exempts nothing, produces no finding to say so, and leaves every file-creation citation in the real plan red on day one. With no layer-5 row it falls back to `docs/plans/*.md`, which exempts nothing in a repo that has no plans. |
 | `assertions.A15` | **off** | It compares two repo-specific lists — which paths are implementation, which are tests — and an empty list is not a sensible default. `default_branch` defaults from `repo.default_branch`. |
+| `assertions.A11` | on | It compares two copies the wizard writes in the same run — `load_bearing` in the config and the table's `Enforces` column — so both sides exist from day one and there is no repo-specific list to wait on. |
 | `assertions.A12/A13` | on iff a layer-3 or layer-4 doc exists | |
+| `assertions.A16` | on iff the answers file is inside the repo | That is the only case where a later run can read it back and compare. A repo keeping its answers file elsewhere gets A16 off rather than a permanent red, and pays for it by having its config's provenance unchecked — `references/assertions.md` § A16 states that as the cost it is. |
 | `docs/building.md` row | **proposed by default** | The method's ordering rule — the written unit comes before the work — only holds where the repo's own doc says so, and opting in would make plan-first the exception. The program never adds the row itself: the answers file is the source, so declining is leaving the row out. |
 | `docs/context.md` row | **proposed by default** | A window degrades before it ends, so a session with no threshold meets its budget at the point where it can no longer act on one. Opting in would make spending the window unwatched the default. Declining is leaving the row out, as above. |
 | `docs/reviewing.md` row | **proposed by default** | The level policy is read before every commit, so without the doc the level gets argued per diff on the day — which is the thing it replaces. Declining is leaving the row out, as above. |

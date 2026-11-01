@@ -87,6 +87,16 @@ with `"active": true` on 8 and `false` on the rest — kept in step with this co
 this file says above. Milestone 1 is not among them: it is the method's row, green on arrival, and
 the paragraph above says why it is never the active one.
 
+## What this does not own
+
+- **Which issues build a subsystem, in what order.** That is layer 5, under
+  `docs/superpowers/plans/`. This file says what the milestones *are*; a plan says what goes in
+  one.
+- **Why a domain exists.** If the reasoning matters it is a decision record, and this file cites
+  `docs/decisions.md` rather than restating it.
+- **The issue, commit and PR shapes.** Those are conventions rather than facts about this repo,
+  and `skills/seam-github/SKILL.md` owns them.
+
 ## The tracker itself
 
 There is no remote yet. Creating the GitHub repo, the labels and the milestones is outward-facing

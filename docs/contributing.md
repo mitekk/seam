@@ -184,4 +184,12 @@ an exemption; only "non-deterministic" is.
 - Review level comes from `skills/seam-review/SKILL.md`'s table, applied to seam's own diffs:
   `high` for `bin/` and the checker templates, which are the measuring apparatus; `medium` for
   the skills and for this file.
+- **seam declined its own `docs/reviewing.md` row, and that is deliberate rather than an
+  oversight.** It is the one place this repo does not eat its own dog food: the review policy is
+  what seam distributes, and a second repo-side copy of it here would be a copy to keep in step
+  with no reader the skill does not already have. The cost is real and is the point of naming it —
+  `seam-review` finds no `docs/reviewing.md` on seam itself, so it falls back to
+  `$CLAUDE_PLUGIN_ROOT`, which is the path an adopter is never meant to take. The level above is
+  this file's row instead, and `skills/seam-docs/templates/current/reviewing.md` is the doc an
+  adopter gets.
 - Push and merge need an explicit OK, every time.

@@ -161,6 +161,10 @@
         {
           "path": "prompt.md",
           "reason": "the filename inside an eval case directory, cited as a form. Every real one is at evals/<case>/prompt.md and resolves"
+        },
+        {
+          "path": "docs/reviewing.md",
+          "reason": "seam deliberately has no repo-side review-policy doc: the policy is what seam distributes, so a second copy here would be one more thing to keep in step. docs/contributing.md § Process is the sentence about that absence, and names what it costs — seam-review falls back to $CLAUDE_PLUGIN_ROOT on seam itself"
         }
       ],
       "intent_globs": [
