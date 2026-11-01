@@ -14,6 +14,8 @@
     "name": "seam",
     "default_branch": "master"
   },
+  "field": "brownfield",
+  "field_reason": "As a tree, seam already has docs: docs/contributing.md hosts the sources-of-truth table, docs/taxonomy.md, docs/decisions.md and three more layer-2 docs are in it, and .seam/config.json enables assertions over them. That is the adopt path. It is a judgement about the tree as it stands and not about its history \u2014 every doc here was written by this method, from an empty repo \u2014 and without that sentence \"brownfield\" reads as an error later.",
   "table": {
     "file": "docs/contributing.md"
   },
@@ -178,6 +180,7 @@
     "path": ".seam/baseline.json"
   },
   "open_questions": [
-    "Does seam need a layer-4 PRD, given that README.md is the intent and it is public? No docs/prd row is proposed yet."
+    "Does seam need a layer-4 PRD, given that README.md is the intent and it is public? No docs/prd row is proposed yet.",
+    "Which of seam's own milestones is the active one? docs/taxonomy.md lists the build order, and milestones[] here is empty because the wizard refuses a list with no active row and nobody has said which it is \u2014 which is what the interview says to record rather than guess."
   ]
 }

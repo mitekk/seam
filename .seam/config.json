@@ -4,6 +4,7 @@
     "name": "seam",
     "default_branch": "master"
   },
+  "field": "brownfield",
   "table": {
     "file": "docs/contributing.md"
   },

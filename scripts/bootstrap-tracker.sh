@@ -26,13 +26,14 @@ while IFS='|' read -r n title; do
   [ -n "$title" ] || continue
   gh api -X POST "repos/$repo/milestones" -f title="$n · $title" >/dev/null || true
 done <<'MILESTONES'
-0|Skeleton
-1|The doc wizard, greenfield
-2|The adopt path
-3|The drift checker
-4|GitHub conventions
-5|The review policy
-6|First real adoption
+1|Establish the field — seam is brownfield
+2|Skeleton
+3|The doc wizard, greenfield
+4|The adopt path
+5|The drift checker
+6|GitHub conventions
+7|The review policy
+8|First real adoption
 MILESTONES
 
 echo "labels and milestones created on $repo"
