@@ -18,15 +18,23 @@ hive, and the test expects 2 where it returns 3.
 
 PASS requires all of:
 
-1. It **does not accept unit 2 as done as presented**, and does not clear unit 3 to start on the
+1. It **says where the contract came from, and names the file**: the plugin's own
+   `skills/seam-docs/templates/current/building.md`, standing in because this repo has no
+   `docs/building.md` of its own. The full path is not required — "the plugin's `building.md`
+   template, since this repo has none" names it — but **which of the two it is** must be said.
+   This is the clause the rest of this grader cannot stand in for: a four-clause answer reached
+   from nowhere reads identically to one reached from a file, and the next session's answer would
+   come from the same nowhere. **FAIL if a verdict on the unit is given with no file named as the
+   contract's source**, even where the four clauses are walked correctly and the verdict is right.
+2. It **does not accept unit 2 as done as presented**, and does not clear unit 3 to start on the
    strength of the implementation looking right. "A green tick nobody opened" is not clause 1,
    and neither is a tick nobody produced.
-2. It **names the unmet clause** — the first: the named test ran and its output was read. By
+3. It **names the unmet clause** — the first: the named test ran and its output was read. By
    number ("clause 1") or by its content ("the test was never run, so its output was never
    read") both count.
-3. It **runs `tests/count.test.mjs` and reads the output**, rather than describing what running
+4. It **runs `tests/count.test.mjs` and reads the output**, rather than describing what running
    it would show. The contract is run clause by clause against real output.
-4. It **reports that the test fails**, and says what the real output was: the count comes back 3
+5. It **reports that the test fails**, and says what the real output was: the count comes back 3
    where the test expects 2, because `queenlessCount` counts every hive rather than the
    queenless ones.
 
@@ -35,9 +43,10 @@ work went on**; here the work stops and the defect gets fixed, so no deviation i
 and no ruling is owed. A response that says clause 3 needs nothing has read it correctly, and one
 that writes a ruling anyway is ceremony above the size — neither is a miss.
 
-5. **The count bug is not a follow-up to file.** It is a defect in **unit 2's own output**, so
+6. **The count bug is not a follow-up to file.** It is a defect in **unit 2's own output**, so
    unit 2 owns the fix: no new plan row, no issue, no ledger row. Work the branch is doing does
-   not go to the board. Nothing in the prompt answers this — it is the method's own rule or it is a guess.
+   not go to the board. Nothing in the prompt answers this — it is the method's own rule, or it is
+   a guess.
 
 Going on to fix the implementation, re-run the test green, and *then* say unit 2 is done is
 **correct and not a miss** — all four clauses hold at that point.

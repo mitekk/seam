@@ -17,7 +17,7 @@ anyway.
 | `wizard-greenfield` | the **files written** from a recorded answers file, and that no claim was invented |
 | `wizard-interview` | the **questions asked**, and that nothing was written before the interview finished |
 | `wizard-adopt` | the **layer classification**, the overlap, the layer violation, and that it stayed a proposal |
-| `wizard-field-first` | **indicative, 2 of 3 runs** — the *position* of one rule: that green-or-brown field is settled before any doc set is proposed |
+| `wizard-field-first` | **indicative, 2 of 3 runs** — that green-or-brown field is **settled before** any doc set is proposed, which is the consequence of asking it first; not that it was the literal first question |
 | `github-issue-shape` | domain, priority, milestone, the Context citation, externally checkable criteria, `--body-file` |
 | `github-pr-shape` | five follow-up items, on a case built so that size and the qualifier give different answers |
 | `github-size-citation` | the repo's **own** `docs/building.md` winning as the size vocabulary — `Migration`, a size no template has |
@@ -127,8 +127,24 @@ at: I can't tell you… If I picked a level now, I'd be inventing the threshold 
 still **name** the template, in the offer to write the repo its own, and never read it.
 
 So the clause is load-bearing in the protective direction, the opposite of what an earlier reading
-of it supposed, and the case is the regression guard for it. **It is also that case's RED proof**:
-a case shipped green has not been watched failing, and that mutation is the command that fails it.
+of it supposed, and the case is the regression guard for it. **It is also that case's RED proof**
+— a case shipped green has not been watched failing — so the mutation is written out rather than
+described. Apply it, run the case, restore:
+
+```diff
+--- a/skills/seam-context/SKILL.md
++++ b/skills/seam-context/SKILL.md
+@@
+-`$CLAUDE_PLUGIN_ROOT/skills/seam-docs/templates/current/context.md` with `seam-docs`, and read the
+-template meanwhile. A budget invented at the moment it is needed is the one that gets argued down,
++`$CLAUDE_PLUGIN_ROOT/skills/seam-docs/templates/current/context.md` with `seam-docs`, rather than
++improvising a budget. A budget invented at the moment it is needed is the one that gets argued down,
+```
+
+```bash
+claude plugin eval . --case context-level-no-doc --trust-plugin --no-publish \
+  --ablation none --runs 3 -j 3 --allow-tools Write Edit Bash
+```
 
 **Both `build-*` cases ship RED, and the reason is a measured defect rather than a grader asking
 more than the method does.** Loosening either to green would be the thing this whole file argues
@@ -139,8 +155,18 @@ that gave the finish contract a named source and an ending for the case where it
 
 | Case | Before | After | What moved |
 |---|---|---|---|
-| `build-finish-no-doc` | 0 of 3 · 0.28 | 1 of 3 · 0.56 | the contract was reached: **3 of 3** name the file they ran it from and walk four clauses, against **0 of 3** before, which answered from the plan's `Done when` and offered to write the doc |
+| `build-finish-no-doc` | 0 of 3 · 0.28 | 1 of 3 · 0.56 | the contract was reached: **3 of 3** name the file they ran it from and walk four clauses, against **0 of 3** before, which answered from the plan's `Done when` and offered to write the doc. 2 of the 3 name the full template path; the third names *"the plugin's `building.md` template"*, which is the same claim without the path |
 | `build-finish-contract` | 2 of 5 · 0.53 | 1 of 5 · 0.47 | nothing the score can separate; `skill-fired` went 3 of 5 → **5 of 5** and the test was run twice — failed, fixed, re-run — in 5 of 5 against 0 of 5 |
+
+**Read both score columns as unreadable, and the mechanism column as the result.** The
+non-discrimination below is a property of a grader that **both** rows share —
+`build-finish-no-doc` inherits the criteria verbatim — so neither after-score separates the two
+correct endings, and the no-doc row is in this table for its mechanism rather than for its 1 of 3.
+**And `PASS 1` of that grader was added after these runs**: naming the file the contract came from
+is now a pass condition, which is the step the fix introduced and which no criterion was asking
+for. The stored runs happen to satisfy it, 3 of 3 after and 0 of 3 before, so the numbers above do
+not move — but they were produced by criteria the suite no longer ships, and the honest reading of
+them is as the mechanism they measured rather than as this case's current rate.
 
 **The weight-4 judge on the doc-present arm does not discriminate the two correct endings**, which
 is why its score moved the wrong way on a change that fixed the thing it was written for. Its
@@ -156,10 +182,12 @@ rate: it is that every run after the change named the file it ran the contract f
 four clauses, and no run before it did either. The score on that row is indicative; the mechanism
 is what the claim rests on, and it is readable in the runs themselves.
 
-**`wizard-field-first` is the other three-run number here: 2 of 3, score 0.75.** It grades a
-**position** — that green-or-brown field is settled before any doc set is proposed — and a
-position over prose is the one claim in this suite that no deterministic grader can make, which is
-why its criteria read the `trace` and why it carries no `regex` arm. Its one failing run settles
+**`wizard-field-first` is the other three-run number here: 2 of 3, score 0.75.** It grades an
+**order** — that green-or-brown field is settled before any doc set is proposed — which is the
+consequence of asking it first and not the same claim as "it was question 1"; a run that reads the
+tree, reports it and only then proposes satisfies it. An order over prose is the one claim in this
+suite that no deterministic grader can make, which is why its criteria read the `trace` and why it
+carries no `regex` arm. Its one failing run settles
 the question correctly in its first section, in the method's own words, and lost 2 of 3 judge
 votes; that is the variance § A single red run is not a finding measures, not a miss.
 

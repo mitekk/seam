@@ -6,10 +6,10 @@ focus: trace
 
 The harness figure is **70% used**, two agents are out — the fallback table's row, and a
 distractor, because that table is only for a session which cannot read a figure — and **this repo
-has no `docs/context.md`**. The budget therefore has to come from the build-skill route or from nowhere,
-which is the whole of what this case measures. Nothing in the prompt carries a threshold, on
-purpose: a fixture that quoted the table would put it in the model's context before any skill
-loaded.
+has no `docs/context.md`**. The budget therefore has to come from `seam-context`'s own
+`$CLAUDE_PLUGIN_ROOT` route or from nowhere, which is the whole of what this case measures.
+Nothing in the prompt carries a threshold, on purpose: a fixture that quoted the table would put
+it in the model's context before any skill loaded.
 
 This grader reads the `trace`, because what is under test is **where a number came from** and not
 only whether the number is right.
