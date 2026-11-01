@@ -1015,7 +1015,9 @@ test("the field determination is required, and only the two values are permitted
   for (const bad of ["brown", "green-field", "", "GREENFIELD", true, null]) {
     const { dir, r } = init(answers({ field: bad }));
     assert.equal(r.status, 2, `${JSON.stringify(bad)} was accepted as a field: ${r.stdout}`);
-    assert.match(r.stderr, /\bfield\b/, r.stderr);
+    // Anchored on the key the message names, not on the word anywhere in it: a rejection fired by
+    // some other key whose message happens to say "field" would otherwise pass this.
+    assert.match(r.stderr, /^seam-init: field:/, r.stderr);
     assert.ok(!has(dir, ".seam/config.json"), "a rejected run still wrote a config");
     rm(dir);
   }
@@ -1039,7 +1041,7 @@ test("the field's reason is required, and it is prose — it never reaches the c
     else ans.field_reason = bad;
     const { dir, r } = init(ans);
     assert.equal(r.status, 2, `${JSON.stringify(bad)} was accepted as a reason: ${r.stdout}`);
-    assert.match(r.stderr, /field_reason/, r.stderr);
+    assert.match(r.stderr, /^seam-init: field_reason:/, r.stderr);
     assert.ok(!has(dir, ".seam/config.json"), "a rejected run still wrote a config");
     rm(dir);
   }
