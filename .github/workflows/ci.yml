@@ -1,6 +1,13 @@
 # seam's own CI. The list here and the one in docs/contributing.md § Checks are compared by
-# assertion A3 of seam's own checker — which is the point: the plugin's claim is that a documented
-# check list and CI cannot drift apart, so seam's own two copies are held to it.
+# assertion A3 of seam's own checker — which is the point, with the limit stated: A3 compares
+# check tokens from a closed vocabulary rather than command lines, so what it holds the two copies
+# to is every command it can tokenise, and a command outside that vocabulary is invisible to it
+# rather than reported as missing. `claude plugin validate` is inside it only because
+# assertions.A3.extra_tokens in .seam/config.json names it.
+#
+# `node --test` is bare on purpose: it is the form docs/contributing.md § Checks documents, and
+# node's own discovery finds tests/**/*.test.mjs while skipping tests/helpers.mjs. The form that
+# fails on Node 24 is the directory positional, `node --test tests/`, which is not this.
 name: ci
 on:
   push:
@@ -19,3 +26,9 @@ jobs:
           node-version: 22
       - run: node --test
       - run: node scripts/check_docs.mjs
+      # Pinned, because an unpinned fetch resolves whatever is newest and a validator that moves
+      # under us is a check that can fail for a reason that is not drift. Installed as its own
+      # step so the check itself reads `claude plugin validate`, which is the token A3 compares;
+      # `npx pkg@version plugin validate` would match a different string on this side.
+      - run: npm install -g @anthropic-ai/claude-code@2.1.316
+      - run: claude plugin validate --strict .

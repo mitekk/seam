@@ -70,18 +70,30 @@ claude plugin validate --strict .              # manifests, skills, commands
 ```
 
 **seam runs its own checker on itself**, and `.github/workflows/ci.yml` runs it too — assertion A3
-compares this list against that workflow, so the two cannot drift apart. It caught its own author
-within a minute of being wired: the CI step existed and this list did not name it.
+compares this list against that workflow, **for every command it can tokenise**, so the two cannot
+drift apart on one of those. It caught its own author within a minute of being wired: the CI step
+existed and this list did not name it.
+
+**That scope is narrower than it reads, and all three commands above are inside it only because
+the third one was put there by hand.** A3 compares check tokens from a closed vocabulary, not
+command lines, and `claude plugin validate` is not in that vocabulary — `extra_tokens` in
+`.seam/config.json` is what adds it, and without that entry the command would be invisible to the
+comparison rather than reported as missing. `skills/seam-checks/references/assertions.md` § A3
+names the limit and what it costs a repo whose list the vocabulary cannot read at all.
 
 `node --test` takes **no positional argument**. `node --test tests/` fails on Node 24 with
 `Cannot find module .../tests` — a bare directory positional is resolved as a module rather than
 scanned — so discovery is left to node, which finds `tests/**/*.test.mjs` and skips
-`tests/helpers.mjs` because it is not named as a test.
+`tests/helpers.mjs` because it is not named as a test. Measured on Node 24.17.0: the bare form
+discovers and runs the suite, and the directory positional is the one that fails.
 
 `claude plugin validate --strict --profile directory .` additionally fails on a missing listing
 icon. That is a submission asset and not a correctness check, so it is not in the list above.
 
-The eval suite is a separate gate because it costs a model run per case:
+## The eval suite
+
+A separate gate, because it costs a model run per case — and **deliberately not in § Checks**, so
+that nothing in the list above spends money and A3 is not holding CI to a command CI must not run:
 
 ```bash
 claude plugin eval . --allow-tools Write Edit Bash --trust-plugin

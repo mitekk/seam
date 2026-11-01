@@ -130,9 +130,10 @@ part of a command that says *which* check it is rather than how it was invoked, 
 `psql -f scripts/check_schema.sql` and `psql -d "$URL" -f scripts/check_schema.sql` are the same
 token. Against the `run:` payloads of each matching workflow, reduced the same way.
 
-Needs: `doc_sections` (`[{file, section}]`), `workflow_glob`, and `local_only` / `ci_only` for the
-commands that legitimately live on one side — each of those is a claim, so keep the lists short and
-give each entry a reason in the doc.
+Needs: `doc_sections` (`[{file, section}]`), `workflow_glob`, `extra_tokens` for any check the
+built-in vocabulary cannot see, and `local_only` / `ci_only` for the commands that legitimately
+live on one side — each of the last three is a claim, so keep the lists short and give each entry
+a reason in the doc.
 
 **Both sides are section-scoped, and a configured section that is missing FAILS with exit 1,
 saying the comparison was not made.** That is distinct from a missing check and is never a silent
@@ -141,6 +142,23 @@ without the loud failure, a renamed heading takes half the list quietly out of s
 
 Does not reach:
 
+- **Anything it cannot tokenise, which is the limit that decides whether A3 does any work at
+  all.** It does not compare commands; it compares **check tokens**, and the vocabulary is a
+  closed list — `DEFAULT_TOKEN_RES` in `templates/checker.py.tmpl` and `templates/checker.mjs.tmpl`,
+  which `sed -n '/^DEFAULT_TOKEN_RES/,/^]/p' templates/checker.py.tmpl` prints. In shape it holds
+  the invocations a runner is recognisable by: a `scripts/…` path with a known extension, a
+  package-manager or `turbo` task, `node --test`, a bare test or lint binary, a `check:<name>`
+  script. A documented command outside it yields **no token on either side**, so the comparison
+  never sees it and A3 reports nothing about it — the `claude …` commands in seam's own list were
+  invisible to it for exactly that reason. A repo whose whole list is `make test`, `tox`,
+  `just check` or `bazel test` gets zero tokens from both sides and a green A3 that compared two
+  empty sets: the shape "off is not passing" objects to, arriving through a switch that is on.
+- **A command the vocabulary has no entry for, until `extra_tokens` gives it one.** Each entry is
+  a raw regex matched against both sides, and **the matched text is the token** — so an entry has
+  to match the same characters in the doc and in the workflow. A command invoked one way in the
+  doc and another in CI needs an entry matching the part they share, or it belongs on `local_only`
+  / `ci_only` with its reason. `extra_tokens` is the only way the vocabulary widens; without an
+  entry the command is not documented-but-missing, it is absent from the comparison.
 - **Whether a check is any good.** It compares two lists of names.
 - **A quoted `#`.** Comments are stripped, because a path named in a trailing comment used to
   satisfy its own token and mask the removal of the command that actually invokes it. A `#` inside

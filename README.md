@@ -265,11 +265,20 @@ as measured.
 
 ## Continuous integration
 
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs the test suite and seam's own generated
-checker. Assertion A3 holds the documented check list in
-[`docs/contributing.md`](docs/contributing.md) § Checks against that workflow, so the two cannot
-drift apart — the method applied to itself rather than only described. It caught its own author
-within a minute of being wired: the CI step existed and the list did not name it.
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs the test suite, seam's own generated
+checker, and the manifest validator. Assertion A3 holds the documented check list in
+[`docs/contributing.md`](docs/contributing.md) § Checks against that workflow **for every command
+it can tokenise**, so the two cannot drift apart on one of those — the method applied to itself
+rather than only described. It caught its own author within a minute of being wired: the CI step
+existed and the list did not name it.
+
+**A3 compares check tokens from a closed vocabulary, not command lines**, so a command it cannot
+tokenise is absent from the comparison rather than reported as missing — and a repo whose list is
+all `make`, `tox` or `bazel` targets gets a green A3 that compared two empty sets.
+`extra_tokens` is how the vocabulary widens, and it is what puts
+`claude plugin validate` inside the comparison here;
+[`skills/seam-checks/references/assertions.md`](skills/seam-checks/references/assertions.md) § A3
+states the limit in full.
 
 ## Docs & decisions
 

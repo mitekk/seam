@@ -180,6 +180,9 @@
         }
       ],
       "workflow_glob": ".github/workflows/*.yml",
+      "extra_tokens": [
+        "claude plugin validate"
+      ],
       "local_only": [],
       "ci_only": []
     },
