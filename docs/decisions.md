@@ -211,9 +211,12 @@ the prose.
 
 **Settled:** the second. § Teardown's five steps and § Merging's step 4 each carry a fenced `bash`
 block, parameterised by four `$SEAM_*` values the section names, and `tests/teardown.test.mjs`
-runs those blocks **in document order** against four real repositories — plain checkout; worktree
-from the main checkout; worktree from inside it; worktree with no teardown command — asserting the
-four end-state facts the sequence promises, the fast-forwarded pull included.
+runs those blocks **in document order** against five real repositories — plain checkout; worktree
+from the main checkout; worktree from inside it; worktree with no teardown command; and a default
+branch carrying a local commit, where the pull must **refuse** rather than merge — asserting the
+end-state facts the sequence promises, the fast-forwarded pull included. **Both paths carry a
+space**, because Task 9's third wrong reading truncated `…/My Project` at the first one and a
+fixture with space-free paths passed a splitting read green.
 
 **Why, measured:** parsing the prose as it stood could not work, and the fixture was written first
 to find that out — it failed naming each step with zero runnable blocks, because the steps gave

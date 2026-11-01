@@ -26,15 +26,22 @@
 // § Merging's step 4. Change the prose's order and this file goes red; that RED was observed, and
 // the broken order and its output are in the task's report.
 //
-// Four shapes, because each of the three defects above lived in exactly one of them:
+// Five shapes. Four because each of the three defects above lived in exactly one of them, and a
+// fifth because without it `--ff-only` asserted a condition no shape could violate:
 //
 //   1  plain checkout, session on the branch, `teardown_command` empty
 //   2  worktree repo, session in the main checkout, command present
 //   3  worktree repo, session **inside the worktree**, command present   (round 1's shape)
 //   4  worktree repo, session inside the worktree, command empty         (round 2's shape)
+//   5  worktree repo, a local commit on the default branch               (the pull must refuse)
+//
+// **Both paths under test carry a space** — `my apiary` and `wt 12` — because Task 9's third wrong
+// reading was `awk '{print $1}'` truncating `…/My Project` to `…/My`, and a fixture with
+// space-free paths passed a splitting read green. § Teardown step 1's prose is six lines about
+// exactly that defect.
 //
 // **Dangerous-command hygiene is a mechanism, not care.** This suite runs `git branch -D`,
-// `git switch` and `git pull --ff-only` four times per run, and during the work that produced
+// `git switch` and `git pull --ff-only` five times per run, and during the work that produced
 // § Teardown a reviewer subagent ran exactly those three in the owner's real repo because a
 // `set -u` bug left a `cd` with an empty argument. So every shape asserts its repo root against
 // the expected scratch path before the first mutating command, and every step is preceded by a
@@ -76,7 +83,13 @@ function stepsOf(sec, where) {
       if (fence === null) {
         fence = { indent: f[1].length, lang: f[3], body: [] };
       } else {
-        if (cur) cur.blocks.push({ lang: fence.lang, body: fence.body.join("\n") });
+        // A fence before the first numbered step belonged to nothing and was dropped in silence —
+        // the one direction of this parse that degraded quietly, since a block *after* step 5 is
+        // loud (step 5 then carries two). § Teardown's intro, with its four-bullet variable list,
+        // is exactly where an `export` example would land.
+        assert.ok(cur, `${where}: a fenced block sits before the first numbered step, so it is`
+          + ` part of no step and would not be run:\n${fence.body.join("\n")}`);
+        cur.blocks.push({ lang: fence.lang, body: fence.body.join("\n") });
         fence = null;
       }
       continue;
@@ -180,18 +193,31 @@ const sh = (s) => `'${String(s).replaceAll("'", `'\\''`)}'`;
  * holding the branch, and the squash already landed on the remote's default branch with the
  * remote branch deleted — which is where `gh pr merge --squash --delete-branch` leaves things.
  */
-function shapeRepo(name, { worktree, inside, command }) {
+function shapeRepo(name, { worktree, inside, command, diverged }) {
   const root = realpathSync(scratch(`seam-teardown-${name}-`));
 
   const origin = join(root, "origin.git");
   mkdirSync(origin);
   git(root, "init", "--bare", "-b", DEFAULT_BRANCH, origin);
 
-  const main = join(root, "apiary");
+  // **Both paths carry a space, deliberately.** Task 9's third wrong reading was
+  // `git worktree list | head -1 | awk '{print $1}'`, which truncates `…/My Project` to `…/My`:
+  // the `cd` fails, the session is still in the worktree, and the next step deletes its own
+  // directory. Step 1's prose is six lines about exactly that, and a fixture whose paths were all
+  // space-free could not see it — a splitting read passed all four shapes green, including
+  // `cut -d' ' -f2`, which carries `--porcelain`, has no `awk`, and survives the string lint in
+  // `tests/seam-init.test.mjs`. With the space, the execution is what catches it and the lint is
+  // a redundancy rather than the only cover.
+  const main = join(root, "my apiary");
   mkdirSync(main);
   git(main, "init", "-b", DEFAULT_BRANCH);
   git(main, "config", "user.email", "test@example.com");
   git(main, "config", "user.name", "Test");
+  // A repo configured to merge on a pull, which is what makes `--ff-only` the load-bearing half of
+  // § Merging's step 4: without this, a plain `git pull` on a diverged branch stops on
+  // `Need to specify how to reconcile divergent branches` and the diverged shape below could not
+  // tell `git pull --ff-only` from `git pull`.
+  git(main, "config", "pull.rebase", "false");
   commit(main, "README.md", "# apiary\n", "chore(repo): start the apiary");
   git(main, "remote", "add", "origin", origin);
   git(main, "push", "-u", "origin", DEFAULT_BRANCH);
@@ -200,7 +226,7 @@ function shapeRepo(name, { worktree, inside, command }) {
   // The branch, where the shape says it lives.
   let wt = "";
   if (worktree) {
-    wt = join(root, `wt-${ISSUE}`);
+    wt = join(root, `wt ${ISSUE}`);
     git(main, "worktree", "add", "-b", BRANCH, wt, DEFAULT_BRANCH);
     commit(wt, "filter.txt", "only queenless hives\n", "feat(hives): filter the queenless list");
     git(wt, "push", "-u", "origin", BRANCH);
@@ -221,6 +247,18 @@ function shapeRepo(name, { worktree, inside, command }) {
   git(side, "push", "origin", DEFAULT_BRANCH);
   git(side, "push", "origin", "--delete", BRANCH);
   const squash = git(side, "rev-parse", "HEAD");
+
+  // The divergence shape: a commit of the repo's own on the default branch, so the squash is no
+  // longer reachable by fast-forward. § Merging's step 4 says a pull that cannot fast-forward is a
+  // divergence to look at rather than something to put a merge commit on, and this is the only
+  // shape in which that sentence says anything.
+  let local = "";
+  if (diverged) {
+    assert.equal(git(main, "rev-parse", "--abbrev-ref", "HEAD"), DEFAULT_BRANCH,
+      "the divergence shape needs the main checkout on the default branch to commit to it");
+    commit(main, "NOTES.md", "a local commit nobody pushed\n", "docs(repo): note something local");
+    local = git(main, "rev-parse", "HEAD");
+  }
 
   // The stub `teardown_command`: shaped like campaign's `rm-worktree.sh` — cd to the main root,
   // remove the worktree, delete the branch — and deliberately not campaign's script. It carries
@@ -250,7 +288,7 @@ git branch -D "$branch"
   // was untested while reporting green.
   assert.ok(!inside || worktree, "a session inside a worktree the shape does not build");
   return {
-    root, origin, main, wt, session: inside ? wt : main, base, squash, teardown,
+    root, origin, main, wt, side, session: inside ? wt : main, base, squash, local, teardown,
   };
 }
 
@@ -315,7 +353,8 @@ function perform(seq, repo) {
 // ── The shapes ──────────────────────────────────────────────────────────────
 
 const SHAPES = [
-  // name, options — `inside` is where the session stands — and what the shape is for.
+  // name, options — `inside` is where the session stands, `diverged` puts a local commit on the
+  // default branch — and what the shape is for.
   ["plain", { worktree: false, inside: false, command: false },
     "a plain checkout with the session on the branch: the switch has to happen before the delete"],
   ["worktree-command", { worktree: true, inside: false, command: true },
@@ -324,7 +363,44 @@ const SHAPES = [
     "round 1's shape: the command deletes the directory the session is standing in"],
   ["worktree-empty", { worktree: true, inside: true, command: false },
     "round 2's shape: with no command, the worktree still holds the branch when the delete runs"],
+  // The fifth shape is not one of the three defects; it is the one that makes `--ff-only` mean
+  // something. Without it the pull is a trivial fast-forward in every shape, so dropping
+  // `--ff-only` from § Merging step 4's block left all four green and the flag the step's own
+  // sentence is about was asserting a condition no shape could violate.
+  ["diverged", { worktree: true, inside: false, command: false, diverged: true },
+    "a default branch with a local commit on it: the pull refuses rather than merging"],
 ];
+
+test("no two shapes are the same shape, and the axes they turn are the ones named", () => {
+  // The guard the first fix round reached for and missed. `repo.session === (inside ? wt : main)`
+  // catches a broken **derivation**, and it is asserted per shape below for that — but it reads
+  // the same flag the table sets, so flipping shape 2's `inside` to `true` satisfies it and the
+  // suite goes on reporting five shapes while two of them are one shape. That is literally what
+  // happened: `worktree-command` and `worktree-inside` were the same repo under two names.
+  //
+  // What distinguishes them is the **tuple**, so the tuple is what is asserted, without restating
+  // which shape is which: four axes, five shapes, no two alike.
+  const axes = SHAPES.map(([, o]) => [!!o.worktree, !!o.inside, !!o.command, !!o.diverged]);
+  const seen = new Map();
+  for (const [i, a] of axes.entries()) {
+    const key = JSON.stringify(a);
+    assert.ok(!seen.has(key), `${SHAPES[i][0]} and ${seen.get(key)} turn the same four axes`
+      + ` (worktree, inside, command, diverged) = ${key}, so one of them measures nothing it was`
+      + ` added for`);
+    seen.set(key, SHAPES[i][0]);
+  }
+  // And the combinations the three defects lived in are present, named by axis rather than by
+  // shape name so a rename cannot satisfy this.
+  const has = (w, i, c, d) => axes.some(([W, I, C, D]) => W === w && I === i && C === c && D === d);
+  assert.ok(has(false, false, false, false), "no plain checkout with no teardown command");
+  assert.ok(has(true, false, true, false), "no worktree repo run from the main checkout");
+  assert.ok(has(true, true, true, false), "no worktree repo run from inside the worktree — round"
+    + " 1's shape is missing");
+  assert.ok(has(true, true, false, false), "no worktree repo with an empty teardown command —"
+    + " round 2's shape is missing");
+  assert.ok(axes.some(([, , , D]) => D), "no diverged default branch, so `--ff-only` is asserting"
+    + " a condition no shape can violate");
+});
 
 for (const [name, opts, why] of SHAPES) {
   test(`§ Merging and § Teardown, performed: ${name} — ${why}`, () => {
@@ -339,21 +415,42 @@ for (const [name, opts, why] of SHAPES) {
     // The shape's own axes, so a shape cannot quietly become another one: where the branch is
     // checked out, and where the session is standing.
     assert.equal(existsSync(repo.session), true, "the session directory was never built");
+    // **The derivation itself**, which is what separates this shape from its neighbour. Comparing
+    // `--show-toplevel` to `repo.session` holds for *either* root, so the previous version of this
+    // block passed with shape 2's `inside` flipped to `true` — the same green that let shape 2 be
+    // shape 3 under a different name in the first place.
+    assert.equal(repo.session, opts.inside ? repo.wt : repo.main,
+      `the session is in the ${opts.inside ? "main checkout" : "worktree"}, which is the other`
+      + ` shape — this shape measures nothing it was added for`);
     assert.equal(git(repo.session, "rev-parse", "--show-toplevel"), repo.session,
-      `the session is not at the root of ${opts.inside ? "the worktree" : "the main checkout"}`);
+      "the session is not at the root of the directory the shape puts it in");
     assert.equal(git(repo.wt || repo.main, "rev-parse", "--abbrev-ref", "HEAD"), BRANCH,
       "the branch is not checked out where the shape says it is");
     assert.equal(git(repo.main, "rev-parse", "--abbrev-ref", "HEAD"),
       opts.worktree ? DEFAULT_BRANCH : BRANCH,
       "the main checkout is not on the branch the shape puts it on");
-    assert.equal(git(repo.main, "rev-parse", DEFAULT_BRANCH), repo.base,
-      "the local default branch is already past its base, so the pull has nothing to prove");
+    assert.equal(git(repo.main, "rev-parse", DEFAULT_BRANCH),
+      opts.diverged ? repo.local : repo.base,
+      "the local default branch is not where the shape left it, so the pull has nothing to prove");
     assert.notEqual(repo.base, repo.squash);
-    // The squash is a descendant of the base: that is what makes the pull a fast-forward, and if
-    // it were not, `--ff-only` would refuse and the shape would be measuring the wrong refusal.
-    git(repo.main, "fetch", "-q", "origin");           // objects, so the ancestry can be read
-    git(repo.main, "merge-base", "--is-ancestor", repo.base, repo.squash);
-    git(repo.main, "update-ref", "refs/remotes/origin/main", repo.base);   // undo the peek
+    // The ancestry, read in the side checkout, which holds both commits — the previous version
+    // fetched into the main checkout and then undid the peek with a hardcoded `refs/remotes/
+    // origin/main`, so renaming DEFAULT_BRANCH would have left the peek in place, the pull still
+    // succeeding and the test still passing.
+    if (opts.diverged) {
+      // Diverged on purpose, asserted structurally because neither repo holds both commits before
+      // the pull: the local tip and the squash are two **different** children of the same base, so
+      // neither is an ancestor of the other and no fast-forward exists. That is the only state in
+      // which `--ff-only` is distinguishable from a plain pull.
+      assert.equal(git(repo.main, "rev-parse", `${repo.local}^`), repo.base);
+      assert.equal(git(repo.side, "rev-parse", `${repo.squash}^`), repo.base);
+      assert.notEqual(repo.local, repo.squash,
+        "the local commit and the squash are the same commit, so there is no divergence to refuse");
+    } else {
+      // A fast-forward on purpose: were it not, `--ff-only` would refuse and the shape would be
+      // measuring the wrong refusal.
+      git(repo.side, "merge-base", "--is-ancestor", repo.base, repo.squash);
+    }
 
     const r = perform(seq, repo);
 
@@ -365,27 +462,52 @@ for (const [name, opts, why] of SHAPES) {
     assert.equal(reported.length, seq.length,
       `${reported.length} of ${seq.length} steps reported a status — the sequence stopped early`
       + `\n--- stdout\n${r.stdout}\n--- stderr\n${r.stderr}`);
-    assert.deepEqual(reported.map(([, where, code]) => [where, code]),
-      seq.map((s) => [s.where, 0]),
-      `a documented step failed as written\n--- stdout\n${r.stdout}\n--- stderr\n${r.stderr}`);
+    // The last step is the pull, and the shape says what it is expected to do: fast-forward, or —
+    // on a diverged default branch — **refuse**, which is the half of step 4's sentence nothing
+    // else here reaches.
+    const show = `\n--- stdout\n${r.stdout}\n--- stderr\n${r.stderr}`;
+    const teardownSteps = reported.slice(0, -1);
+    const [, pullWhere, pullCode] = reported.at(-1);
+    assert.deepEqual(teardownSteps.map(([, where, code]) => [where, code]),
+      seq.slice(0, -1).map((s) => [s.where, 0]),
+      `a documented step failed as written${show}`);
+    assert.equal(pullWhere, seq.at(-1).where);
+    if (opts.diverged) {
+      assert.notEqual(pullCode, 0,
+        `the pull succeeded on a diverged default branch, so § Merging's step 4 is not refusing —`
+        + ` either \`--ff-only\` is gone from its block or something reconciled the divergence`
+        + `${show}`);
+      assert.match(r.stderr, /fast-forward/i,
+        `the pull failed for some reason other than the fast-forward it could not do${show}`);
+    } else {
+      assert.equal(pullCode, 0, `the pull failed${show}`);
+    }
     assert.equal(r.status, 0, `the sequence exited ${r.status}\n${r.stderr}`);
     assert.doesNotMatch(r.stdout + r.stderr, /GUARD TRIPPED/, r.stdout + r.stderr);
 
-    // The four end-state facts the sequence promises. Not "no command errored": round 1 passed an
+    // The end-state facts the sequence promises. Not "no command errored": round 1 passed an
     // exit-code-only reading while silently losing the pull.
-    const show = `\n--- stdout\n${r.stdout}\n--- stderr\n${r.stderr}`;
     assert.equal(git(repo.main, "branch", "--list", BRANCH), "",
       `the local branch survived the teardown${show}`);
     if (repo.wt) {
       assert.equal(existsSync(repo.wt), false, `the worktree directory survived${show}`);
-      assert.doesNotMatch(git(repo.main, "worktree", "list", "--porcelain"), /wt-12/,
+      assert.ok(!git(repo.main, "worktree", "list", "--porcelain").includes(repo.wt),
         `the worktree is still registered${show}`);
     }
     assert.equal(git(repo.main, "rev-parse", "--abbrev-ref", "HEAD"), DEFAULT_BRANCH,
       `the main checkout is not on the default branch${show}`);
-    assert.equal(git(repo.main, "rev-parse", "HEAD"), repo.squash,
-      `the default branch did not reach the squash, so the pull in § Merging's step 4 did not`
-      + ` happen or did not fast-forward — this is the fact round 1 lost in silence${show}`);
+    if (opts.diverged) {
+      // A refused pull changes nothing, which is the point: the divergence is left for someone to
+      // look at, and `git pull` without `--ff-only` would have put a merge commit here instead.
+      assert.equal(git(repo.main, "rev-parse", "HEAD"), repo.local,
+        `the refused pull moved the default branch anyway${show}`);
+      assert.equal(git(repo.main, "rev-parse", `refs/remotes/origin/${DEFAULT_BRANCH}`), repo.squash,
+        `the pull did not even fetch, so its refusal is not the refusal this shape asserts${show}`);
+    } else {
+      assert.equal(git(repo.main, "rev-parse", "HEAD"), repo.squash,
+        `the default branch did not reach the squash, so the pull in § Merging's step 4 did not`
+        + ` happen or did not fast-forward — this is the fact round 1 lost in silence${show}`);
+    }
     assert.equal(git(repo.main, "rev-list", "--merges", `${repo.base}..HEAD`), "",
       `the default branch took a merge commit, so the pull was not fast-forward only${show}`);
 

@@ -316,7 +316,7 @@ than retried** — the sequence is idempotent, and `branch not found` here is th
 
 **Each step below carries the command it is**, so the sequence can be run rather than paraphrased,
 and seam's own `tests/teardown.test.mjs` performs these blocks — these five and § Merging's
-step 4 — in document order against four real repositories. Prose here that stops working goes
+step 4 — in document order against five real repositories. Prose here that stops working goes
 red there instead of on somebody's merge, which is the whole reason the blocks are here. The
 block is the step; the prose above it is what explains the step, and neither is a copy of the
 other. Four values are filled in before the first block, and a session that cannot name all four

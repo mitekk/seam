@@ -1283,13 +1283,16 @@ test("every key path seam-github reads resolves, and the asked ones carry a ques
     + " teardown"), "the teardown clause states no else-branch for a config that names no command");
 });
 
-test("§ Teardown's steps are numbered in an order that can be performed", () => {
-  // Measured in three shapes (plain checkout, worktree from the main checkout, worktree from
-  // inside it): run from the worktree, step 2 deletes the session's cwd and every later git
-  // command answers `Unable to read current working directory`; with no teardown command, the
-  // switch and the delete both refuse while the branch is checked out. So the order is part of
-  // the procedure, and it is asserted on the **list markers** — anchoring on where a label first
-  // appears in the section let an intro sentence in the right order mask a list in the wrong one.
+test("§ Teardown is a five-step list, and its prose names the flag and the refusal", () => {
+  // **The order is not asserted here any more.** `tests/teardown.test.mjs` performs the steps
+  // against five real repositories, so the order has an executable owner, and a label match here
+  // would be a second copy of its claim — the restatement rule, applied to our own tests. It
+  // would also red on every legitimate reorder in two places, one of which proves nothing: when
+  // the command-first order was planted as a RED proof, these label matches went red beside the
+  // fixture and said only that the labels had moved.
+  //
+  // What is left is what the fixture cannot reach: the **shape** the parse over there depends on
+  // (five numbered steps), and the three prose facts that are advice rather than commands.
   const md = readFileSync(join(REPO, "skills/seam-github/SKILL.md"), "utf8");
   const from = md.indexOf("### Teardown,");
   const to = md.indexOf("## Status reporting");
@@ -1298,15 +1301,6 @@ test("§ Teardown's steps are numbered in an order that can be performed", () =>
   const steps = [...sec.matchAll(/^(\d+)\. \*\*(.+?)\*\*/gm)].map((m) => [Number(m[1]), m[2]]);
   assert.deepEqual(steps.map(([n]) => n), [1, 2, 3, 4, 5],
     `§ Teardown is not a five-step numbered list: ${JSON.stringify(steps.map(([n]) => n))}`);
-  const label = (n) => steps.find(([i]) => i === n)[1];
-  assert.match(label(1), /main checkout/,
-    "step 1 is not: run from the main checkout, which is what leaving the worktree means");
-  assert.match(label(2), /teardown command/, "step 2 is not the repo's own teardown command");
-  assert.match(label(3), /Switch to the default branch/, "step 3 is not the switch");
-  // Measured: with no teardown command, the worktree still holds the branch after the switch, and
-  // both flags refuse. The removal is the step that makes the delete possible in a worktree repo.
-  assert.match(label(4), /Remove the branch's worktree/, "step 4 is not the worktree removal");
-  assert.match(label(5), /Delete the local branch/, "step 5 is not the delete");
   assert.match(sec, /expect `-D` rather than `-d`/,
     "§ Teardown does not say which flag a squashed branch needs, so -d's merged check reads as a"
     + " verification it is not");
@@ -1355,6 +1349,9 @@ test("no command seam-github ships reads a path by splitting on whitespace", () 
           + ` column rather than after \`worktree \`: ${line.trim()}`);
     }
   }
+  // The floor is a fraction of the measurement, not a guess: 121 non-blank command lines across
+  // the skill's two files and 4 reads of `git worktree list`, counted when this was written. A
+  // floor at the measurement would red on any edit; these red when the scan breaks.
   assert.ok(read >= 20, `the fence scan read ${read} command lines across`
     + ` ${files.length} files, which is too few to be the skill — the regex stopped matching and`
     + ` every assertion above passed on an empty subject`);
