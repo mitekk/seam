@@ -359,9 +359,13 @@ function defaultAssertions(a, answersRel) {
     // A1, A2 and A10 run everywhere: a citation a reader cannot open is a defect whatever the
     // layer, and a doc missing from the table is drift by definition.
     // `intent_globs` names the docs whose citations are intentions rather than claims — an
-    // implementation plan names the files it will create. Defaults to the plan directory a
-    // writing-plans workflow uses, because that is the one place it is true by construction.
-    A1: { enabled: true, allow: [], intent_globs: ["docs/superpowers/plans/*.md"] },
+    // implementation plan names the files it will create, so by construction those paths are
+    // absent. The globs come from the layer-5 rows themselves, for the same reason A8's do: a
+    // hardcoded `docs/superpowers/plans/*.md` was seam's own layout, so an adopter whose plans
+    // sit anywhere else got an exemption pointing at a directory they do not have — and every
+    // file-creation citation in their plan reds A1 on day one, while the glob itself matches
+    // nothing and produces no finding to say so.
+    A1: { enabled: true, allow: [], intent_globs: [layer5Globs(a)].flat() },
     A2: { enabled: true },
     // A3 compares two sides. Until a workflow exists and someone confirms it is wired, the
     // comparison would be vacuous — so it is off, and off is distinct from passing.

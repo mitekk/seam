@@ -133,6 +133,7 @@ rather than asking open questions about them.
 | `assertions.A4` | on iff `artifacts` is non-empty | Nothing to resolve against otherwise. |
 | `assertions.A5/A6/A7/A9` | off | Each needs a repo-specific list. An empty list that passes is worse than a switch that is off. |
 | `assertions.A8/A14` | on iff a layer-5 doc exists | |
+| `assertions.A1.intent_globs` | the layer-5 rows | The docs whose citations are intentions rather than claims — a plan names the files it is about to create, so by construction those paths are absent. The same rows `A8.plan_glob` reads, and never a fixed path: a glob naming a directory this repo does not have exempts nothing, produces no finding to say so, and leaves every file-creation citation in the real plan red on day one. With no layer-5 row it falls back to `docs/plans/*.md`, which exempts nothing in a repo that has no plans. |
 | `assertions.A15` | **off** | It compares two repo-specific lists — which paths are implementation, which are tests — and an empty list is not a sensible default. `default_branch` defaults from `repo.default_branch`. |
 | `assertions.A12/A13` | on iff a layer-3 or layer-4 doc exists | |
 | `docs/building.md` row | **proposed by default** | The method's ordering rule — the written unit comes before the work — only holds where the repo's own doc says so, and opting in would make plan-first the exception. The program never adds the row itself: the answers file is the source, so declining is leaving the row out. |

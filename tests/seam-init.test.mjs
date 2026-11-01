@@ -809,6 +809,48 @@ test("several layer-5 rows give A8 every one of them", () => {
   rm(dir);
 });
 
+test("A1's intent globs come from the layer-5 rows, not a hardcoded path", () => {
+  // I3, and the same defect as A8's above — three lines below the comment in `seam-init.mjs`
+  // that rejects it. `intent_globs` exempts the docs whose citations are INTENTIONS: a plan
+  // names the files it is about to create, so by construction those paths are absent. The
+  // default was `["docs/superpowers/plans/*.md"]`, seam's own layout, so an adopter whose plans
+  // are at `docs/plans/*.md` — `layer5Globs`' own fallback and A8's documented default — got an
+  // exemption pointing at a directory they do not have, and every file-creation citation in
+  // their plan reds A1 on day one. A glob matching nothing produces no finding either, so the
+  // wrong default is silent in both directions.
+  const ans = answers();
+  assert.deepEqual(ans.docs.filter((d) => d.layer === 5).map((d) => d.path),
+    ["docs/plans/first-subsystem.md"],
+    "this fixture's layer-5 row moved; the assertion below is about where it is");
+  const { dir, r } = init(ans);
+  assert.equal(r.status, 0, r.stderr);
+  const cfg = JSON.parse(read(dir, ".seam/config.json"));
+  assert.deepEqual(cfg.assertions.A1.intent_globs, ["docs/plans/first-subsystem.md"]);
+  // The same rows A8 and A14 read, which is the point: one answer, not three places to keep.
+  assert.deepEqual([cfg.assertions.A8.plan_glob].flat(), cfg.assertions.A1.intent_globs);
+  rm(dir);
+
+  // Several layer-5 rows give it every one of them, not whichever came first.
+  const two = answers();
+  two.docs.push({ path: "docs/superpowers/specs/*.md", layer: 5, owns: "Nothing — the specs",
+    enforces: "", create: false });
+  const { dir: multi } = init(two);
+  assert.deepEqual(JSON.parse(read(multi, ".seam/config.json")).assertions.A1.intent_globs,
+    ["docs/plans/first-subsystem.md", "docs/superpowers/specs/*.md"]);
+  rm(multi);
+
+  // No layer-5 row at all: `layer5Globs` falls back to `docs/plans/*.md`, and A1 stays on —
+  // unlike A8 and A14, A1 has work to do without a plan, and an intent glob matching nothing
+  // exempts nothing, which is the right reading of "this repo has no plans".
+  const bare = answers();
+  bare.docs = bare.docs.filter((d) => d.layer !== 5);
+  const { dir: none } = init(bare);
+  const noneCfg = JSON.parse(read(none, ".seam/config.json"));
+  assert.equal(noneCfg.assertions.A1.enabled, true);
+  assert.deepEqual(noneCfg.assertions.A1.intent_globs, ["docs/plans/*.md"]);
+  rm(none);
+});
+
 test("A15 is off by default, with empty lists and the repo's default branch", () => {
   // It needs two repo-specific lists, and an empty list that passes would read as evidence.
   const { dir, r } = init(answers({ repo: { name: "scratch", default_branch: "trunk" } }));

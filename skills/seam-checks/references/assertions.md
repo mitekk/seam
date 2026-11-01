@@ -37,7 +37,10 @@ Reads: every `` `path.md` `` in backticks, in every doc. Resolves against the re
 beside the citing file.
 
 Needs: `assertions.A1.allow`, a list of `{path, reason}`. A reason is required: an entry means
-"this file is absent on purpose and the sentence is about its absence".
+"this file is absent on purpose and the sentence is about its absence". Optionally
+`assertions.A1.intent_globs`, the docs whose citations are intentions rather than claims; it
+defaults to the **layer-5 rows of the table**, which is where a plan lives, and never to a fixed
+path — a glob naming a directory the repo does not have exempts nothing and says nothing about it.
 
 **An allow entry that suppressed nothing on the run is a finding**, at `.seam/config.json:1` with
 the entry's path as its text. The checker already refused an entry with no reason; nothing checked
@@ -71,8 +74,9 @@ Does not reach:
   create, so by construction every one of those paths is absent — measured at 23 on this repo's
   own plan. `intent_globs` exempts the **doc**, not each path, because neither existing mechanism
   fits: a baseline entry means "not yet" and these evaporate the moment the work lands, and an
-  allow-list entry means "never". It defaults to `docs/superpowers/plans/*.md`, the one place this
-  is true by construction, and it exempts nothing else.
+  allow-list entry means "never". It defaults to the table's **layer-5 rows**, the one place this
+  is true by construction, and it exempts nothing else — read off the rows rather than fixed,
+  because a hardcoded plan directory is an exemption pointing somewhere the repo may not have.
 - **A backticked label inside a markdown link.** In ``[`api.md`](.claude/rules/api.md)`` the link
   **target** is the claim and the label is how it reads, so the target is what gets resolved and
   the label is dropped. Measured on a repo nothing was tuned against: a README listing eight
