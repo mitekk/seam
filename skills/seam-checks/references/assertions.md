@@ -77,6 +77,9 @@ Does not reach:
   allow-list entry means "never". It defaults to the table's **layer-5 rows**, the one place this
   is true by construction, and it exempts nothing else — read off the rows rather than fixed,
   because a hardcoded plan directory is an exemption pointing somewhere the repo may not have.
+  **With no layer-5 row it does fall back to `docs/plans/*.md`**, which is a fixed path: the
+  fallback is harmless, since a glob matching nothing exempts nothing, but saying "never fixed"
+  here would be a claim the program does not keep.
 - **A backticked label inside a markdown link.** In ``[`api.md`](.claude/rules/api.md)`` the link
   **target** is the claim and the label is how it reads, so the target is what gets resolved and
   the label is dropped. Measured on a repo nothing was tuned against: a README listing eight

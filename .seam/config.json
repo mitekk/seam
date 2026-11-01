@@ -168,6 +168,7 @@
         }
       ],
       "intent_globs": [
+        "docs/superpowers/specs/*.md",
         "docs/superpowers/plans/*.md"
       ]
     },

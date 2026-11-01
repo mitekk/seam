@@ -78,7 +78,9 @@ rather than asking open questions about them.
 
 ```jsonc
 {
-  "seam_version": "0.2.0",
+  // "seam_version" omitted on purpose: it is optional, and the wizard reads the running
+  // plugin's own version from .claude-plugin/plugin.json. A literal here would be one more
+  // hand-kept copy of a number — which is the defect this key was changed to stop.
   "repo":    { "name": "apiary", "default_branch": "main" },
   "field":   "greenfield" | "brownfield",        // asked first; no default
   "table":   { "file": "CLAUDE.md" },            // which file hosts the sources-of-truth table
