@@ -33,6 +33,11 @@ below is read. Floors rather than ranges, because a range has to pick a side at 
 picks it twice: 75% in both Orange and Red is the same disagreement as 74.6% in neither. Every
 figure reaches exactly one highest floor, and Green's is 0%.
 
+**Green here is a band of a session's window, not a milestone's condition.** Where this repo
+writes its build order down, that doc's `Green when` column is the other sense — what has to be
+true before the next milestone starts — and no level in this table is ever a completion
+condition.
+
 **Every action above Green is the same one at a different strength: write to disk, and prefer disk
 over context.** None of them is "be careful", because that is not an action anyone can take.
 

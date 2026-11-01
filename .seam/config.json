@@ -69,6 +69,12 @@
       "layer": 5,
       "enforces": "",
       "create": false
+    },
+    {
+      "path": "docs/findings-ledger.md",
+      "layer": 6,
+      "enforces": "",
+      "create": true
     }
   ],
   "load_bearing": [

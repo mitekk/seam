@@ -40,6 +40,12 @@ Three values, by **consequence** rather than by feeling.
 
 The build order. Each ends green before the next starts, and each produces a reviewable diff.
 
+**"Green when" is a completion condition, not a level.** The word carries a second sense in this
+method — a share of the session window a piece of work has spent, where Green is the lowest
+band — and the two live in different files for different readers. Nothing here is a budget: a
+milestone's cell is what has to be *true* before the next row starts. Where this repo also writes
+a context budget down, that doc owns the other sense and this table never refers to it.
+
 | # | Milestone | Green when | Active |
 |---|---|---|---|
 | 1 | Establish the field — seam is **brownfield** | the determination is recorded, with the reason it was made | no |

@@ -122,6 +122,21 @@ Closes #12.
 - Stage deliberately. `git add` the specific paths, not `-A`: a checkout routinely has unrelated
   edits in flight.
 
+**Nothing mechanical holds the subject to 72, and it is the first line of this convention to
+drift.** Assertions read files; no assertion reads a commit message, so the length is held by
+whoever writes the commit — and a long subject is written at the moment the work is finishing,
+which is the moment least likely to re-read a rule. The one branch that wrote this file broke it
+on about a third of its own commits before anyone counted. Counting is one command, and it names
+the offenders rather than a number that goes stale:
+
+```bash
+git log --format=%s <default-branch>..HEAD | awk 'length($0) > 72'
+```
+
+It prints nothing when the branch is clean. A subject already pushed is left alone — rewriting
+landed history for a label costs more than the label is worth — so the check is worth running
+**before** the commit, where the fix is free.
+
 ## Pull requests
 
 The title is the squash-merge subject, so it follows the commit convention exactly. The body's job

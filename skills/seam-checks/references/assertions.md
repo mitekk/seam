@@ -303,6 +303,19 @@ layer-2 doc is byte-frozen by nothing, which is correct — wrong there is a bug
 fixed in place.
 
 - A file **not yet on the branch** is skipped. That is a new record, which is the point.
+
+  **This is scope, not a silent pass, and the difference is worth knowing before it bites.** A
+  file with no bytes on the default branch has nothing for A12 to compare against, so there is no
+  comparison to make — distinct from the case where there *is* one and it cannot be made, which
+  is the bullet below and a loud finding. **The consequence is that the whole track is unmeasured
+  until it merges.** The branch that creates a repo's layer-3 file can rearrange that file freely
+  and A12 will not say a word; the **first append after the merge** is the first time the
+  assertion runs against it for real. So a repo adopting these layers gets its first true A12
+  result one branch *later* than it expects, and an entry moved rather than appended during the
+  adopting branch is caught then, by its own CI, as a byte violation on a file somebody is in the
+  middle of appending to. The cheap guard while the file is still off the branch is a test that
+  builds the fixture itself — `tests/checker.test.mjs` does exactly that, which is why A12's rule
+  is covered on a branch where A12 cannot yet see the real file.
 - **A single dated decisions file is held to a prefix, not to equality.** When `adr.format` is
   `single`, the one path `adr.file` is the record that every new decision is appended to, so
   byte-equality would make an append-only file impossible to append to. For that path the bytes on

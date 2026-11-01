@@ -88,6 +88,13 @@
       "owns": "Nothing \u2014 implementation plans. Superseded wholesale; a plan whose shape changes is rewritten, never amended into agreement with what shipped",
       "enforces": "",
       "create": false
+    },
+    {
+      "path": "docs/findings-ledger.md",
+      "layer": 6,
+      "owns": "Nothing \u2014 true observations about this tree that are not becoming work",
+      "enforces": "",
+      "create": true
     }
   ],
   "load_bearing": [
